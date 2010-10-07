@@ -1,0 +1,40 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Images/Exit.png</file>
+        <file>Images/Network.png</file>
+        <file>Images/Options.png</file>
+        <file>Images/Peers.png</file>
+        <file>Images/Transfers.png</file>
+        <file>Images/Refresh.png</file>
+        <file>Images/UpdateFriends.png</file>
+        <file>Images/Downloads.png</file>
+        <file>Images/Uploads.png</file>
+        <file>Images/Download.png</file>
+        <file>Images/Browse.png</file>
+        <file>Images/ConnectionSettings.png</file>
+        <file>Images/NotificationSettings.png</file>
+        <file>Images/Exit16.png</file>
+        <file>Images/HideFrame.png</file>
+        <file>Images/ShowFrame.png</file>
+        <file>Images/Chat.png</file>
+        <file>Images/Message.png</file>
+        <file>Images/ReconnectFriend.png</file>
+        <file>Images/StatusConnected.png</file>
+        <file>Images/StatusOffline.png</file>
+        <file>Images/AnimatedLoading.gif</file>
+        <file>Images/Cancel.png</file>
+        <file>Images/ClearCompleted.png</file>
+        <file>Images/Up0Down0.png</file>
+        <file>Images/Up0Down1.png</file>
+        <file>Images/Up1Down0.png</file>
+        <file>Images/Up1Down1.png</file>
+        <file>Images/Frame.png</file>
+        <file>Images/Folder.png</file>
+        <file>Images/Play.png</file>
+        <file>Images/Send.png</file>
+        <file>Images/Library.png</file>
+        <file>Images/UpdateLibrary.png</file>
+        <file>Images/LibrarySmall.png</file>
+        <file>Images/StatusConnecting.png</file>
+    </qresource>
+</RCC>

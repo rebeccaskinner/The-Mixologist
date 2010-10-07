@@ -1,0 +1,126 @@
+/****************************************************************
+ *  Copyright 2010, Fair Use, Inc.
+ *  Copyright 2004-6, Robert Fernie
+ *
+ *  This file is part of the Mixologist.
+ *
+ *  The Mixologist is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version 2
+ *  of the License, or (at your option) any later version.
+ *
+ *  The Mixologist is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with the Mixologist; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ *  Boston, MA  02110-1301, USA.
+ ****************************************************************/
+
+#ifndef TOU_UNIVERSAL_NETWORK_HEADER
+#define TOU_UNIVERSAL_NETWORK_HEADER
+
+/* Some Types need to be defined before the interface can be declared
+ */
+
+#include "util/net.h"
+
+/* C Interface */
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
+    /*******
+     * This defines a (unix-like) universal networking layer
+     * that should function on both windows and unix. (C - interface)
+     *
+     * This is of course only a subset of the full interface.
+     * functions required are:
+     *
+     * int tounet_close(int fd);
+     * int tounet_socket(int domain, int type, int protocol);
+     * int tounet_bind(int  sockfd,  const  struct  sockaddr  *my_addr,
+     *              socklen_t addrlen);
+     * int tounet_fcntl(int fd, int cmd, long arg);
+     * int tounet_setsockopt(int s, int level,  int  optname,
+     *              const  void  *optval, socklen_t optlen);
+     * ssize_t tounet_recvfrom(int s, void *buf, size_t len, int flags,
+     *                              struct sockaddr *from, socklen_t *fromlen);
+     * ssize_t tounet_sendto(int s, const void *buf, size_t len, int flags,
+     *              const struct sockaddr *to, socklen_t tolen);
+     *
+     * There are some non-standard ones as well:
+     * int tounet_errno();      for internal networking errors
+     * int tounet_init();       required for windows
+     * int tounet_checkTTL();   a check if we can modify the ttl
+     */
+
+
+    /* the universal interface */
+    int tounet_errno(); /* for internal networking errors */
+    int tounet_init(); /* required for windows */
+    int tounet_close(int fd);
+    int tounet_socket(int domain, int type, int protocol);
+    int tounet_bind(int  sockfd,  const  struct  sockaddr  *my_addr,  socklen_t addrlen);
+    int tounet_fcntl(int fd, int cmd, long arg);
+    int tounet_setsockopt(int s, int level,  int  optname,
+                          const  void  *optval, socklen_t optlen);
+    ssize_t tounet_recvfrom(int s, void *buf, size_t len, int flags,
+                            struct sockaddr *from, socklen_t *fromlen);
+    ssize_t tounet_sendto(int s, const void *buf, size_t len, int flags,
+                          const struct sockaddr *to, socklen_t tolen);
+
+    /* address filling */
+    int tounet_inet_aton(const char *name, struct in_addr *addr);
+    /* check if we can modify the TTL on a UDP packet */
+    int tounet_checkTTL(int fd);
+
+
+
+    /* Extra stuff to declare for windows error handling (mimics unix errno)
+     */
+
+    /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
+#ifdef WINDOWS_SYS
+
+    // Some Network functions that are missing from windows.
+    //in_addr_t inet_netof(struct in_addr addr);
+    //in_addr_t inet_network(char *inet_name);
+    //int inet_aton(const char *name, struct in_addr *addr);
+
+
+    // definitions for fcntl (NON_BLOCK) (random?)
+#define F_SETFL     0x1010
+#define O_NONBLOCK  0x0100
+
+    // definitions for setsockopt (TTL) (random?)
+    //#define IPPROTO_IP    0x0011
+    //#define IP_TTL        0x0110
+
+    /* define the Unix Error Codes that we use...
+     * NB. we should make the same, but not necessary
+     */
+
+#include "tou_errno.h"
+
+    int     tounet_w2u_errno(int error);
+
+    /* also put the sleep commands in here (where else to go)
+     * ms uses millisecs.
+     * void Sleep(int ms);
+     */
+    void sleep(int sec);
+    void usleep(int usec);
+
+#endif
+    /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
+
+
+#ifdef  __cplusplus
+} /* C Interface */
+#endif
+
+#endif /* TOU_UNIVERSAL_NETWORK_HEADER */
