@@ -33,7 +33,7 @@
 #endif
 #define MIXOLOGY_CHECKOUT_LINK "mixology:userid==[[id]]¦name==[[full_formatted_name]]¦itemid==[[item_id]]¦"
 #define MIXOLOGY_CONTACT_LINK "mixology:userid==[[id]]¦"
-#define MIXOLOGY_LINK_TITLE "Mixology"
+#define MIXOLOGY_LINK_TITLE "Mixologist"
 #define STANDARD_LINK_TITLE "[[standard]]"
 
 //Number of seconds that must pass between calls to a LibraryMixer API function

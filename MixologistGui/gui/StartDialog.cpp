@@ -299,18 +299,20 @@ void StartDialog::finishLoading() {
 }
 
 void StartDialog::updateDataReadProgress(int bytesRead, int totalBytes) {
-    if (ui.progressBar->value() < 20) { //Step 1
-        ui.progressBar->setValue(bytesRead/totalBytes);
-    } else if (20 <= ui.progressBar->value() && ui.progressBar->value() < 30) { //Step 2.0
-        ui.progressBar->setValue(20 + (bytesRead/totalBytes));
-    } else if (30 <= ui.progressBar->value() && ui.progressBar->value() < 50) { //Step 2.5
-        ui.progressBar->setValue(30 + (bytesRead/totalBytes));
-    } else if (50 <= ui.progressBar->value() && ui.progressBar->value() < 60) { //Step 3
-        ui.progressBar->setValue(50 + (bytesRead/totalBytes));
-    } else if (60 <= ui.progressBar->value() && ui.progressBar->value() < 80) { //Step 4
-        ui.progressBar->setValue(60 + (bytesRead/totalBytes));
-    } else if (80 <= ui.progressBar->value() && ui.progressBar->value() < 100) { //Step 5
-        ui.progressBar->setValue(80 + (bytesRead/totalBytes));
+    if (totalBytes != 0){
+        if (ui.progressBar->value() < 20) { //Step 1
+            ui.progressBar->setValue(bytesRead/totalBytes);
+        } else if (20 <= ui.progressBar->value() && ui.progressBar->value() < 30) { //Step 2.0
+            ui.progressBar->setValue(20 + (bytesRead/totalBytes));
+        } else if (30 <= ui.progressBar->value() && ui.progressBar->value() < 50) { //Step 2.5
+            ui.progressBar->setValue(30 + (bytesRead/totalBytes));
+        } else if (50 <= ui.progressBar->value() && ui.progressBar->value() < 60) { //Step 3
+            ui.progressBar->setValue(50 + (bytesRead/totalBytes));
+        } else if (60 <= ui.progressBar->value() && ui.progressBar->value() < 80) { //Step 4
+            ui.progressBar->setValue(60 + (bytesRead/totalBytes));
+        } else if (80 <= ui.progressBar->value() && ui.progressBar->value() < 100) { //Step 5
+            ui.progressBar->setValue(80 + (bytesRead/totalBytes));
+        }
     }
 }
 

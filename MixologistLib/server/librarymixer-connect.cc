@@ -71,7 +71,11 @@ int LibraryMixerConnect::downloadXML(const QString &host,
     mode = QHttp::ConnectionModeHttp;
 #endif
 
+#ifdef DEVSERVER
+    http->setHost(host, mode, 3000);
+#else
     http->setHost(host, mode);
+#endif
 
     httpGetId = http->get(path, destination);
     return httpGetId;
@@ -159,7 +163,11 @@ int LibraryMixerConnect::uploadXML(const QString &host,
     mode = QHttp::ConnectionModeHttp;
 #endif
 
+#ifdef DEVSERVER
+    http->setHost(host, mode, 3000);
+#else
     http->setHost(host, mode);
+#endif
 
     httpGetId = http->request(header, source, destination);
 
