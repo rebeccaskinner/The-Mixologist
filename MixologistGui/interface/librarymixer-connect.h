@@ -26,11 +26,7 @@
 #include <QBuffer>
 #include <QtNetwork>
 
-#ifndef DEVSERVER
-  #define SERVER "librarymixer.heroku.com"
-#else
-  #define SERVER "192.168.1.114"
-#endif
+#define DEFAULT_MIXOLOGY_SERVER_VALUE "librarymixer.heroku.com"
 #define MIXOLOGY_CHECKOUT_LINK "mixology:userid==[[id]]¦name==[[full_formatted_name]]¦itemid==[[item_id]]¦"
 #define MIXOLOGY_CONTACT_LINK "mixology:userid==[[id]]¦"
 #define MIXOLOGY_LINK_TITLE "Mixologist"
@@ -92,8 +88,12 @@ private slots:
     void blockingTimeOut();
 
 private:
-    int downloadXML(const QString &host, const QString &location, QIODevice *destination);
-    int uploadXML(const QString &host, const QString &path, QIODevice *source, QIODevice *destination);
+    /*Downloads an XML file from the user set server.*/
+    int downloadXML(const QString &location, QIODevice *destination);
+    /*Downloads an XML file to the user set server.*/
+    int uploadXML(const QString &path, QIODevice *source, QIODevice *destination);
+    /*Utility function used by downloadXML and uploadXML to setup the QT connection.*/
+    void setupModeAndHost(QString *host, QHttp::ConnectionMode *mode);
     void handleErrorReceived(int error);
 
     int httpGetId;

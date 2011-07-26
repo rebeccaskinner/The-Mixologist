@@ -49,4 +49,6 @@ const bool DEFAULT_NOTIFY_UNMATCHED = false;
 const bool DEFAULT_UPNP = true;
 const bool DEFAULT_RANDOM_PORTS = true;
 
+#define DEFAULT_MIXOLOGY_SERVER "LibraryMixer"
+
 #endif

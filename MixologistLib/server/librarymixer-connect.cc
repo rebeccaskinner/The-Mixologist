@@ -22,7 +22,8 @@
 #include <QtGui>
 #include <QtNetwork>
 #include <QDomDocument>
-
+#include <QSettings>
+#include <interface/settings.h>
 #include "interface/peers.h" //for peers variable
 #include "interface/iface.h" //for Control variable and librarymixerconnect
 
@@ -55,27 +56,38 @@ void LibraryMixerConnect::setLogin(const QString &_email, const QString &_passwo
     password = _password;
 }
 
-int LibraryMixerConnect::downloadXML(const QString &host,
-                                     const QString &path,
-                                     QIODevice *destination) {
-    QHttp::ConnectionMode mode;
-    if (email != "" && password != "") {
+void LibraryMixerConnect::setupModeAndHost(QString *host, QHttp::ConnectionMode *mode){
+    QSettings settings(*startupSettings, QSettings::IniFormat);
+    *host = settings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString();
+
+    if (email != "" || password != "") {
         http->setUser(email, password);
-        mode = QHttp::ConnectionModeHttps;
-    } else {
-        mode = QHttp::ConnectionModeHttp;
+        *mode = QHttp::ConnectionModeHttps;
+    } else *mode = QHttp::ConnectionModeHttp;
+    if (host->startsWith("http://")) {
+        *mode = QHttp::ConnectionModeHttp;
+        host->remove(0, 7);
+    }
+    if (host->startsWith("https://")){
+        *mode = QHttp::ConnectionModeHttps;
+        host->remove(0, 8);
+    }
+    if (host->compare(DEFAULT_MIXOLOGY_SERVER, Qt::CaseInsensitive) == 0){
+        *host = DEFAULT_MIXOLOGY_SERVER_VALUE;
+    }
+}
+
+int LibraryMixerConnect::downloadXML(const QString &path,
+                                     QIODevice *destination) {
+    QString host;
+    QHttp::ConnectionMode mode;
+    setupModeAndHost(&host, &mode);
+
+    if (email != "" || password != "") {
+        http->setUser(email, password);
     }
 
-#ifdef DEVSERVER
-    //Disable https when using a development server
-    mode = QHttp::ConnectionModeHttp;
-#endif
-
-#ifdef DEVSERVER
-    http->setHost(host, mode, 3000);
-#else
     http->setHost(host, mode);
-#endif
 
     httpGetId = http->get(path, destination);
     return httpGetId;
@@ -86,14 +98,14 @@ int LibraryMixerConnect::downloadVersion(qlonglong current) {
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
     QString url = "/api/mixologist_version?current=";
     url.append(QString::number(current));
-    version_check_id = downloadXML(SERVER, url, buffer);
+    version_check_id = downloadXML(url, buffer);
     return version_check_id;
 }
 
 int LibraryMixerConnect::downloadInfo() {
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
-    info_download_id = downloadXML(SERVER, "/api/user?id=&name=&checkout_link1=&contact_link1=&link_title1=&checkout_link2=&contact_link2=&link_title2=&checkout_link3=&contact_link3=&link_title3=",
+    info_download_id = downloadXML("/api/user?id=&name=&checkout_link1=&contact_link1=&link_title1=&checkout_link2=&contact_link2=&link_title2=&checkout_link3=&contact_link3=&link_title3=",
                                    buffer);
     return info_download_id;
 }
@@ -103,7 +115,7 @@ int LibraryMixerConnect::downloadLibrary(bool blocking) {
         lastLibraryUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
         if (!buffer->open(QIODevice::ReadWrite)) return -1;
-        library_download_id = downloadXML(SERVER, "/api/library?paginate=false&onlycheckout=true", buffer);
+        library_download_id = downloadXML("/api/library?paginate=false&onlycheckout=true", buffer);
         if (blocking) {
             doneTransfer = false;
             QTimer::singleShot(BLOCKING_TRANSFER_TIMEOUT, this, SLOT(blockingTimeOut()));
@@ -125,7 +137,7 @@ int LibraryMixerConnect::downloadFriends(bool blocking) {
         lastFriendUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
         if (!buffer->open(QIODevice::ReadWrite)) return -1;
-        friend_download_id = downloadXML(SERVER, "/api/friends?name=&id=&scratch[Mixology_Public_Key]=&scratch[Mixology_Local_IP]=&scratch[Mixology_Local_Port]=&scratch[Mixology_External_IP]=&scratch[Mixology_External_Port]=",
+        friend_download_id = downloadXML("/api/friends?name=&id=&scratch[Mixology_Public_Key]=&scratch[Mixology_Local_IP]=&scratch[Mixology_Local_Port]=&scratch[Mixology_External_IP]=&scratch[Mixology_External_Port]=",
                                          buffer);
         if (blocking) {
             doneTransfer = false;
@@ -139,35 +151,25 @@ int LibraryMixerConnect::downloadFriends(bool blocking) {
     return -1;
 }
 
-int LibraryMixerConnect::uploadXML(const QString &host,
-                                   const QString &path,
+int LibraryMixerConnect::uploadXML(const QString &path,
                                    QIODevice *source,
                                    QIODevice *destination) {
 
     QHttpRequestHeader header("POST", path);
-    header.setValue("Host", host);
     header.setValue("Accept", "application/xml");
     header.setValue("content-type", "application/xml");
 
+    QString host;
     QHttp::ConnectionMode mode;
+    setupModeAndHost(&host, &mode);
+    header.setValue("Host", host);
     if (email != "" && password != "") {
         QString credentials;
         credentials = email + ":" + password;
         header.setValue( "Authorization", QString("Basic ").append(credentials.toLatin1().toBase64()));
-        mode = QHttp::ConnectionModeHttps;
-    } else {
-        mode = QHttp::ConnectionModeHttp;
     }
-#ifdef DEVSERVER
-    //Disable https when using a development server
-    mode = QHttp::ConnectionModeHttp;
-#endif
 
-#ifdef DEVSERVER
-    http->setHost(host, mode, 3000);
-#else
     http->setHost(host, mode);
-#endif
 
     httpGetId = http->request(header, source, destination);
 
@@ -214,7 +216,7 @@ int LibraryMixerConnect::uploadInfo(const int link_to_set, const QString &public
 
     uploadBuffer->seek(0);
 
-    info_upload_id = uploadXML(SERVER, "/api/edit_user", uploadBuffer, buffer);
+    info_upload_id = uploadXML("/api/edit_user", uploadBuffer, buffer);
     return info_upload_id;
 }
 

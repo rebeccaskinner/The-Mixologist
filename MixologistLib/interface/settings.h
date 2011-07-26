@@ -32,6 +32,9 @@ extern QString *startupSettings;
 extern QString *mainSettings;
 extern QString *savedTransfers;
 
+const bool DEFAULT_START_MINIMIZED = false;
+const bool DEFAULT_SHOW_ADVANCED = false;
+
 const bool DEFAULT_INCOMING_ASK = false;
 
 const int DEFAULT_MAX_INDIVIDUAL_DOWNLOAD = 0;
@@ -45,5 +48,7 @@ const bool DEFAULT_NOTIFY_UNMATCHED = false;
 
 const bool DEFAULT_UPNP = true;
 const bool DEFAULT_RANDOM_PORTS = true;
+
+#define DEFAULT_MIXOLOGY_SERVER "LibraryMixer"
 
 #endif

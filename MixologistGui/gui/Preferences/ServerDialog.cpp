@@ -94,6 +94,9 @@ ServerDialog::ServerDialog(QWidget *parent)
 
     //Temporarily disabled
     ui.NetConfigBox->setVisible(false);
+
+    QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
+    ui.mixologyServer->setText(serverSettings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString());
 }
 
 /** Saves the changes on this page */
@@ -103,6 +106,8 @@ bool ServerDialog::save() {
     settings.setValue("Network/UPNP", ui.UPNP->isChecked());
     //RandomizePorts requires UPNP
     settings.setValue("Network/RandomizePorts", ui.UPNP->isChecked() && ui.randomizePorts->isChecked());
+    QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
+    serverSettings.setValue("MixologyServer", ui.mixologyServer->text());
 #ifdef false
     bool saveAddr = false;
 
