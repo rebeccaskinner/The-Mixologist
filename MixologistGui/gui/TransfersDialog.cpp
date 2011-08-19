@@ -119,7 +119,10 @@ void TransfersDialog::download(const QString &link) {
     //Pop up a dialog box to allow the user to enter a link. If a link was provided in arguments, starts from there.
     //Some browsers percent encode urls, so undo this before processing the link from the argument.
     QString text = QInputDialog::getText(this, tr("Enter link"), tr("Enter a mixology link:"), QLineEdit::Normal, QUrl::fromPercentEncoding(link.toUtf8()), &ok);
-    if (!ok) return;
+    if (!ok) {
+        error = "Unable to read the entered text";
+        goto parseError;
+    }
 
     //In case the user pasted in a percent encoded url, undo it again.
     text = QUrl::fromPercentEncoding(text.toUtf8());
@@ -182,7 +185,17 @@ void TransfersDialog::download(const QString &link) {
             return;
         }
     }
-    if (item_id != 0 && !name.isEmpty()) files->LibraryMixerRequest(librarymixer_id, item_id, name);
+    if (item_id != 0 && !name.isEmpty()) {
+        files->LibraryMixerRequest(librarymixer_id, item_id, name);
+        //We must construct our own QMessageBox rather than use a static function in order to avoid making a system sound on window popup
+        QMessageBox confirmBox(this);
+        //confirmBox.setIcon(QMessageBox::NoIcon);
+        confirmBox.setIconPixmap(QPixmap(":/Images/Download.png"));
+        confirmBox.setWindowTitle(name);
+        confirmBox.setText("A request will be sent to " + peers->getPeerName(librarymixer_id));
+        confirmBox.addButton("OK", QMessageBox::RejectRole);
+        confirmBox.exec();
+    }
     else mainwindow->peersDialog->getOrCreateChat(librarymixer_id, true);
     return;
 
