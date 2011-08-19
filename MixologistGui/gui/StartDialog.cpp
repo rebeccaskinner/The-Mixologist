@@ -318,11 +318,7 @@ void StartDialog::updateDataReadProgress(int bytesRead, int totalBytes) {
 
 void StartDialog::errorReceived(int errorCode) {
     if (errorCode == LibraryMixerConnect::version_download_error) {
-        QMessageBox::warning (this,
-                              "Something has gone wrong",
-                              "Unable to download version update info!",
-                              QMessageBox::Ok);
-        downloadInfo();
+        ui.loadStatus->setText("Unable to connect");
     } else if (errorCode == LibraryMixerConnect::ssl_error) {
         ui.loadStatus->setText("Unable to connect");
     } else if (errorCode == LibraryMixerConnect::bad_login_error || errorCode == LibraryMixerConnect::info_download_error) {
