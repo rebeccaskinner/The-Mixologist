@@ -30,112 +30,31 @@
 #include <QString>
 
 class NotifyBase;
-class Iface;
 class Control;
 class Init;
 class LibraryMixerConnect;
-class MixMutex;
 
-/* declare single Iface for everyone to use. */
-
-extern Iface *iface;
 extern Control *control;
+extern NotifyBase *notifyBase;
 extern LibraryMixerConnect *librarymixerconnect;
 
-class Iface { /* The Main Iface Class - create a single one! */
-public:
-    Iface(NotifyBase &callback);
-    virtual ~Iface();
-
-    /****************************************/
-
-    void lockData();
-    void unlockData();
-
-    /****************************************/
-
-
-    /* Flags to indicate used or not */
-    enum DataFlags {
-        Neighbour = 0,
-        Friend = 1,
-        DirLocal = 2,  /* Not Used - QModel instead */
-        DirRemote = 3, /* Not Used - QModel instead */
-        Transfer = 4,
-        Message = 5,
-        Channel = 6,
-        Chat = 7,
-        Recommend = 8,
-        Config = 9,
-        NumOfFlags = 10
-    };
-
-
-    /*
-     * Operations for flags
-     */
-
-    bool    setChanged(DataFlags set); /* set to true */
-    bool    getChanged(DataFlags set); /* leaves it */
-    bool    hasChanged(DataFlags set); /* resets it */
-
-private:
-
-    void    fillLists(); /* create some dummy data to display */
-
-    /* Internals */
-    bool mChanged[NumOfFlags];
-
-    NetConfig mConfig;
-
-    NotifyBase &cb;
-    MixMutex *ifaceMutex;
-
-    /* Classes which can update the Lists! */
-    friend class Control;
-    friend class Server;
-};
-
-
-class Control { /* The Main Ifaceif Class - for controlling the server */
+/*
+The interface for controlling MixologistLib at a high-level.
+*/
+class Control {
 public:
 
-    Control(Iface &i, NotifyBase &callback)
-        :notifybase(callback), iface(i) {
-        return;
-    }
+    Control(){return;}
 
-    virtual ~Control() {
-        return;
-    }
+    virtual ~Control() {return;}
 
+    //Starts all of MixologistLib's threads
     virtual bool StartupMixologist() = 0;
+    //Shuts down connections
     virtual bool ShutdownMixologist() = 0;
+    //Reloads transfer limits set in settings.ini by the user
+    virtual void ReloadTransferRates() = 0;
 
-    /****************************************/
-
-    /* Flagging Persons / Channels / Files in or out of a set (CheckLists) */
-    virtual int     SetInChat(std::string id, bool in) = 0;     /* friend : chat msgs */
-    virtual int     ClearInChat() = 0;
-    virtual bool    IsInChat(std::string id) = 0;
-
-    /****************************************/
-    /* Config */
-
-    virtual void     ReloadTransferRates() = 0;
-
-    /****************************************/
-
-    NotifyBase &getNotify() {
-        return notifybase;
-    }
-    Iface &getIface()  {
-        return iface;
-    }
-
-private:
-    NotifyBase &notifybase;
-    Iface &iface;
 };
 
 
@@ -165,6 +84,7 @@ enum userOptionalCodes {
     NOTIFY_USER_SUGGEST_RECEIVED //Received an invitation to download
 };
 
+/* The main class via which information is passed between MixologistLib and MixologistGui. */
 class NotifyBase {
 public:
     //A connected friend has sent a notice of availability of a download

@@ -195,7 +195,7 @@ int log(unsigned int lvl, int zone, QString msg) {
         zoneLevel = locked_getZoneLevel(zone);
     }
     if ((signed) lvl <= zoneLevel) {
-        control->getNotify().notifyLog(msg);
+        notifyBase->notifyLog(msg);
     }
     return 1;
 }

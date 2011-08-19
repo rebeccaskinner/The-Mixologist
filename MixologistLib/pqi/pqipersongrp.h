@@ -36,11 +36,11 @@ is held by the Server as an internal variable.
 
 It is designed to have one listening socket - pqilistener (for
 listening to incoming connections) and a series of outgoing sockets -
-SearchModules (which are found in pqihandler, which this implements,
-each of which holds a PQInterface which is implemented by pqiperson).
+PQInterfaces (which are found in pqihandler, which this implements,
+each of which holds a PQInterface which corresponds to a person,
+friends/self as pqiperson/pqiloopback).
 
-As an added bonus, we are going to make this a pqitunnelserver,
-to which services can be attached.
+This is also a pqitunnelserver, to which services can be attached.
 
 Types include pqisslpersongrp.
 */
@@ -51,15 +51,15 @@ const unsigned long PQIPERSON_ALL_BW_LIMITED =  0x0010;
 
 class pqipersongrp: public pqihandler, public pqiMonitor, public p3ServiceServer {
 public:
-    pqipersongrp(SecurityPolicy *, unsigned long flags);
+    pqipersongrp(unsigned long flags);
 
     /*************************** Setup *************************/
     /* pqilistener */
-    int     init_listener();
+    int init_listener();
     int restart_listener();
 
     //Loads the transfer rates from the settings files and sets them
-    void    load_transfer_rates();
+    void load_transfer_rates();
 
     /*************** pqiMonitor callback **********************
     Called by the p3ConnectMgr's tick function with a list of pqipeers
@@ -67,12 +67,13 @@ public:
     action is PEER_NEW, calls addPeer on them, if their action is
     PEER_CONNECT_REQ, calls connectPeer on them.
     */
-    virtual void    statusChange(const std::list<pqipeer> &plist);
+    virtual void statusChange(const std::list<pqipeer> &plist);
 
     /*** callback from children ****/
-    bool    notifyConnect(std::string id, uint32_t type, bool success);
+    bool notifyConnect(std::string id, uint32_t type, bool success);
 
     // tick interfaces.
+    /* This tick is called from ftserver */
     virtual int tick();
     virtual int status();
 
@@ -80,12 +81,12 @@ protected:
 
     /********* FUNCTIONS to OVERLOAD for specialisation ********/
     virtual pqilistener *createListener(struct sockaddr_in laddr) = 0;
-    virtual pqiperson   *createPerson(std::string id, int librarymixer_id, pqilistener *listener) = 0;
+    virtual pqiperson *createPerson(std::string id, int librarymixer_id, pqilistener *listener) = 0;
     /********* FUNCTIONS to OVERLOAD for specialisation ********/
 
     /* Overloaded NetItem Check
-         * checks item->cid vs Person
-         */
+     * checks item->cid vs Person
+     */
     virtual int checkOutgoingNetItem(NetItem *item, int global) {
         (void) item;
         (void) global;
@@ -96,12 +97,12 @@ private:
     /******************* Peer Control **************************/
     //These functions are called by statusChange
     //Sets up all the connection classes for a new peer
-    int     addPeer(std::string id, int librarymixer_id);
-    /*Calls mConnMgr->connectAttempt to get address information and other information
+    int addPeer(std::string id, int librarymixer_id);
+    /*Calls connMgr->connectAttempt to get address information and other information
       about how to connect, and then calls the appropriate pqiperson's connect method*/
-    int     connectPeer(std::string cert_id, int librarymixer_id);
-    void    timeoutPeer(std::string cert_id);
-    //int     removePeer(std::string id);
+    int connectPeer(std::string cert_id, int librarymixer_id);
+    void timeoutPeer(std::string cert_id);
+    //int removePeer(std::string id);
 
 
     // The tunnelserver operation.

@@ -37,9 +37,10 @@
 #include <windows.h>
 #endif
 
-
 //Setting up global extern for MainWindow.h
 MainWindow *mainwindow = NULL;
+//Setting up global extern for iface.h
+NotifyBase *notifyBase = NULL;
 
 int main(int argc, char *argv[]) {
 
@@ -67,9 +68,10 @@ int main(int argc, char *argv[]) {
         return 0;
     }
     NotifyQt *notify = new NotifyQt();
+    notifyBase = notify;
 
     /* Login Dialog */
-    StartDialog *start = new StartDialog(notify);
+    StartDialog *start = new StartDialog();
 
     while (!start->loadedOk) {
         instance.processEvents();

@@ -77,7 +77,7 @@ HEADERS += dht/b64.h \
            dht/opendhtstr.h \
            ft/ftcontroller.h \
            ft/ftdata.h \
-           ft/ftdatamultiplex.h \
+           ft/ftdatademultiplex.h \
            ft/ftitemlist.h \
            ft/ftfilecreator.h \
            ft/ftfileprovider.h \
@@ -94,7 +94,6 @@ HEADERS += dht/b64.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
            pqi/pqiassist.h \
-           pqi/pqibin.h \
            pqi/pqihandler.h \
            pqi/pqihash.h \
            pqi/pqilistener.h \
@@ -104,7 +103,6 @@ HEADERS += dht/b64.h \
            pqi/pqinotify.h \
            pqi/pqiperson.h \
            pqi/pqipersongrp.h \
-           pqi/pqisecurity.h \
            pqi/pqiservice.h \
            pqi/pqissl.h \
            pqi/pqissllistener.h \
@@ -159,22 +157,18 @@ SOURCES = \
 				dht/dht_bootstrap.cc \
 	   			server/librarymixer-connect.cc \
 	   			server/librarymixer-library.cc \
-				server/p3face-msgs.cc \
-				server/interface.cc \
 				server/types.cc \
 				server/init.cc \
-				server/p3face-config.cc \
 				server/server.cc \
 				server/p3msgs.cc \
 				server/p3peers.cc \
 				ft/ftcontroller.cc \
 				ft/ftserver.cc \
 				ft/fttransfermodule.cc \
-				ft/ftdatamultiplex.cc \
+				ft/ftdatademultiplex.cc \
 				ft/ftfilesearch.cc \
 				ft/ftitemlist.cc \
 				ft/ftfilecreator.cc \
-				ft/ftdata.cc \
 				ft/ftfileprovider.cc \
 				ft/mixologyborrower.cc \
                                 upnp/upnputil.cc \
@@ -199,11 +193,9 @@ SOURCES = \
 				pqi/pqissl.cc \
 				pqi/p3connmgr.cc \
 				pqi/p3dhtmgr.cc \
-				pqi/pqibin.cc \
 				pqi/pqistreamer.cc \
 				pqi/pqiloopback.cc \
 				pqi/pqinetwork.cc \
-				pqi/pqisecurity.cc \
 				serialiser/mixologyitems.cc \
                                 serialiser/statusitems.cc \
 				serialiser/msgitems.cc \

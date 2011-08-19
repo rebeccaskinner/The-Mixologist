@@ -37,6 +37,7 @@
 
 class QHttp;
 
+//Handles all of the connections and transfers of information with LibraryMixer.com
 class LibraryMixerConnect : public QObject {
     Q_OBJECT
 

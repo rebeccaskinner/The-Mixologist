@@ -24,122 +24,102 @@
 #define MRK_PQI_HANDLER_HEADER
 
 #include "pqi/pqi.h"
-#include "pqi/pqisecurity.h"
 
 #include "util/threads.h"
 
 #include <map>
 #include <list>
 
-class SearchModule {
-public:
-    std::string cert_id;
-    PQInterface *pqi;
-    SecurityPolicy *sp;
-};
-
 /*
-Combines a number of PQInterface (i.e. pqipersons, each of which corresponds to a peer)
-into a manageable aggregate.
+Aggregates the PQInterfaces (i.e. pqipersons, each of which corresponds to a peer/pqiloopback, for self),
+creating a single interface from which to call to send or get NetItems.
 Manages total bandwidth limits and enforces them on the PQInterfaces.
-The PQInterfaces are stored as SearchModule, which are a pairing of
-the PQInterface and a SecurityPolicy.
+In practice, this is used in pqipersongrp as a class is extends.
 */
 class pqihandler: public P3Interface {
 public:
-    pqihandler(SecurityPolicy *Global);
-    bool    AddSearchModule(SearchModule *mod);
-    bool    RemoveSearchModule(SearchModule *mod);
+    pqihandler();
+    bool AddPQI(PQInterface *mod);
+    bool RemovePQI(PQInterface *mod);
 
     // file i/o
-    virtual int     SendFileRequest(FileRequest *ns);
-    virtual int     SendFileData(FileData *ns);
-    virtual FileRequest    *GetFileRequest();
-    virtual FileData   *GetFileData();
+    virtual int SendFileRequest(FileRequest *ns);
+    virtual int SendFileData(FileData *ns);
+    virtual FileRequest *GetFileRequest();
+    virtual FileData *GetFileData();
 
     // Rest of P3Interface
-    virtual int     tick();
-    virtual int     status();
+    /* In practice, this tick is called from pqipersongrp, which implemented pqihandler */
+    virtual int tick();
+    virtual int status();
 
     // Service Data Interface
-    virtual int     SendRawItem(RawItem *);
+    virtual int  SendRawItem(RawItem *);
     virtual RawItem *GetRawItem();
 
     // rate control.
-    void    setMaxIndivRate(bool in, float val);
-    float   getMaxIndivRate(bool in);
-    void    setMaxRate(bool in, float val);
-    float   getMaxRate(bool in);
-
-    void    getCurrentRates(float &in, float &out);
-
+    void setMaxIndivRate(bool in, float val);
+    float getMaxIndivRate(bool in);
+    void setMaxRate(bool in, float val);
+    float getMaxRate(bool in);
 
 protected:
     /* check to be overloaded by those that can
      * generates warnings otherwise
      */
 
+    //Called by the SendX functions to find the correct pqi and have it send the item
     int HandleNetItem(NetItem *ns);
 
+    //Called from tick, steps through the pqis and takes all the incoming items off of them, and then calling SortnStoreItem on the items
     int locked_GetItems();
-    void    locked_SortnStoreItem(NetItem *item);
+    //Called from locked_GetItems, takes an incoming item and puts it on the appropriate incoming queue (i.e. service, file request, file data)
+    void locked_SortnStoreItem(NetItem *item);
 
-    MixMutex coreMtx; /* MUTEX */
+    MixMutex coreMtx;
 
-    std::map<std::string, SearchModule *> mods; //cert_ids / Searchmodules(container for a PQInterface and SecurityPolicy
-    SecurityPolicy *globsec;
-
-    // Temporary storage...
-    std::list<NetItem *> in_result, in_search,
-        in_request, in_data, in_service;
+    //Where all the aggregated PQInterfaces are held
+    std::map<std::string, PQInterface *> pqis; //cert_ids / PQInterface
+    //Incoming queues
+    std::list<NetItem *> in_request, in_data, in_service;
 
 private:
 
-    // Called by tick(), steps through all mods, and sets their transfer rate caps based on settings and overall activity.
-    void UpdateRates();
-    void    locked_StoreCurrentRates(float in, float out);
+    //Called by tick(), steps through all pqis, and sets their transfer rate caps based on settings and overall activity.
+    //Attempts to apportion bandwidth fairly among pqis.
+    void updateRateCaps();
+    //Called by UpdateRateCaps to handle either the downloading or uploading side of the rate caps
+    void setRateCaps(bool downloading, float total_max_rate, float indiv_max_rate, float shared_max_rate, float used_bw, float extra_bw, int maxed, int num_pqis);
 
-    float rateIndiv_in;
-    float rateIndiv_out;
-    float rateMax_in;
-    float rateMax_out;
+    float maxIndivIn;
+    float maxIndivOut;
+    float maxTotalIn;
+    float maxTotalOut;
 
-    float rateTotal_in;
-    float rateTotal_out;
 };
 
 inline void pqihandler::setMaxIndivRate(bool in, float val) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    if (in)
-        rateIndiv_in = val;
-    else
-        rateIndiv_out = val;
-    return;
+    MixStackMutex stack(coreMtx);
+    if (in) maxIndivIn = val;
+    else maxIndivOut = val;
 }
 
 inline float pqihandler::getMaxIndivRate(bool in) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    if (in)
-        return rateIndiv_in;
-    else
-        return rateIndiv_out;
+    MixStackMutex stack(coreMtx);
+    if (in) return maxIndivIn;
+    else return maxIndivOut;
 }
 
 inline void pqihandler::setMaxRate(bool in, float val) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    if (in)
-        rateMax_in = val;
-    else
-        rateMax_out = val;
-    return;
+    MixStackMutex stack(coreMtx);
+    if (in) maxTotalIn = val;
+    else maxTotalOut = val;
 }
 
 inline float pqihandler::getMaxRate(bool in) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    if (in)
-        return rateMax_in;
-    else
-        return rateMax_out;
+    MixStackMutex stack(coreMtx);
+    if (in) return maxTotalIn;
+    else return maxTotalOut;
 }
 
 #endif // MRK_PQI_HANDLER_HEADER

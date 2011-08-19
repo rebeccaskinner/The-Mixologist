@@ -49,7 +49,7 @@ class cert;
 
 class pqissludp: public pqissl {
 public:
-    pqissludp(PQInterface *parent, AuthMgr *am, p3ConnectMgr *cm);
+    pqissludp(PQInterface *parent);
 
     virtual ~pqissludp();
 

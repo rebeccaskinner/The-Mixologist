@@ -56,7 +56,7 @@ void ftItemList::run() {
         } else {
             /* cleanup */
             if (cleanup < now) {
-                //FUTODO check old files for changes
+                //TODO check old files for changes
                 cleanup = now + 600;
             }
             /* sleep */
@@ -104,7 +104,7 @@ void ftItemList::hashAnItem() {
 
     /* hash it! */
     for(int i = 0; i < details.paths.count(); i++) {
-        control->getNotify().notifyHashingInfo(details.paths[i]);
+        notifyBase->notifyHashingInfo(details.paths[i]);
         std::string hash;
         uint64_t size;
         if (DirUtil::getFileHash(details.paths[i], hash, size)) {
@@ -112,7 +112,7 @@ void ftItemList::hashAnItem() {
             details.filesizes[i] = size;
         }
     }
-    control->getNotify().notifyHashingInfo("");
+    notifyBase->notifyHashingInfo("");
     MixStackMutex stack(extMutex);
     //Check whether mToHash has changed before committing our changes
     if (mToHash.begin().value().id != details.id ||
@@ -155,7 +155,7 @@ void    ftItemList::addTempItem(QString title, QStringList paths, unsigned int l
     details.paths = paths;
     details.sendToOnHash << librarymixer_id;
     details.id = requested_item_id;
-    control->getNotify().notifyUserOptional(librarymixer_id, NOTIFY_USER_SUGGEST_WAITING, title);
+    notifyBase->notifyUserOptional(librarymixer_id, NOTIFY_USER_SUGGEST_WAITING, title);
 
     {
         MixStackMutex stack(extMutex);
@@ -241,9 +241,9 @@ LibraryMixerItem *ftItemList::recheckItem(int id, bool *changed) {
         if (file.size() != mItems[id].filesizes[i]) {
             std::string hash;
             uint64_t filesize;
-            control->getNotify().notifyHashingInfo(mItems[id].paths[i]);
+            notifyBase->notifyHashingInfo(mItems[id].paths[i]);
             if (DirUtil::getFileHash(mItems[id].paths[i], hash, filesize)) {
-                control->getNotify().notifyHashingInfo("");
+                notifyBase->notifyHashingInfo("");
                 if(mItems[id].hashes[i] != hash.c_str() ||
                         mItems[id].filesizes[i] != filesize) {
                     *changed = true;
@@ -251,7 +251,7 @@ LibraryMixerItem *ftItemList::recheckItem(int id, bool *changed) {
                     mItems[id].filesizes[i] = filesize;
                 } else continue;
             } else { //If unable to hash a file, we mark it as a missing file
-                control->getNotify().notifyHashingInfo("");
+                notifyBase->notifyHashingInfo("");
                 *changed = true;
                 mItems[id].hashes[i] = "";
                 mItems[id].filesizes[i] = 0;
@@ -268,7 +268,7 @@ void ftItemList::MixologySuggest(unsigned int librarymixer_id, int item_id) {
     if (mToHash.contains(item_id)) {
         if (!mToHash[item_id].sendToOnHash.contains(librarymixer_id)) {
             mToHash[item_id].sendToOnHash << librarymixer_id;
-            control->getNotify().notifyUserOptional(librarymixer_id, NOTIFY_USER_SUGGEST_WAITING, mToHash[item_id].title);
+            notifyBase->notifyUserOptional(librarymixer_id, NOTIFY_USER_SUGGEST_WAITING, mToHash[item_id].title);
         }
     } else {
         if (mItems.contains(item_id)) {

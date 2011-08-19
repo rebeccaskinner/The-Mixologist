@@ -23,6 +23,16 @@
 #ifndef FT_TRANSFER_MODULE_HEADER
 #define FT_TRANSFER_MODULE_HEADER
 
+#include <map>
+#include <list>
+#include <string>
+
+#include "ft/ftfilecreator.h"
+#include "ft/ftdatademultiplex.h"
+#include "ft/ftcontroller.h"
+
+#include "util/threads.h"
+
 /*
  * FUNCTION DESCRIPTION
  *
@@ -35,25 +45,83 @@
  *
  */
 
-#include <map>
-#include <list>
-#include <string>
-
-#include "ft/ftfilecreator.h"
-#include "ft/ftdatamultiplex.h"
-#include "ft/ftcontroller.h"
-
-#include "util/threads.h"
-
 const uint32_t  PQIPEER_INIT                 = 0x0000;
 const uint32_t  PQIPEER_NOT_ONLINE           = 0x0001;
 const uint32_t  PQIPEER_DOWNLOADING          = 0x0002;
 const uint32_t  PQIPEER_IDLE                 = 0x0004;
 const uint32_t  PQIPEER_SUSPEND              = 0x0010;
 
+class peerInfo;
+
+class ftTransferModule {
+public:
+    enum fileTransferStatus {
+        FILE_DOWNLOADING,
+        FILE_COMPLETING,
+        FILE_COMPLETE,
+        FILE_FAIL_CANCEL
+    };
+
+    ftTransferModule(ftFileCreator *fc, ftDataDemultiplex *dm, ftController *c);
+    ~ftTransferModule(){};
+
+    //Called from ftController
+    int tick();
+    //Called from ftController, batch sets a list of friends by librarymixer_ids as file sources
+    bool setFileSources(QList<int> sourceIds);
+    //Called from ftController, adds the friend as a file source
+    bool addFileSource(int librarymixer_id);
+    //Called from ftController, sets the online state of a friend
+    bool setPeerState(int librarymixer_id,uint32_t state);  //state = ONLINE/OFFLINE
+    //Called from ftController, returns a list of librarymixer ids of file sources that are known
+    bool getFileSources(QList<int> &sourceIds);
+    //Called from ftController, gets the online state and target transfer rate for a friend
+    bool getPeerState(int librarmixer_id,uint32_t &state,uint32_t &tfRate);
+
+    /*
+    TEMPORARILY REMOVED
+    bool pauseTransfer();
+    bool resumeTransfer();
+    */
+    //Called from ftController, instructs the transfer module to stop doing anything in preparation for its imminent deletion
+    void cancelTransfer();
+
+    //Called from ftDataDemultiplex when data is received, frees the data whether successful or not
+    bool recvFileData(std::string cert_id, uint64_t offset, uint32_t chunk_size, void *data);
+
+private:
+    //Updates actualRate with the total from all sources
+    void updateActualRate();
+    //Called to signal when a file transfer is complete
+    void completeFileTransfer();
+    //Called by tick, handles calculating target rates and then requesting an appropriate amount of data
+    bool locked_tickPeerTransfer(peerInfo &info);
+    //Called by recvFileData, updates info about our transfer
+    //If we are rttActive and calculating a new rate, and we have finished receiving the full chunk, calculates the new rate change
+    void locked_recvDataUpdateStats(peerInfo &info, uint64_t offset, uint32_t chunk_size);
+
+    /* These have independent Mutexes / are const locally (no Mutex protection)*/
+    ftFileCreator *mFileCreator;
+    ftController *mFtController; //So we can let it know when a file completes
+
+    MixMutex tfMtx;
+
+    //List of all sources, with first element the cert_id of the source
+    QMap<std::string,peerInfo> mFileSources;
+
+    //Controls the current status of the download
+    fileTransferStatus mTransferStatus;
+
+    //Total transfer speed on this file
+    double actualRate;
+};
+
 class peerInfo {
 public:
-    peerInfo(int _librarymixer_id);
+    peerInfo(int _librarymixer_id, std::string cert_id)
+        :librarymixer_id(_librarymixer_id), cert_id(cert_id), state(PQIPEER_NOT_ONLINE), actualRate(0),
+        offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransfered(0), nResets(0),
+        rtt(0), rttActive(false), rttStart(0), rttOffset(0),mRateChange(1), fastStart(true) {return;}
 
     int librarymixer_id;
     std::string cert_id;
@@ -67,113 +135,24 @@ public:
     //already received data size for current request
     uint32_t receivedSize;
 
-    time_t lastTS; /* last Request */
-    time_t recvTS; /* last Recv */
-    uint32_t lastTransfers; /* data recvd in last second */
+    time_t lastRequestTime;
+    time_t lastReceiveTime;
+    uint32_t pastTickTransfered;
     uint32_t nResets; /* count to disable non-existant files */
 
-    /* rrt rate control */
-    uint32_t rtt;       /* last rtt */
-    bool     rttActive; /* have we initialised an rtt measurement */
-    time_t   rttStart;  /* ts of request */
-    uint64_t rttOffset; /* end of request */
-    float    mRateIncrease; /* percentage to change current rate. 0 = steady, .5 = 50% more, 1 = double, -1 = stop */
+    /* rtt rate control
+     * Rate control is based on the amount of time it takes for a complete chunk to be received.
+     * The target time is FT_TM_STD_RTT, at that speed, rates will neither increase nor decrease.
+     * There will be many requests and receipts for a single rtt period.
+     */
+    uint32_t rtt;       /* amount of time it took for the last rtt */
+    bool     rttActive; /* indicates we are currently measuring an rtt cycle */
+    time_t   rttStart;  /* time we began measuring request */
+    uint64_t rttOffset; /* offset in file when rtt cycle is complete */
+    float    mRateChange; /* percentage to change current rate. 0 = steady, .5 = 50% more, 1 = 100% more, -1 = 100% less */
     /* When true, the next request will be for FT_TM_FAST_START_RATE instead of what would have been requested.
        Used for starting out transfers as a minimum to start from, so it's true whenever we're starting out. */
     bool    fastStart;
-};
-
-class ftFileStatus {
-public:
-    enum Status {
-        PQIFILE_INIT,
-        PQIFILE_NOT_ONLINE,
-        PQIFILE_DOWNLOADING,
-        PQIFILE_PAUSE,
-        PQIFILE_COMPLETE,
-        PQIFILE_FAIL,
-        PQIFILE_FAIL_CANCEL,
-        PQIFILE_FAIL_NOT_AVAIL,
-        PQIFILE_FAIL_NOT_OPEN,
-        PQIFILE_FAIL_NOT_SEEK,
-        PQIFILE_FAIL_NOT_WRITE,
-        PQIFILE_FAIL_NOT_READ,
-        PQIFILE_FAIL_BAD_PATH
-    };
-
-    ftFileStatus():hash(""),stat(PQIFILE_INIT) {}
-    ftFileStatus(std::string hash_in):hash(hash_in),stat(PQIFILE_INIT) {}
-
-    std::string hash;
-    Status stat;
-};
-
-class ftTransferModule {
-public:
-    ftTransferModule(ftFileCreator *fc, ftDataMultiplex *dm, ftController *c);
-    ~ftTransferModule();
-
-    //interface to download controller
-    //Batch add a list of friends by librarymixer_ids as file sources
-    bool setFileSources(QList<int> sourceIds);
-    //Adds the friend as a file source
-    bool addFileSource(int librarymixer_id);
-    //Sets the online state and target transfer rate for a friend
-    bool setPeerState(int librarymixer_id,uint32_t state);  //state = ONLINE/OFFLINE
-    //Returns a list of librarymixer ids of file sources that are known about
-    bool getFileSources(QList<int> &sourceIds);
-    //Gets the online state and target transfer rate for a friend
-    bool getPeerState(int librarmixer_id,uint32_t &state,uint32_t &tfRate);
-    bool pauseTransfer();
-    bool resumeTransfer();
-    bool cancelTransfer();
-
-    //interface to multiplex module
-    bool recvFileData(std::string cert_id, uint64_t offset,
-                      uint32_t chunk_size, void *data);
-    void requestData(std::string cert_id, uint64_t offset, uint32_t chunk_size);
-
-    //interface to file creator
-    bool getChunk(uint64_t &offset, uint32_t &chunk_size);
-    bool storeData(uint64_t offset, uint32_t chunk_size, void *data);
-
-    int tick();
-
-    std::string hash() {
-        return mFileCreator->getHash();
-    }
-    uint64_t    size() {
-        return mSize;
-    }
-
-
-private:
-    bool queryInactive();
-    //Updates actualRate with the total from all sources
-    void updateActualRate();
-    //Called when a file transfer is complete
-    bool completeFileTransfer();
-    bool locked_tickPeerTransfer(peerInfo &info);
-    bool locked_recvPeerData(peerInfo &info, uint64_t offset,
-                             uint32_t chunk_size, void *data);
-
-
-    /* These have independent Mutexes / are const locally (no Mutex protection)*/
-    ftFileCreator *mFileCreator;
-    ftDataMultiplex *mMultiplexor;
-    ftController *mFtController;
-
-    uint64_t    mSize;
-
-    MixMutex tfMtx; /* below is mutex protected */
-
-    //List of all sources, with first element the cert_id of the source
-    std::map<std::string,peerInfo> mFileSources;
-
-    uint16_t     mFlag;  //2:file canceled, 1:transfer complete, 0: not complete
-    double actualRate;
-
-    ftFileStatus mFileStatus; //used for pause/resume file transfer
 };
 
 #endif  //FT_TRANSFER_MODULE_HEADER

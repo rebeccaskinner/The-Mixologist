@@ -89,8 +89,8 @@ int pqipersongrp::tickServiceSend() {
 
 
 // init
-pqipersongrp::pqipersongrp(SecurityPolicy *glob, unsigned long flags)
-    :pqihandler(glob), pqil(NULL), initFlags(flags) {
+pqipersongrp::pqipersongrp(unsigned long flags)
+    :pqil(NULL), initFlags(flags) {
 }
 
 
@@ -100,42 +100,25 @@ int pqipersongrp::tick() {
      */
 
     {
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-        if (pqil) {
-            pqil -> tick();
-        }
-    } /* UNLOCKED */
+        MixStackMutex stack(coreMtx);
+        if (pqil) pqil -> tick();
+    }
 
     int i = 0;
 
-    if (tickServiceSend()) {
-        i = 1;
-#ifdef PGRP_DEBUG
-        std::cerr << "pqipersongrp::tick() moreToTick from tickServiceSend()" << std::endl;
-#endif
-    }
+    if (tickServiceSend()) i = 1;
 
-    if (pqihandler::tick()) { /* does actual Send/Recv */
-        i = 1;
-#ifdef PGRP_DEBUG
-        std::cerr << "pqipersongrp::tick() moreToTick from pqihandler::tick()" << std::endl;
-#endif
-    }
+    /* does actual Send/Recv */
+    if (pqihandler::tick()) i = 1;
 
-
-    if (tickServiceRecv()) {
-        i = 1;
-#ifdef PGRP_DEBUG
-        std::cerr << "pqipersongrp::tick() moreToTick from tickServiceRecv()" << std::endl;
-#endif
-    }
+    if (tickServiceRecv()) i = 1;
 
     return i;
 }
 
 int pqipersongrp::status() {
     {
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+        MixStackMutex stack(coreMtx);
         if (pqil) {
             pqil -> status();
         }
@@ -154,9 +137,9 @@ int pqipersongrp::init_listener() {
         /* extract details from
          */
         peerConnectState state;
-        mConnMgr->getPeerConnectState(getAuthMgr()->OwnLibraryMixerId(), state);
+        connMgr->getPeerConnectState(authMgr->OwnLibraryMixerId(), state);
 
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+        MixStackMutex stack(coreMtx);
         pqil = createListener(state.localaddr);
     }
     return 1;
@@ -168,16 +151,16 @@ int     pqipersongrp::restart_listener() {
     // restart.
     bool haveListener = false;
     {
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+        MixStackMutex stack(coreMtx);
         haveListener = (pqil != NULL);
     } /* UNLOCKED */
 
 
     if (haveListener) {
         peerConnectState state;
-        mConnMgr->getPeerConnectState(getAuthMgr()->OwnLibraryMixerId(), state);
+        connMgr->getPeerConnectState(authMgr->OwnLibraryMixerId(), state);
 
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+        MixStackMutex stack(coreMtx);
 
         pqil -> resetlisten();
         pqil -> setListenAddr(state.localaddr);
@@ -212,49 +195,40 @@ int     pqipersongrp::addPeer(std::string id, int librarymixer_id) {
         pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone, out.str().c_str());
     }
 
-    SearchModule *sm = NULL;
+    pqiperson *pqip;
     {
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-        std::map<std::string, SearchModule *>::iterator it;
-        it = mods.find(id);
-        if (it != mods.end()) {
-            pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone,
+        MixStackMutex stack(coreMtx);
+        std::map<std::string, PQInterface *>::iterator it;
+        it = pqis.find(id);
+        if (it != pqis.end()) {
+            pqioutput(LOG_DEBUG_ALERT, pqipersongrpzone,
                       "pqipersongrp::addPeer() Peer already in Use!");
             return -1;
         }
 
-        pqiperson *pqip = createPerson(id, librarymixer_id, pqil);
-
-        // attach to pqihandler
-        sm = new SearchModule();
-        sm -> cert_id = id;
-        sm -> pqi = pqip;
-        sm -> sp = secpolicy_create();
+        pqip = createPerson(id, librarymixer_id, pqil);
 
         // reset it to start it working.
         pqip -> reset();
         pqip -> listen();
-    } /* UNLOCKED */
-
-    return AddSearchModule(sm);
+    }
+    return AddPQI(pqip);
 }
 
 #ifdef false
 int     pqipersongrp::removePeer(std::string id) {
-    std::map<std::string, SearchModule *>::iterator it;
+    std::map<std::string, PQInterface *>::iterator it;
 
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    MixStackMutex stack(coreMtx);
 
-    it = mods.find(id);
-    if (it != mods.end()) {
-        SearchModule *mod = it->second;
+    it = pqis.find(id);
+    if (it != pqis.end()) {
         // Don't duplicate remove!!!
-        //RemoveSearchModule(mod);
-        secpolicy_delete(mod -> sp);
-        pqiperson *p = (pqiperson *) mod -> pqi;
+        //RemovePQInterface(p);
+        pqiperson *p = (pqiperson *) it->second;
         p -> reset();
         delete p;
-        mods.erase(it);
+        pqis.erase(it);
     }
     return 1;
 }
@@ -267,22 +241,21 @@ int     pqipersongrp::connectPeer(std::string cert_id, int librarymixer_id) {
 #endif
 
     {
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-        std::map<std::string, SearchModule *>::iterator it;
-        it = mods.find(cert_id);
-        if (it == mods.end()) return 0;
+        MixStackMutex stack(coreMtx);
+        std::map<std::string, PQInterface *>::iterator it;
+        it = pqis.find(cert_id);
+        if (it == pqis.end()) return 0;
 
         /* get the connect attempt details from the p3connmgr... */
-        SearchModule *mod = it->second;
-        pqiperson *p = (pqiperson *) mod -> pqi;
+        pqiperson *p = (pqiperson *) it->second;
 
         /* get address from p3connmgr */
-        if (!mConnMgr) return 0;
+        if (!connMgr) return 0;
 
         struct sockaddr_in addr;
         uint32_t delay, period, type;
 
-        if (!mConnMgr->connectAttempt(librarymixer_id, addr, delay, period, type)) {
+        if (!connMgr->connectAttempt(librarymixer_id, addr, delay, period, type)) {
 #ifdef PGRP_DEBUG
             std::cerr << " pqipersongrp::connectPeer() No Net Address";
             std::cerr << std::endl;
@@ -325,14 +298,13 @@ int     pqipersongrp::connectPeer(std::string cert_id, int librarymixer_id) {
 }
 
 void    pqipersongrp::timeoutPeer(std::string cert_id) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    std::map<std::string, SearchModule *>::iterator it;
-    it = mods.find(cert_id);
-    if (it == mods.end()) return;
+    MixStackMutex stack(coreMtx);
+    std::map<std::string, PQInterface *>::iterator it;
+    it = pqis.find(cert_id);
+    if (it == pqis.end()) return;
 
     /* get the connect attempt details from the p3connmgr... */
-    SearchModule *mod = it->second;
-    pqiperson *p = (pqiperson *) mod -> pqi;
+    pqiperson *p = (pqiperson *) it->second;
 
     p->reset();
 }
@@ -345,7 +317,7 @@ bool    pqipersongrp::notifyConnect(std::string id, uint32_t ptype, bool success
         type = NET_CONN_UDP_ALL;
     }
 
-    if (mConnMgr) mConnMgr->connectResult(getAuthMgr()->findLibraryMixerByCertId(id), success, type);
+    if (connMgr) connMgr->connectResult(authMgr->findLibraryMixerByCertId(id), success, type);
 
-    return (NULL != mConnMgr);
+    return (NULL != connMgr);
 }

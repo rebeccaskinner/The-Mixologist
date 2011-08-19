@@ -21,277 +21,176 @@
  ****************************************************************/
 
 #include "ftfilecreator.h"
-#include <errno.h>
-#include <stdio.h>
 #include <QFileInfo>
+#include "util/debug.h"
 
-/*******
- * #define FILE_DEBUG 1
- ******/
-
-#define CHUNK_MAX_AGE 20
-
-
-/***********************************************************
-*
-*   ftFileCreator methods
-*
-***********************************************************/
+#define CHUNK_MAX_AGE 20 //20 seconds
 
 ftFileCreator::ftFileCreator(QString path, uint64_t size, std::string hash)
-    : ftFileProvider(path,size,hash) {
+    : ftFileProvider(path, size, hash) {
 
-#ifdef FILE_DEBUG
-    std::cerr << "ftFileCreator()";
-    std::cerr << std::endl;
-    std::cerr << "\tpath: " << path.toStdString();
-    std::cerr << std::endl;
-    std::cerr << "\tsize: " << size;
-    std::cerr << std::endl;
-    std::cerr << "\thash: " << hash;
-    std::cerr << std::endl;
-#endif
-
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
-
-    mStart = QFileInfo(path).size();
-    mEnd = mStart;
-}
-
-bool    ftFileCreator::getFileData(uint64_t offset,
-                                   uint32_t &chunk_size, void *data) {
     {
-        MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
-        if (offset + chunk_size > mStart) {
-            /* don't have the data */
-            return false;
-        }
+        QString toLog = "ftFileCreator()";
+        toLog += " path: " + path;
+        toLog += " size: " + QString::number(size);
+        toLog += " hash: " + QString(hash.c_str());
+        log(LOG_DEBUG_BASIC, FTFILECREATORZONE, toLog);
     }
 
-    return ftFileProvider::getFileData(offset, chunk_size, data);
+    MixStackMutex stack(ftcMutex);
+
+    firstUnreadByte = QFileInfo(path).size();
+    lastRequestedByte = firstUnreadByte;
 }
 
 bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data) {
-#ifdef FILE_DEBUG
-    std::cerr << "ftFileCreator::addFileData(";
-    std::cerr << offset;
-    std::cerr << ", " << chunk_size;
-    std::cerr << ", " << data << ")";
-    std::cerr << " this: " << this;
-    std::cerr << std::endl;
-#endif
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
-    /* Check File is open */
-    if (file == NULL)
-        if (!initializeFileAttrs())
-            return false;
-
-
-    /*
-     * check its at the correct location
-     */
-    if (offset + chunk_size > mSize) {
-        chunk_size = mSize - offset;
-#ifdef FILE_DEBUG
-        std::cerr <<"Chunk Size greater than total file size, adjusting chunk " << "size " << chunk_size << std::endl;
-#endif
+    {
+        QString toLog = "ftFileCreator::addFileData()";
+        toLog += " offset: " + QString::number(offset);
+        toLog += " chunksize: " + QString::number(chunk_size);
+        log(LOG_DEBUG_BASIC, FTFILECREATORZONE, toLog);
     }
 
-    /*
-     * go to the offset of the file
-     */
+    MixStackMutex stack(ftcMutex);
+
+    if (file == NULL){
+        log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::addFileData() creating " + path);
+        file = new QFile(path);
+        if (!file->open(QIODevice::ReadWrite)) return false;
+    }
+
+    if (offset + chunk_size > fullFileSize) {
+        chunk_size = fullFileSize - offset;
+        log(LOG_WARNING, FTFILECREATORZONE, "Received a file chunk greater than total file size, adjusting chunk size");
+    }
+
+    if (!locked_updateChunkMap(offset, chunk_size)) return false;
+
     file->seek(offset);
-    /*
-     * add the data
-      */
-    //void *data2 = malloc(chunk_size);
-    //std::cerr << "data2: " << data2 << std::endl;
-    //if (1 != fwrite(data2, chunk_size, 1, this->fd))
 
     if (file->write((char *)data, chunk_size) == -1) {
-#ifdef FILE_DEBUG
-        std::cerr << "ftFileCreator::addFileData() Bad fwrite" << std::endl;
-        std::cerr << "ERRNO: " << errno << std::endl;
-#endif
-        return 0;
+        log(LOG_ERROR, FTFILECREATORZONE, "Error while attempting to write to file " + path);
+        return false;
     }
 
-    /*
-     * Notify file chunker about chunks received
-     */
-    locked_notifyReceived(offset,chunk_size);
-
-    /*
-     * FIXME HANDLE COMPLETION HERE - Any better way?
-     */
-
     return 1;
 }
 
-int ftFileCreator::initializeFileAttrs() {
-#ifdef FILE_DEBUG
-    std::cerr << "ftFileCreator::initializeFileAttrs() Filename: ";
-    std::cerr << path;
-    std::cerr << " this: " << this;
-    std::cerr << std::endl;
-#endif
-    /*
-         * check if the file exists
-     * cant use FileProviders verion because that opens readonly.
-         */
 
-    if (file != NULL) return 1;
-    /*
-         * attempt to open file
-         */
+bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) {
 
-    file = new QFile(path);
-    if (!file->open(QIODevice::ReadWrite)) return 0;
-
-    return 1;
-}
-
-int ftFileCreator::locked_notifyReceived(uint64_t offset, uint32_t chunk_size) {
-    /* ALREADY LOCKED */
-#ifdef FILE_DEBUG
-    std::cerr << "ftFileCreator::locked_notifyReceived( " << offset;
-    std::cerr << ", " << chunk_size << " )";
-    std::cerr << " this: " << this;
-    std::cerr << std::endl;
-#endif
-
-    /* find the chunk */
-    std::map<uint64_t, ftChunk>::iterator it;
+    /* Find the chunk */
+    QMap<uint64_t, ftChunk>::iterator it;
     it = mChunks.find(offset);
-    bool isFirst = false;
     if (it == mChunks.end()) {
-#ifdef FILE_DEBUG
-        std::cerr << "ftFileCreator::locked_notifyReceived() ";
-        std::cerr << " Failed to match to existing chunk - ignoring";
-        std::cerr << std::endl;
-
-        locked_printChunkMap();
-#endif
-        return 0; /* ignoring */
-    } else if (it == mChunks.begin()) {
-        isFirst = true;
+        log(LOG_WARNING, FTFILECREATORZONE, "Received an unrequested file chunk for " + path);
+        return false;
     }
 
-    ftChunk chunk = it->second;
+    /* If the chunk received is not the first, that means we have an unfilled chunk earlier in the file than this.
+       We should really be storing this so that when we receive that earlier chunk we can save this to the file as well.
+       However, for now, we will simply discard out of order chunks, which should be fairly rare before multi-source is implemented. */
+    if (it != mChunks.begin()) {
+        log(LOG_WARNING, FTFILECREATORZONE, "Received an out of order file chunk for " + path);
+        return false;
+    }
+
+    /* Remove it from mChunks */
+    ftChunk allocated_chunk = it.value();
     mChunks.erase(it);
 
-    if (chunk.chunk != chunk_size) {
-        /* partial : shrink chunk */
-        chunk.chunk -= chunk_size;
-        chunk.offset += chunk_size;
-        mChunks[chunk.offset] = chunk;
+    /* Partial chunk : We frequently request a larger chunk than can be returned in a single reponse.
+       The sender will respond in its ftServer::sendData by breaking it up into many responses,
+       so we should accept what we received, and then shrink and move up the chunk. */
+    if (allocated_chunk.chunk_size > chunk_size) {
+        log(LOG_DEBUG_BASIC, FTFILECREATORZONE,
+            QString("ftFileCreator::locked_updateChunkMap() received partial chunk") +
+            " expected size: " + QString::number(allocated_chunk.chunk_size) +
+            " received size: " + QString::number(chunk_size));
+        allocated_chunk.chunk_size -= chunk_size;
+        allocated_chunk.offset += chunk_size;
+        mChunks[allocated_chunk.offset] = allocated_chunk;
     }
 
-    /* update how much has been completed */
-    if (isFirst) {
-        mStart = offset + chunk_size;
-    }
+    /* Update how much has been completed */
+    firstUnreadByte = offset + chunk_size;
 
-    if (mChunks.size() == 0) {
-        mStart = mEnd;
-    }
+    if (mChunks.size() == 0) firstUnreadByte = lastRequestedByte;
 
-    /* otherwise there is another earlier block to go
-     */
-    return 1;
+    return true;
 }
 
-/* Returns true if more to get
- * But can return size = 0, if we are still waiting for the data.
- */
-
-bool ftFileCreator::getMissingChunk(uint64_t &offset, uint32_t &chunk) {
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
-#ifdef FILE_DEBUG
-    std::cerr << "ffc::getMissingChunk(...,"<< chunk << ")";
-    std::cerr << " this: " << this;
-    std::cerr << std::endl;
-    locked_printChunkMap();
-#endif
-
-    /* check start point */
+bool ftFileCreator::getMissingChunk(uint64_t &offset, uint32_t &chunk_size) {
+    MixStackMutex stack(ftcMutex);
 
     if (finished()) return false;
 
-    /* check for freed chunks */
-    time_t ts = time(NULL);
-    time_t old = ts-CHUNK_MAX_AGE;
+    time_t currentTime = time(NULL);
 
-    std::map<uint64_t, ftChunk>::iterator it;
+    /* Check for timed out chunks */
+    QMap<uint64_t, ftChunk>::iterator it;
     for (it = mChunks.begin(); it != mChunks.end(); it++) {
-        /* very simple algorithm */
-        if (it->second.ts < old) {
-#ifdef FILE_DEBUG
-            std::cerr << "ffc::getMissingChunk() ReAlloc";
-            std::cerr << std::endl;
-#endif
-
-            /* retry this one */
-            it->second.ts = ts;
-            chunk = it->second.chunk;
-            offset = it->second.offset;
+        if (it.value().requestTime < (currentTime - CHUNK_MAX_AGE)) {
+            log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::getMissingChunk() chunk request timed out, re-requesting");
+            it.value().requestTime = currentTime;
+            chunk_size = it.value().chunk_size;
+            offset = it.value().offset;
 
             return true;
         }
     }
 
-#ifdef FILE_DEBUG
-    std::cerr << "ffc::getMissingChunk() new Alloc";
-    std::cerr << "  mStart: " << mStart << " mEnd: " << mEnd;
-    std::cerr << "mSize: " << mSize;
-    std::cerr << std::endl;
-#endif
+    /* Never allocate a chunk larger than remaining amont to be transferred */
+    if (fullFileSize - lastRequestedByte < chunk_size) chunk_size = fullFileSize - lastRequestedByte;
 
-    /* else allocate a new chunk */
-    if (mSize - mEnd < chunk)
-        chunk = mSize - mEnd;
+    offset = lastRequestedByte;
+    lastRequestedByte += chunk_size;
 
-    offset = mEnd;
-    mEnd += chunk;
-
-    if (chunk > 0) {
-#ifdef FILE_DEBUG
-        std::cerr << "ffc::getMissingChunk() Allocated " << chunk;
-        std::cerr << " offset: " << offset;
-        std::cerr << std::endl;
-        std::cerr << "  mStart: " << mStart << " mEnd: " << mEnd;
-        std::cerr << "mSize: " << mSize;
-        std::cerr << std::endl;
-#endif
-
-        mChunks[offset] = ftChunk(offset, chunk, ts);
+    if (chunk_size > 0) {
+        log(LOG_DEBUG_BASIC, FTFILECREATORZONE,
+            QString("ftFileCreator::getMissingChunk() adding new chunk") +
+            " firstUnreadByte: " + QString::number(firstUnreadByte) +
+            " lastRequestedByte: " + QString::number(lastRequestedByte) +
+            " fullFileSize: " + QString::number(fullFileSize));
+        mChunks[offset] = ftChunk(offset, chunk_size, currentTime);
     }
 
-    return true; /* cos more data to get */
+    return true;
+}
+
+
+#ifdef false
+bool    ftFileCreator::getFileData(uint64_t offset, uint32_t &chunk_size, void *data) {
+    {
+        MixStackMutex stack(ftcMutex);
+        /* If we don't have the data */
+        if (offset + chunk_size > firstUnreadByte) return false;
+    }
+
+    return ftFileProvider::getFileData(offset, chunk_size, data);
 }
 
 
 bool ftFileCreator::locked_printChunkMap() {
-#ifdef FILE_DEBUG
     std::cerr << "ftFileCreator::locked_printChunkMap()";
     std::cerr << " this: " << this;
     std::cerr << std::endl;
 
     /* check start point */
-    std::cerr << "Size: " << mSize << " Start: " << mStart << " End: " << mEnd;
+    std::cerr << "Size: " << fullFileSize << " Start: " << firstUnreadByte << " End: " << lastRequestedByte;
     std::cerr << std::endl;
     std::cerr << "\tOutstanding Chunks (in the middle)";
     std::cerr << std::endl;
-#endif
-    std::map<uint64_t, ftChunk>::iterator it;
-#ifdef FILE_DEBUG
+
+    QMap<uint64_t, ftChunk>::iterator it;
+
     time_t ts = time(NULL);
     for (it = mChunks.begin(); it != mChunks.end(); it++) {
         std::cerr << "\tChunk [" << it->second.offset << "] size: ";
-        std::cerr << it->second.chunk;
+        std::cerr << it->second.chunk_size;
         std::cerr << "  Age: " << ts - it->second.ts;
         std::cerr << std::endl;
     }
-#endif
     return true;
 }
+#endif

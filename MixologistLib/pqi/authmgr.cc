@@ -34,13 +34,6 @@
 //100 is an arbitrary number, but should be large enough for any LibraryMixer ids for long to come
 #define ID_BUF_SIZE 100
 
-// the single instance of this.
-static AuthMgr instance_authroot;
-
-AuthMgr *getAuthMgr() {
-    return &instance_authroot;
-}
-
 /* We maintain an internal store of certificates in AuthMgr, that are downloaded from LibraryMixer.
    These represent all certificates that we trust the validity for.
    If an incoming certificate is in that store, then we trust its validity.
@@ -49,10 +42,10 @@ AuthMgr *getAuthMgr() {
 int OpenSSLVerifyCB(X509_STORE_CTX *store, void *unused) {
     (void) unused;
     unsigned char peercert_id[20];
-    if (getAuthMgr()->getCertId(store->cert, peercert_id)) {
+    if (authMgr->getCertId(store->cert, peercert_id)) {
         std::string cert_id = std::string((char *)peercert_id, sizeof(peercert_id));
         if (!cert_id.empty()) {
-            if (getAuthMgr()->findLibraryMixerByCertId(cert_id) > 0) return 1;
+            if (authMgr->findLibraryMixerByCertId(cert_id) > 0) return 1;
         };
     }
     return 0;

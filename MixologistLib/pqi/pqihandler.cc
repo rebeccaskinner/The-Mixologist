@@ -24,34 +24,15 @@
 
 #include <sstream>
 #include "util/debug.h"
-const int pqihandlerzone = 34283;
 
-/****
-#define DEBUG_TICK 1
-#define NETITEM_DEBUG 1
-****/
-
-pqihandler::pqihandler(SecurityPolicy *Global) {
+pqihandler::pqihandler() {
     MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
 
-    // The global security....
-    // if something is disabled here...
-    // cannot be enabled by module.
-    globsec = Global;
-
-    {
-        std::ostringstream out;
-        out  << "New pqihandler()" << std::endl;
-        out  << "Security Policy: " << secpolicy_print(globsec);
-        out  << std::endl;
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone, out.str().c_str());
-    }
-
     // setup minimal total+individual rates.
-    rateIndiv_out = 0.01;
-    rateIndiv_in = 0.01;
-    rateMax_out = 0.01;
-    rateMax_in = 0.01;
+    maxIndivOut = 0.01;
+    maxIndivIn = 0.01;
+    maxTotalOut = 0.01;
+    maxTotalIn = 0.01;
     return;
 }
 
@@ -62,106 +43,84 @@ int pqihandler::tick() {
         MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
 
         // tick all interfaces...
-        std::map<std::string, SearchModule *>::iterator it;
-        for (it = mods.begin(); it != mods.end(); it++) {
-            if (0 < ((it -> second) -> pqi) -> tick()) {
-#ifdef DEBUG_TICK
-                std::cerr << "pqihandler::tick() moreToTick from mod()" << std::endl;
-#endif
+        std::map<std::string, PQInterface *>::iterator it;
+        for (it = pqis.begin(); it != pqis.end(); it++) {
+            if (0 < (it -> second) -> tick()) {
                 moreToTick = 1;
             }
         }
         // get the items, and queue them correctly
         if (0 < locked_GetItems()) {
-#ifdef DEBUG_TICK
-            std::cerr << "pqihandler::tick() moreToTick from GetItems()" << std::endl;
-#endif
             moreToTick = 1;
         }
     } /****** UNLOCK ******/
 
-    UpdateRates();
+    updateRateCaps();
     return moreToTick;
 }
 
 
 int pqihandler::status() {
-    std::map<std::string, SearchModule *>::iterator it;
+    std::map<std::string, PQInterface *>::iterator it;
     MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
 
     {
         // for output
         std::ostringstream out;
-        out  << "pqihandler::status() Active Modules:" << std::endl;
+        out  << "pqihandler::status() Active PQI:" << std::endl;
 
         // display all interfaces...
-        for (it = mods.begin(); it != mods.end(); it++) {
-            out << "\tModule [" << it -> first << "] Pointer <";
-            out << (void *) ((it -> second) -> pqi) << ">" << std::endl;
+        for (it = pqis.begin(); it != pqis.end(); it++) {
+            out << "\tPQI [" << it -> first << "] Pointer <";
+            out << (void *) (it -> second) << ">" << std::endl;
         }
 
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQIHANDLERZONE, out.str().c_str());
 
     } // end of output.
 
 
     // status all interfaces...
-    for (it = mods.begin(); it != mods.end(); it++) {
-        ((it -> second) -> pqi) -> status();
+    for (it = pqis.begin(); it != pqis.end(); it++) {
+        it -> second -> status();
     }
     return 1;
 }
 
 
 
-bool    pqihandler::AddSearchModule(SearchModule *mod) {
+bool    pqihandler::AddPQI(PQInterface *pqi) {
     MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    // if peerid used -> error.
-    std::map<std::string, SearchModule *>::iterator it;
-    if (mod->cert_id != mod->pqi->PeerId()) {
-        // ERROR!
-        std::ostringstream out;
-        out << "ERROR cert_id != PeerId!" << std::endl;
-        pqioutput(PQL_ALERT, pqihandlerzone, out.str().c_str());
-        return false;
-    }
 
-    if (mod->cert_id == "") {
+    std::map<std::string, PQInterface *>::iterator it;
+    if (pqi->PeerId() == "") {
         // ERROR!
         std::ostringstream out;
         out << "ERROR cert_id == NULL" << std::endl;
-        pqioutput(PQL_ALERT, pqihandlerzone, out.str().c_str());
+        log(LOG_ALERT, PQIHANDLERZONE, out.str().c_str());
         return false;
     }
 
-    if (mods.find(mod->cert_id) != mods.end()) {
+    // if peerid used -> error.
+    if (pqis.find(pqi->PeerId()) != pqis.end()) {
         // ERROR!
         std::ostringstream out;
-        out << "ERROR Module already exists!" << std::endl;
-        pqioutput(PQL_ALERT, pqihandlerzone, out.str().c_str());
+        out << "ERROR pqi already exists!" << std::endl;
+        log(LOG_ALERT, PQIHANDLERZONE, out.str().c_str());
         return false;
     }
 
-    // check security.
-    if (mod -> sp == NULL) {
-        // create policy.
-        mod -> sp = secpolicy_create();
-    }
-
-    // limit to what global security allows.
-    secpolicy_limit(globsec, mod -> sp);
-
     // store.
-    mods[mod->cert_id] = mod;
+    pqis[pqi->PeerId()] = pqi;
     return true;
 }
 
-bool    pqihandler::RemoveSearchModule(SearchModule *mod) {
+bool    pqihandler::RemovePQI(PQInterface *pqi) {
     MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-    std::map<std::string, SearchModule *>::iterator it;
-    for (it = mods.begin(); it != mods.end(); it++) {
-        if (mod == it -> second) {
-            mods.erase(it);
+    std::map<std::string, PQInterface *>::iterator it;
+    for (it = pqis.begin(); it != pqis.end(); it++) {
+        if (pqi == it -> second) {
+            pqis.erase(it);
             return true;
         }
     }
@@ -172,39 +131,27 @@ bool    pqihandler::RemoveSearchModule(SearchModule *mod) {
 int pqihandler::HandleNetItem(NetItem *item) {
     MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
 
-    std::map<std::string, SearchModule *>::iterator it;
-    pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
-              "pqihandler::HandleNetItem()");
+    std::map<std::string, PQInterface *>::iterator it;
+    log(LOG_DEBUG_BASIC, PQIHANDLERZONE, "pqihandler::HandleNetItem()");
 
-    // find module.
-    if ((it = mods.find(item->PeerId())) == mods.end()) {
+    if ((it = pqis.find(item->PeerId())) == pqis.end()) {
         std::ostringstream out;
         out << "pqihandler::HandleNetItem() Invalid chan!";
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQIHANDLERZONE, out.str().c_str());
 
         delete item;
         return -1;
     }
 
-    // check security... is output allowed.
-    if (0 < secpolicy_check((it -> second) -> sp, 0, PQI_OUTGOING)) {
+    {
         std::ostringstream out;
         out << "pqihandler::HandleNetItem() sending to chan:";
         out << it -> first << std::endl;
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone, out.str().c_str());
-
-        // if yes send on item.
-        ((it -> second) -> pqi) -> SendItem(item);
-        return 1;
-    } else {
-        std::ostringstream out;
-        out << "pqihandler::HandleNetItem()";
-        out << " Sec not approved";
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone, out.str().c_str());
-
-        delete item;
-        return -1;
+        log(LOG_DEBUG_BASIC, PQIHANDLERZONE, out.str().c_str());
     }
+
+    it -> second -> SendItem(item);
+    return 1;
 }
 
 int     pqihandler::SendFileRequest(FileRequest *ns) {
@@ -216,8 +163,6 @@ int     pqihandler::SendFileData(FileData *ns) {
 }
 
 int     pqihandler::SendRawItem(RawItem *ns) {
-    pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
-              "pqihandler::SendRawItem()");
     return HandleNetItem(ns);
 }
 
@@ -227,63 +172,29 @@ int     pqihandler::SendRawItem(RawItem *ns) {
 // someone please fix.
 
 int pqihandler::locked_GetItems() {
-    std::map<std::string, SearchModule *>::iterator it;
+    std::map<std::string, PQInterface *>::iterator it;
 
     NetItem *item;
     int count = 0;
 
-    // loop through modules....
-    for (it = mods.begin(); it != mods.end(); it++) {
-        SearchModule *mod = (it -> second);
+    for (it = pqis.begin(); it != pqis.end(); it++) {
+        PQInterface *pqi = it -> second;
 
-        // check security... is output allowed.
-        if (0 < secpolicy_check((it -> second) -> sp,
-                                0, PQI_INCOMING)) { // PQI_ITEM_TYPE_ITEM, PQI_INCOMING))
-            // if yes... attempt to read.
-            while ((item = (mod -> pqi) -> GetItem()) != NULL) {
-#ifdef NETITEM_DEBUG
-                std::ostringstream out;
-                out << "pqihandler::GetItems() Incoming Item ";
-                out << " from: " << mod -> pqi << std::endl;
-                item -> print(out);
-
-                pqioutput(PQL_DEBUG_BASIC,
-                          pqihandlerzone, out.str());
-#endif
-
-                if (item->PeerId() != (mod->pqi)->PeerId()) {
-                    /* ERROR */
-                    pqioutput(PQL_ALERT,
-                              pqihandlerzone, "ERROR PeerIds dont match!");
-                    item->PeerId(mod->pqi->PeerId());
-                }
-
-                locked_SortnStoreItem(item);
-                count++;
+        // if yes... attempt to read.
+        while ((item = pqi -> GetItem()) != NULL) {
+            if (item->PeerId() != pqi->PeerId()) {
+                /* ERROR */
+                log(LOG_ALERT,
+                          PQIHANDLERZONE, "ERROR PeerIds dont match!");
+                item->PeerId(pqi->PeerId());
             }
-        } else {
-            // not allowed to recieve from here....
-            while ((item = (mod -> pqi) -> GetItem()) != NULL) {
-                std::ostringstream out;
-                out << "pqihandler::GetItems() Incoming Item ";
-                out << " from: " << mod -> pqi << std::endl;
-                item -> print(out);
-                out << std::endl;
-                out << "Item Not Allowed (Sec Pol). deleting!";
-                out << std::endl;
 
-                pqioutput(PQL_DEBUG_BASIC,
-                          pqihandlerzone, out.str().c_str());
-
-                delete item;
-            }
+            locked_SortnStoreItem(item);
+            count++;
         }
     }
     return count;
 }
-
-
-
 
 void pqihandler::locked_SortnStoreItem(NetItem *item) {
     /* get class type / subtype out of the item */
@@ -294,7 +205,7 @@ void pqihandler::locked_SortnStoreItem(NetItem *item) {
 
     /* whole Version reserved for SERVICES/CACHES */
     if (vers == PKT_VERSION_SERVICE) {
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
+        log(LOG_DEBUG_BASIC, PQIHANDLERZONE,
                   "SortnStore -> Service");
         in_service.push_back(item);
         item = NULL;
@@ -302,7 +213,7 @@ void pqihandler::locked_SortnStoreItem(NetItem *item) {
     }
 
     if (vers != PKT_VERSION1) {
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
+        log(LOG_DEBUG_BASIC, PQIHANDLERZONE,
                   "SortnStore -> Invalid VERSION! Deleting!");
         delete item;
         item = NULL;
@@ -315,14 +226,14 @@ void pqihandler::locked_SortnStoreItem(NetItem *item) {
                 case PKT_TYPE_FILE:
                     switch (subtype) {
                         case PKT_SUBTYPE_FI_REQUEST:
-                            pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
+                            log(LOG_DEBUG_BASIC, PQIHANDLERZONE,
                                       "SortnStore -> File Request");
                             in_request.push_back(item);
                             item = NULL;
                             break;
 
                         case PKT_SUBTYPE_FI_DATA:
-                            pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
+                            log(LOG_DEBUG_BASIC, PQIHANDLERZONE,
                                       "SortnStore -> File Data");
                             in_data.push_back(item);
                             item = NULL;
@@ -339,14 +250,14 @@ void pqihandler::locked_SortnStoreItem(NetItem *item) {
             break;
 
         default:
-            pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
+            log(LOG_DEBUG_BASIC, PQIHANDLERZONE,
                       "SortnStore -> Unknown");
             break;
 
     }
 
     if (item) {
-        pqioutput(PQL_DEBUG_BASIC, pqihandlerzone,
+        log(LOG_DEBUG_BASIC, PQIHANDLERZONE,
                   "SortnStore -> Deleting Unsorted Item");
         delete item;
     }
@@ -399,168 +310,111 @@ RawItem *pqihandler::GetRawItem() {
 static const float MIN_RATE = 0.01; // 10 B/s
 
 // internal fn to send updates
-void pqihandler::UpdateRates() {
-    std::map<std::string, SearchModule *>::iterator it;
-    int num_sm = mods.size();
+void pqihandler::updateRateCaps() {
+    std::map<std::string, PQInterface *>::iterator it;
+    int num_pqis = pqis.size();
 
     //Total bandwidth available
-    float avail_in = getMaxRate(true);
-    float avail_out = getMaxRate(false);
+    float total_max_rate_in = getMaxRate(true);
+    float total_max_rate_out = getMaxRate(false);
 
-    //Max bandwidth per module
-    float indiv_in = getMaxIndivRate(true);
-    float indiv_out = getMaxIndivRate(false);
+    //Max bandwidth per pqi
+    float indiv_max_rate_in = getMaxIndivRate(true);
+    float indiv_max_rate_out = getMaxIndivRate(false);
 
-    //The average bandwidth available if all bandwidth was equally shared among modules
-    float avg_rate_in = avail_in/num_sm;
-    float avg_rate_out = avail_out/num_sm;
+    //The average bandwidth available if max total bandwidth cap was equally shared among pqi
+    float shared_max_rate_in = total_max_rate_in/num_pqis;
+    float shared_max_rate_out = total_max_rate_out/num_pqis;
 
     //Total of bandwidth being used
     float used_bw_in = 0;
     float used_bw_out = 0;
 
-    //The total amount of all module's bandwidth use over the avg_rate
+    //The total amount of all pqi's bandwidth use over the avg_rate
     float extra_bw_in = 0;
     float extra_bw_out = 0;
 
     //The number of transfers that are bumping off the individual rate limiter and over the avg_rate
-    //Used so we know when not to bother trying to increase the speed anymore (when all modules are maxed)
+    //Used so we know when not to bother trying to increase the speed anymore (when all pqi are maxed)
     int maxed_in = 0;
     int maxed_out = 0;
 
     /* Lock once rates have been retrieved */
     MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
 
-    //Loop through modules to gather data on speeds
-    for (it = mods.begin(); it != mods.end(); it++) {
-        SearchModule *mod = (it -> second);
-        //Actual rates being used by this module
-        float crate_in = mod -> pqi -> getRate(true);
-        float crate_out = mod -> pqi -> getRate(false);
+    for (it = pqis.begin(); it != pqis.end(); it++) {
+        PQInterface *pqi = it -> second;
+        //Actual rates being used by this pqi
+        float pqi_rate_in = pqi -> getRate(true);
+        float pqi_rate_out = pqi -> getRate(false);
 
-        used_bw_in += crate_in;
-        used_bw_out += crate_out;
+        used_bw_in += pqi_rate_in;
+        used_bw_out += pqi_rate_out;
 
-        if (crate_in > avg_rate_in) {
-            if (mod -> pqi -> getMaxRate(true) == indiv_in) {
+        if (pqi_rate_in > shared_max_rate_in) {
+            if (pqi -> getMaxRate(true) == indiv_max_rate_in) {
                 maxed_in++;
             }
-            extra_bw_in +=  crate_in - avg_rate_in;
+            extra_bw_in +=  pqi_rate_in - shared_max_rate_in;
         }
-        if (crate_out > avg_rate_out) {
-            if (mod -> pqi -> getMaxRate(false) == indiv_out) {
+        if (pqi_rate_out > shared_max_rate_out) {
+            if (pqi -> getMaxRate(false) == indiv_max_rate_out) {
                 maxed_out++;
             }
-            extra_bw_out +=  crate_out - avg_rate_out;
+            extra_bw_out +=  pqi_rate_out - shared_max_rate_out;
         }
     }
 
-    locked_StoreCurrentRates(used_bw_in, used_bw_out);
+    setRateCaps(true, total_max_rate_in, indiv_max_rate_in, shared_max_rate_in, used_bw_in, extra_bw_in, maxed_in, num_pqis);
+    setRateCaps(false, total_max_rate_out, indiv_max_rate_out, shared_max_rate_out, used_bw_out, extra_bw_out, maxed_out, num_pqis);
+}
 
-    //If there is no limit, just set all modules to individual max
-    if (avail_in == 0){
-        for (it = mods.begin(); it != mods.end(); it++) {
-            it -> second -> pqi -> setMaxRate(true, indiv_in);
+void pqihandler::setRateCaps(bool downloading, float total_max_rate, float indiv_max_rate, float shared_max_rate, float used_bw, float extra_bw, int maxed, int num_pqis) {
+    std::map<std::string, PQInterface *>::iterator it;
+    //If there is no limit, just set all pqi to individual max
+    if (total_max_rate == 0){
+        for (it = pqis.begin(); it != pqis.end(); it++) {
+            it -> second -> setMaxRate(downloading, indiv_max_rate);
         }
     //If already over the cap, target those that are above average to be slowed down
-    } else if (used_bw_in > avail_in) {
-        float fchg = (used_bw_in - avail_in) / (float) extra_bw_in;
-        for (it = mods.begin(); it != mods.end(); it++) {
-            SearchModule *mod = (it -> second);
-            float crate_in = mod -> pqi -> getRate(true);
-            float new_max = avg_rate_in;
-            if (crate_in > avg_rate_in) {
-                new_max = avg_rate_in + (1 - fchg) *
-                          (crate_in - avg_rate_in);
+    } else if (used_bw > total_max_rate) {
+        float fchg = (used_bw - total_max_rate) / (float) extra_bw;
+        for (it = pqis.begin(); it != pqis.end(); it++) {
+            PQInterface *pqi = it -> second;
+            float pqi_rate = pqi -> getRate(downloading);
+            float new_max = shared_max_rate;
+            if (pqi_rate > shared_max_rate) {
+                new_max = shared_max_rate + (1 - fchg) *
+                          (pqi_rate - shared_max_rate);
             }
-            if (new_max > indiv_in) {
-                new_max = indiv_in;
+            if (new_max > indiv_max_rate) {
+                new_max = indiv_max_rate;
             }
-            mod -> pqi -> setMaxRate(true, new_max);
+            pqi -> setMaxRate(downloading, new_max);
+            log(LOG_DEBUG_ALERT, PQIHANDLERZONE, "setRateCaps() Slowed down a pqi for fairness - " + QString::number(pqi->LibraryMixerId()));
         }
-    //If not maxxed already and using less than 95%, increase limit
-    } else if ((maxed_in != num_sm) && (used_bw_in < 0.95 * avail_in)) {
-        float fchg = (avail_in - used_bw_in) / avail_in;
-        for (it = mods.begin(); it != mods.end(); it++) {
-            SearchModule *mod = (it -> second);
-            float crate_in = mod -> pqi -> getRate(true);
-            float max_in = mod -> pqi -> getMaxRate(true);
+    //If not maxed already and using less than 95%, increase limit
+    } else if ((maxed != num_pqis) && (used_bw < 0.95 * total_max_rate)) {
+        float percent_available = (total_max_rate - used_bw) / total_max_rate;
+        for (it = pqis.begin(); it != pqis.end(); it++) {
+            PQInterface *pqi = it -> second;
+            float pqi_rate = pqi -> getRate(downloading);
+            float pqi_set_max = pqi -> getMaxRate(downloading);
 
-            if (max_in == indiv_in) {
-                // do nothing...
-            } else {
-                float new_max = max_in;
-                if (max_in < avg_rate_in) {
-                    new_max = avg_rate_in * (1 + fchg);
-                } else if (crate_in > 0.5 * max_in) {
-                    new_max =  max_in * (1 + fchg);
+            if (pqi_set_max != indiv_max_rate) {
+                float new_max = pqi_set_max;
+                if (pqi_set_max < shared_max_rate) {
+                    new_max = shared_max_rate * (1 + percent_available);
+                    log(LOG_DEBUG_BASIC, PQIHANDLERZONE, "setRateCaps() Set a pqi speed cap based on shared max rate - " + QString::number(pqi->LibraryMixerId()));
+                } else if (pqi_rate > 0.5 * pqi_set_max) {
+                    new_max =  pqi_set_max * (1 + percent_available);
+                    log(LOG_DEBUG_BASIC, PQIHANDLERZONE, "setRateCaps() Set a pqi speed cap based on its old max rate - " + QString::number(pqi->LibraryMixerId()));
                 }
-                if (new_max > indiv_in) {
-                    new_max = indiv_in;
+                if (new_max > indiv_max_rate) {
+                    new_max = indiv_max_rate;
                 }
-                mod -> pqi -> setMaxRate(true, new_max);
-            }
-        }
-
-    }
-
-    //If there is no limit, just set all modules to individual max
-    if (avail_out == 0){
-        for (it = mods.begin(); it != mods.end(); it++) {
-            it -> second -> pqi -> setMaxRate(false, indiv_out);
-        }
-    //If already over the cap, target those that are above average to be slowed down
-    } else if (used_bw_out > avail_out) {
-        float fchg = (used_bw_out - avail_out) / (float) extra_bw_out;
-        for (it = mods.begin(); it != mods.end(); it++) {
-            SearchModule *mod = (it -> second);
-            float crate_out = mod -> pqi -> getRate(false);
-            float new_max = avg_rate_out;
-            if (crate_out > avg_rate_out) {
-                new_max = avg_rate_out + (1 - fchg) *
-                          (crate_out - avg_rate_out);
-            }
-            if (new_max > indiv_out) {
-                new_max = indiv_out;
-            }
-            mod -> pqi -> setMaxRate(false, new_max);
-        }
-    //If not maxxed already and using less than 95%, increase limit
-    } else if ((maxed_out != num_sm) && (used_bw_out < 0.95 * avail_out)) {
-        float fchg = (avail_out - used_bw_out) / avail_out;
-        for (it = mods.begin(); it != mods.end(); it++) {
-            SearchModule *mod = (it -> second);
-            float crate_out = mod -> pqi -> getRate(false);
-            float max_out = mod -> pqi -> getMaxRate(false);
-
-            if (max_out == indiv_out) {
-                // do nothing...
-            } else {
-                float new_max = max_out;
-                if (max_out < avg_rate_out) {
-                    new_max = avg_rate_out * (1 + fchg);
-                } else if (crate_out > 0.5 * max_out) {
-                    new_max =  max_out * (1 + fchg);
-                }
-                if (new_max > indiv_out) {
-                    new_max = indiv_out;
-                }
-                mod -> pqi -> setMaxRate(false, new_max);
+                pqi -> setMaxRate(downloading, new_max);
             }
         }
     }
 }
-
-void    pqihandler::getCurrentRates(float &in, float &out) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
-
-    in = rateTotal_in;
-    out = rateTotal_out;
-}
-
-void    pqihandler::locked_StoreCurrentRates(float in, float out) {
-    rateTotal_in = in;
-    rateTotal_out = out;
-}
-
-

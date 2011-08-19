@@ -33,18 +33,13 @@ class ChatMsgItem;
 class p3Msgs: public Msgs {
 public:
 
-    p3Msgs(p3ConnectMgr *mgr, p3ChatService *p3c)
-        :mConnMgr(mgr), mChatSrv(p3c) {
+    p3Msgs(p3ChatService *p3c)
+        :mChatSrv(p3c) {
         return;
     }
     virtual ~p3Msgs() {
         return;
     }
-
-    // gets avatar from peer id in jpeg format.
-    virtual void getAvatarData(std::string pid,unsigned char *& data,int &size);
-    virtual void setOwnAvatarData(const unsigned char *data,int size);
-    virtual void getOwnAvatarData(unsigned char *& data,int &size);
 
     /****************************************/
     /* Chat */
@@ -60,13 +55,17 @@ public:
 
     /****************************************/
 
+    // gets avatar from peer id in jpeg format.
+    virtual void getAvatarData(std::string pid,unsigned char *& data,int &size);
+    virtual void setOwnAvatarData(const unsigned char *data,int size);
+    virtual void getOwnAvatarData(unsigned char *& data,int &size);
+
 
 private:
 
     /*Takes an ChatMsgItem c and uses its information to populate a ChatInfo i.*/
     void initChatInfo(ChatMsgItem *c, ChatInfo &i);
 
-    p3ConnectMgr     *mConnMgr;
     p3ChatService *mChatSrv;
 };
 

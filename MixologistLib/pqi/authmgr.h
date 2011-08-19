@@ -35,15 +35,13 @@
 
 
 /************** AUTHENTICATION MANAGER ***********
- * AuthMgr is the master store house for all recognized certificates, including own
+ * The master store house for all recognized certificates, including own
  * Can be queried to manage and check validity of certificates.
  */
 
 class AuthMgr;
 extern AuthMgr *authMgr;
 
-//Returns the universal AuthMgr
-AuthMgr *getAuthMgr();
 //Not called directly, this function is attached to OpenSSL by InitAuth.
 //Verifies validity of certificates of friends attempting to connect.
 int OpenSSLVerifyCB(X509_STORE_CTX *store, void *unused);

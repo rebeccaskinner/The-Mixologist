@@ -37,7 +37,7 @@
 #endif
 
 #define LIBRARYFILE "library.xml"
-//FUTODO add thread safety
+//TODO add thread safety
 
 bool LibraryMixerLibraryManager::mergeLibrary(QIODevice &newLibraryList) {
     QFile libraryStore(Init::getUserDirectory(true).append(LIBRARYFILE));
@@ -189,7 +189,7 @@ bool LibraryMixerLibraryManager::setMatchChat(int item_id) {
             ftserver->removeItem(item_id);
 
             if (!writeXml(xml)) return false;
-            control->getNotify().notifyLibraryUpdated();
+            notifyBase->notifyLibraryUpdated();
 
             return true;
         }
@@ -225,7 +225,7 @@ bool LibraryMixerLibraryManager::setMatchFile(int item_id, QStringList paths, It
             }
             if (!writeXml(xml)) return false;
 
-            control->getNotify().notifyLibraryUpdated();
+            notifyBase->notifyLibraryUpdated();
             return true;
         }
     }
@@ -254,7 +254,7 @@ bool LibraryMixerLibraryManager::setMatchMessage(int item_id, QString message) {
             itemNode.firstChildElement("autoresponse").appendChild(messageElement);
 
             if (!writeXml(xml)) return false;
-            control->getNotify().notifyLibraryUpdated();
+            notifyBase->notifyLibraryUpdated();
             return true;
         }
     }
@@ -284,7 +284,7 @@ bool LibraryMixerLibraryManager::setLent(int librarymixer_id, int item_id) {
             }
 
             if (!writeXml(xml)) return false;
-            control->getNotify().notifyLibraryUpdated();
+            notifyBase->notifyLibraryUpdated();
             return true;
         }
     }
@@ -307,7 +307,7 @@ void LibraryMixerLibraryManager::completedDownloadLendCheck(int item_id, QString
             int lentto = itemNode.firstChildElement("lentto").text().toInt();
             itemNode.removeChild(itemNode.firstChildElement("lentto"));
             writeXml(xml); //Even if there is a problem saving the result to xml, keep going to process the return
-            control->getNotify().notifyLibraryUpdated();
+            notifyBase->notifyLibraryUpdated();
 
             //Let friend know we got the return
             ftserver->LibraryMixerBorrowReturned(lentto, item_id);
@@ -508,7 +508,7 @@ bool LibraryMixerLibraryManager::updateItemNode(const LibraryMixerItem librarymi
                 itemNode.firstChildElement("autoresponse").appendChild(fileElement);
             }
             if (!writeXml(xml)) return false;
-            control->getNotify().notifyLibraryUpdated();
+            notifyBase->notifyLibraryUpdated();
             return true;
         }
     }

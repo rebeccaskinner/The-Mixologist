@@ -44,8 +44,7 @@ const int pqipersongrpzone = 354;
 #endif
 
 pqilistener *pqisslpersongrp::createListener(struct sockaddr_in laddr) {
-    AuthMgr *authMgr = getAuthMgr();
-    pqilistener *listener = new pqissllistener(laddr, authMgr, mConnMgr);
+    pqilistener *listener = new pqissllistener(laddr);
     return listener;
 }
 
@@ -56,9 +55,8 @@ pqiperson *pqisslpersongrp::createPerson(std::string id, int librarymixer_id, pq
         pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone, out.str().c_str());
     }
 
-    AuthMgr *authMgr = getAuthMgr();
     pqiperson *pqip = new pqiperson(id, librarymixer_id, this);
-    pqissl *pqis   = new pqissl((pqissllistener *) listener, pqip, authMgr, mConnMgr);
+    pqissl *pqis   = new pqissl((pqissllistener *) listener, pqip);
 
     /* construct the serialiser ....
      * Needs:
@@ -76,7 +74,7 @@ pqiperson *pqisslpersongrp::createPerson(std::string id, int librarymixer_id, pq
     pqip -> addChildInterface(PQI_CONNECT_TCP, pqisc);
 
 #ifndef PQI_DISABLE_UDP
-    pqissludp *pqius    = new pqissludp(pqip, authMgr, mConnMgr);
+    pqissludp *pqius    = new pqissludp(pqip);
 
     Serialiser *rss2 = new Serialiser();
     rss2->addSerialType(new FileItemSerialiser());

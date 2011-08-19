@@ -23,7 +23,6 @@
 #include "util/dir.h"
 #include "interface/iface.h"
 #include "interface/peers.h"
-#include "pqi/pqibin.h"
 #include "pqi/pqinotify.h"
 
 #include "services/p3chatservice.h"
@@ -35,30 +34,17 @@
 /* This Service is so simple that there is no
  * mutex protection required! */
 
-p3ChatService::p3ChatService(p3ConnectMgr *cm)
-    :p3Service(SERVICE_TYPE_CHAT), mConnMgr(cm) {
+p3ChatService::p3ChatService()
+    :p3Service(SERVICE_TYPE_CHAT) {
     addSerialType(new ChatSerialiser());
-
     _own_avatar = NULL ;
 }
 
 int p3ChatService::tick() {
-
-#ifdef CHAT_DEBUG
-    std::cerr << "p3ChatService::tick()";
-    std::cerr << std::endl;
-#endif
-
     return 0;
 }
 
 int p3ChatService::status() {
-
-#ifdef CHAT_DEBUG
-    std::cerr << "p3ChatService::status()";
-    std::cerr << std::endl;
-#endif
-
     return 1;
 }
 
@@ -211,7 +197,7 @@ std::list<ChatMsgItem *> p3ChatService::getChatQueue() {
 #ifdef CHAT_DEBUG
             std::cerr << "Received status string \"" << cs->status_string.toStdString() << "\"" << std::endl ;
 #endif
-            control->getNotify().notifyChatStatus(peers->findLibraryMixerByCertId(cs->PeerId()),
+            notifyBase->notifyChatStatus(peers->findLibraryMixerByCertId(cs->PeerId()),
                                                   cs->status_string) ;
 
             delete item ;

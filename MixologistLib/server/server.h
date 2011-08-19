@@ -26,7 +26,9 @@
 #include "interface/iface.h"
 #include "util/threads.h"
 
-/* The Main Interface Class - for controlling the server */
+/*
+The main thread that does most of the work, and implements the Control interface in iface.h that provides high-level control over MixologistLib.
+*/
 
 class p3ConnectMgr;
 class AuthMgr;
@@ -38,21 +40,23 @@ class ftServer;
 
 class Server: public Control, public MixThread {
 public:
-    Server(Iface &i, NotifyBase &callback);
-    virtual ~Server();
+    Server(){return;}
+    virtual ~Server(){return;};
 
     virtual bool StartupMixologist();
     virtual bool ShutdownMixologist();
+
+    virtual void ReloadTransferRates();
 
     /* This is the main MixologistLib loop, handles the ticking */
     virtual void run();
 
     /* locking stuff */
-    void    lockCore() {
+    void lockCore() {
         coreMutex.lock();
     }
 
-    void    unlockCore() {
+    void unlockCore() {
         coreMutex.unlock();
     }
 
@@ -65,40 +69,10 @@ private:
     */
     double getCurrentTS();
 
-    /****************************************/
-    /****************************************/
-    /* p3face-msg Operations */
-
-public:
-    /* Flagging Persons / Channels / Files in or out of a set (CheckLists) */
-    virtual int     SetInChat(std::string id, bool in);         /* friend : chat msgs */
-    virtual int     ClearInChat();
-    virtual bool    IsInChat(std::string id);
-
-
-private:
-    std::list<std::string> mInChatList;
-
-public:
-    /* Config */
-
-    virtual void    ReloadTransferRates();
-
-private:
-    int UpdateAllConfig();
-
-
 public:
 
-    // The Real Server Parts.
-
-    ftServer *ftserver;
-
-    p3ConnectMgr *mConnMgr;
-    AuthMgr    *mAuthMgr;
-
+    //These important public variables hold pointers to the single instances of each of the below
     pqipersongrp *pqih;
-
     p3DhtMgr  *mDhtMgr;
 
     friend class Init;

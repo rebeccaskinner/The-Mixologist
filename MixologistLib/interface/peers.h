@@ -30,13 +30,7 @@
 
 /* The Main Interface Class - for information about your Peers */
 class Peers;
-extern Peers   *peers;
-
-/* Trust Levels */
-const uint32_t TRUST_LVL_UNKNOWN    = 0x0001;
-const uint32_t TRUST_LVL_MARGINAL   = 0x0002;
-const uint32_t TRUST_LVL_GOOD   = 0x0003;
-
+extern Peers *peers;
 
 /* Net Mode */
 const uint32_t NETMODE_UDP      = 0x0001;

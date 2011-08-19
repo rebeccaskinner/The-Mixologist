@@ -38,6 +38,7 @@ ServerDialog::ServerDialog(QWidget *parent)
     /* Invoke the Qt Designer generated object setup routine */
     ui.setupUi(this);
 
+    connect(ui.mixologyServer, SIGNAL(editingFinished()), this, SLOT(editedServer()));
     //        connect(ui.randomizePorts, SIGNAL(toggled(bool)), this, SLOT(randomizeToggled(bool)));
 
     /* Setup display */
@@ -157,6 +158,12 @@ bool ServerDialog::save() {
     }
 #endif
     return true;
+}
+
+void ServerDialog::editedServer(){
+    if (ui.mixologyServer->text().isEmpty()){
+        ui.mixologyServer->setText(DEFAULT_MIXOLOGY_SERVER);
+    }
 }
 
 //void ServerDialog::randomizeToggled(bool set){

@@ -33,58 +33,50 @@
 
 #include "pqi/authmgr.h"
 
-
-Peers *peers = NULL;
-
 /*******
  * #define P3PEERS_DEBUG 1
  *******/
 
-p3Peers::p3Peers(p3ConnectMgr *cm, AuthMgr *am)
-    :mConnMgr(cm), mAuthMgr(am) {
-    return;
-}
-
 /* Peer Details (Net & Auth) */
 std::string p3Peers::getOwnCertId() {
-    return mAuthMgr->OwnCertId();
+    return authMgr->OwnCertId();
 }
 
 int p3Peers::getOwnLibraryMixerId() {
-    return mAuthMgr->OwnLibraryMixerId();
+    return authMgr->OwnLibraryMixerId();
 }
 
 QString p3Peers::getOwnName(){
-    return mConnMgr->getOwnName();
+    return connMgr->getOwnName();
 }
 
 
 bool    p3Peers::getOnlineList(std::list<int> &ids) {
-    mConnMgr->getOnlineList(ids);
+    connMgr->getOnlineList(ids);
     return true;
 }
 
 bool    p3Peers::getSignedUpList(std::list<int> &ids) {
-    mConnMgr->getSignedUpList(ids);
+    connMgr->getSignedUpList(ids);
     return true;
 }
 
 bool    p3Peers::getFriendList(std::list<int> &ids) {
-    mConnMgr->getFriendList(ids);
+    connMgr->getFriendList(ids);
     return true;
 }
 
 bool    p3Peers::isOnline(int librarymixer_id) {
-    return mConnMgr->isOnline(librarymixer_id);
+    return connMgr->isOnline(librarymixer_id);
 }
 
 bool p3Peers::isFriend(int librarymixer_id) {
-    return mConnMgr->isFriend(librarymixer_id);
+    return connMgr->isFriend(librarymixer_id);
 }
 
 bool    p3Peers::getPeerDetails(int librarymixer_id, PeerDetails &d) {
     peerConnectState pcs;
-    if (!mConnMgr->getPeerConnectState(librarymixer_id, pcs)) return false;
+    if (!connMgr->getPeerConnectState(librarymixer_id, pcs)) return false;
     d.id = pcs.id;
     d.librarymixer_id = pcs.librarymixer_id;
     d.name = pcs.name;
@@ -148,30 +140,30 @@ bool    p3Peers::getPeerDetails(int librarymixer_id, PeerDetails &d) {
 }
 
 std::string p3Peers::findCertByLibraryMixerId(int librarymixer_id) {
-    return mAuthMgr->findCertByLibraryMixerId(librarymixer_id);
+    return authMgr->findCertByLibraryMixerId(librarymixer_id);
 }
 
 int     p3Peers::findLibraryMixerByCertId(std::string cert_id) {
-    return mAuthMgr->findLibraryMixerByCertId(cert_id);
+    return authMgr->findLibraryMixerByCertId(cert_id);
 }
 
 QString p3Peers::getPeerName(int librarymixer_id) {
-    /* get from mAuthMgr as it should have more peers? */
-    return mConnMgr->getFriendName(librarymixer_id);
+    /* get from authMgr as it should have more peers? */
+    return connMgr->getFriendName(librarymixer_id);
 }
 
 /* Add/Remove Friends */
 bool p3Peers::addUpdateFriend(int librarymixer_id, QString cert, QString name) {
-    return mConnMgr->addUpdateFriend(librarymixer_id, cert, name);
+    return connMgr->addUpdateFriend(librarymixer_id, cert, name);
 }
 
 /* Network Stuff */
 void    p3Peers::connectAttempt(int librarymixer_id) {
-    mConnMgr->retryConnect(librarymixer_id);
+    connMgr->retryConnect(librarymixer_id);
 }
 
 void    p3Peers::connectAll() {
-    mConnMgr->retryConnectAll();
+    connMgr->retryConnectAll();
 }
 
 bool    p3Peers::setLocalAddress(int librarymixer_id, std::string addr_str, uint16_t port) {
@@ -189,7 +181,7 @@ bool    p3Peers::setLocalAddress(int librarymixer_id, std::string addr_str, uint
 #endif
         /********************************** WINDOWS/UNIX SPECIFIC PART *******************/
     {
-        return mConnMgr->setLocalAddress(librarymixer_id, addr);
+        return connMgr->setLocalAddress(librarymixer_id, addr);
     }
     return false;
 }
@@ -209,7 +201,7 @@ bool    p3Peers::setExtAddress(int librarymixer_id, std::string addr_str, uint16
 #endif
         /********************************** WINDOWS/UNIX SPECIFIC PART *******************/
     {
-        return mConnMgr->setExtAddress(librarymixer_id, addr);
+        return connMgr->setExtAddress(librarymixer_id, addr);
     }
     return false;
 }
@@ -235,7 +227,7 @@ bool    p3Peers::setNetworkMode(int librarymixer_id, uint32_t extNetMode) {
             break;
     }
 
-    return mConnMgr->setNetworkMode(librarymixer_id, netMode);
+    return connMgr->setNetworkMode(librarymixer_id, netMode);
 }
 
 
@@ -247,7 +239,7 @@ p3Peers::setVisState(int librarymixer_id, uint32_t extVisState) {
     /*  if (!(extVisState & VS_DISC_ON))
                     visState |= VIS_STATE_NODISC;*/
 
-    return mConnMgr->setVisState(librarymixer_id, visState);
+    return connMgr->setVisState(librarymixer_id, visState);
 }
 
 PeerDetails::PeerDetails()

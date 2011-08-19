@@ -46,7 +46,7 @@ class pqissllistenbase: public pqilistener {
 public:
 
 
-    pqissllistenbase(struct sockaddr_in addr, AuthMgr *am, p3ConnectMgr *cm);
+    pqissllistenbase(struct sockaddr_in addr);
     virtual ~pqissllistenbase();
 
     /*************************************/
@@ -78,20 +78,13 @@ private:
     int lsock;
 
     std::map<SSL *, struct sockaddr_in> incoming_ssl;
-
-protected:
-
-    AuthMgr *mAuthMgr;
-
-    p3ConnectMgr *mConnMgr;
-
 };
 
 
 class pqissllistener: public pqissllistenbase {
 public:
 
-    pqissllistener(struct sockaddr_in addr, AuthMgr *am, p3ConnectMgr *cm);
+    pqissllistener(struct sockaddr_in addr);
     virtual ~pqissllistener();
 
     //Adds a pqissl to listenaddr.  Called by pqissl.

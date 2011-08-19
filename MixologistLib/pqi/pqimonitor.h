@@ -85,22 +85,10 @@ class p3ConnectMgr;
 
 class pqiMonitor {
 public:
-    pqiMonitor() :mConnMgr(NULL) {
-        return;
-    }
-    virtual ~pqiMonitor() {
-        return;
-    }
+    pqiMonitor() {return;}
+    virtual ~pqiMonitor() {return;}
 
-    void setConnectionMgr(p3ConnectMgr *cm) {
-        mConnMgr = cm;
-    }
     virtual void    statusChange(const std::list<pqipeer> &plist) = 0;
-
-    //virtual void  peerStatus(std::string id, uint32_t mode) = 0;
-
-protected:
-    p3ConnectMgr *mConnMgr;
 };
 
 
@@ -108,9 +96,8 @@ protected:
 
 class pqiConnectCb {
 public:
-    virtual ~pqiConnectCb() {
-        return;
-    }
+    virtual ~pqiConnectCb() {return;}
+
     virtual void    peerStatus(std::string id,
                                struct sockaddr_in laddr, struct sockaddr_in raddr,
                                uint32_t type, uint32_t flags, uint32_t source) = 0;

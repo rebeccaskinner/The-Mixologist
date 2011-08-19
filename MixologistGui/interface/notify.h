@@ -28,7 +28,7 @@
 #include <QString>
 
 class Notify;
-extern Notify   *notify;
+extern Notify *notify;
 
 const uint32_t SYS_ERROR 	= 0x0001;
 const uint32_t SYS_WARNING 	= 0x0002;
@@ -42,23 +42,14 @@ const uint32_t POPUP_DOWNDONE  = 0x0002;
 const uint32_t POPUP_UNMATCHED = 0x0004;
 
 /* This class is the output interface for notification events. */
-
 class Notify {
 public:
+        Notify() {return;}
+        virtual ~Notify() {return;}
 
-        Notify() {
-                return;
-        }
-        virtual ~Notify() {
-                return;
-        }
-
-        /* These methods return an unread message and removes it from the queue. */
-        virtual bool NotifySysMessage(uint32_t &sysid, uint32_t &type,
-                                      QString &title, QString &msg)		= 0;
-        virtual bool NotifyPopupMessage(uint32_t &ptype, QString &name, QString &msg) 	= 0;
-
+        //These pop off an element from the pending messages lists and uses it to populate the values, called from MixologistGui.
+        virtual bool NotifySysMessage(uint32_t &sysid, uint32_t &type, QString &title, QString &msg) = 0;
+        virtual bool NotifyPopupMessage(uint32_t &ptype, QString &name, QString &msg) = 0;
 };
-
 
 #endif

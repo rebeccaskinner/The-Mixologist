@@ -32,7 +32,6 @@ class PeersDialog;
 class LibraryDialog;
 class TransfersDialog;
 
-//class NotifyQt: public NotifyBase, public QObject
 class NotifyQt: public QObject, public NotifyBase {
 	Q_OBJECT
 public:

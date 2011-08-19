@@ -39,6 +39,8 @@ public:
         bool save();
 
 private slots:
+        //If the server is edited to an empty value, set it to default
+        void editedServer();
 //        void randomizeToggled(bool set);
 
 private:

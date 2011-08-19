@@ -31,8 +31,8 @@ Specific implementation of a pqipersongrp to use SSL.
 
 class pqisslpersongrp: public pqipersongrp {
 public:
-    pqisslpersongrp(SecurityPolicy *pol, unsigned long flags)
-        :pqipersongrp(pol, flags) {
+    pqisslpersongrp(unsigned long flags)
+        :pqipersongrp(flags) {
         return;
     }
 

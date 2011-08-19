@@ -56,8 +56,6 @@
 #endif
 #endif
 
-const int p3facestartupzone = 47238;
-
 // initial configuration bootstrapping...
 
 /* Win/Unix Differences */
@@ -80,18 +78,15 @@ char Init::logfname[1024];
 
 bool Init::udpListenerOnly;
 
-/* global variable now points straight to
- * ft/ code so variable defined here.
- */
-
+//Definition for the extern variables
 Files *files = NULL;
 ftServer *ftserver = NULL;
-
-//Definition for the extern variables
-Iface   *iface    = NULL;
 Control *control = NULL;
-p3ConnectMgr *conMgr = NULL;
-
+p3ConnectMgr *connMgr = NULL;
+AuthMgr *authMgr = NULL;
+Notify *notify = NULL;
+Msgs *msgs = NULL;
+Peers *peers = NULL;
 
 void Init::InitNetConfig() {
     port = 1680; // default port.
@@ -112,36 +107,17 @@ void Init::InitNetConfig() {
 #endif
 
     /* Setup logging */
-    setOutputLevel(PQL_WARNING); // default to Warnings.
+    setOutputLevel(LOG_WARNING); // default to Warnings.
 
     // Setup more detailed logging for desired zones.
     // For Testing purposes, can set any individual section to have greater logfile output.
     //setZoneLevel(PQL_DEBUG_BASIC, 38422); // pqipacket.
-    //setZoneLevel(PQL_DEBUG_BASIC, 96184); // pqinetwork;
-    //setZoneLevel(PQL_DEBUG_BASIC, 82371); // pqiperson.
-    //setZoneLevel(PQL_DEBUG_BASIC, 60478); // pqitunnel.
-    //setZoneLevel(PQL_DEBUG_BASIC, 34283); // pqihandler.
-    //setZoneLevel(PQL_DEBUG_BASIC, 44863); // discItems.
-    //setZoneLevel(PQL_DEBUG_BASIC, 2482); // p3disc
-    //setZoneLevel(PQL_DEBUG_BASIC, 1728); // pqi/p3proxy
-    //setZoneLevel(PQL_DEBUG_BASIC, 1211); // sslroot.
-    //setZoneLevel(PQL_DEBUG_BASIC, 37714); // pqissl.
-    //setZoneLevel(PQL_DEBUG_BASIC, 8221); // pqistreamer.
-    //setZoneLevel(PQL_DEBUG_BASIC,  9326); // pqiarchive
-    //setZoneLevel(PQL_DEBUG_BASIC, 3334); // p3channel.
-    //setZoneLevel(PQL_DEBUG_BASIC, 354); // pqipersongrp.
-    //setZoneLevel(PQL_DEBUG_BASIC, 6846); // pqiudpproxy
-    //setZoneLevel(PQL_DEBUG_BASIC, 3144); // pqissludp;
-    //setZoneLevel(PQL_DEBUG_BASIC, 86539); // pqifiler.
-    //setZoneLevel(PQL_DEBUG_BASIC, 91393); // Funky_Browser.
-    //setZoneLevel(PQL_DEBUG_BASIC, 25915); // fltkserver
-    //setZoneLevel(PQL_DEBUG_BASIC, 47659); // fldxsrvr
-    //setZoneLevel(PQL_DEBUG_BASIC, 49787); // pqissllistener
-    //setZoneLevel(PQL_DEBUG_BASIC, 3431); // p3connmgr
-    //setZoneLevel(PQL_DEBUG_BASIC, 29539); // ftserver
-    //setZoneLevel(PQL_DEBUG_BASIC, FTCONTROLLERZONE);
-    //setZoneLevel(PQL_DEBUG_BASIC, 29592); // ftdatamultiplex
-    //setZoneLevel(PQL_DEBUG_BASIC, UPNPHANDLERZONE);
+    setZoneLevel(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE);
+    setZoneLevel(LOG_DEBUG_ALL, FTFILECREATORZONE);
+    setZoneLevel(LOG_DEBUG_ALL, FTFILEPROVIDERZONE);
+    setZoneLevel(LOG_DEBUG_ALL, FTDATADEMULTIPLEXZONE);
+    setZoneLevel(LOG_DEBUG_ALERT, PQIHANDLERZONE);
+    setZoneLevel(LOG_DEBUG_ALERT, PQISTREAMERZONE);
 }
 
 /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
@@ -367,19 +343,19 @@ void Init::loadUserDir(int librarymixer_id) {
 }
 
 QString Init::InitEncryption(int _librarymixer_id) {
-    getAuthMgr()->initSSL(); //first time using SSL system is here
+    authMgr = new AuthMgr();
+    authMgr->initSSL(); //first time using SSL system is here
 
     QString cert;
-    if (!getAuthMgr()->InitAuth(_librarymixer_id, cert)) return "";
+    if (!authMgr->InitAuth(_librarymixer_id, cert)) return "";
 
     return cert;
 }
 
 
 
-Control *Init::createControl(QString name, NotifyBase &notifybase) {
-    iface = new Iface(notifybase);
-    Server *server = new Server(*iface, notifybase);
+Control *Init::createControl(QString name) {
+    Server *server = new Server();
     control = server;
 
     /**************************************************************************/
@@ -395,21 +371,11 @@ Control *Init::createControl(QString name, NotifyBase &notifybase) {
     struct sigaction sigact;
     sigact.sa_handler = SIG_IGN;
     sigact.sa_flags = 0;
-#ifdef DEBUGSTARTUP
-    if (0 == sigaction(SIGPIPE, &sigact, NULL)) {
-        std::cerr << "Successfully Installed";
-        std::cerr << "the SIGPIPE Block" << std::endl;
-    } else {
-        std::cerr << "Failed to Install";
-        std::cerr << "the SIGPIPE Block" << std::endl;
-    }
 #endif
-#endif
-    /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
-    server->mAuthMgr = getAuthMgr();
+    /**************************** END WINDOWS/UNIX SPECIFIC PART ******************/
 
-    std::string ownId = server->mAuthMgr->OwnCertId();
-    int librarymixer_id = server->mAuthMgr->OwnLibraryMixerId();
+    std::string ownId = authMgr->OwnCertId();
+    int librarymixer_id = authMgr->OwnLibraryMixerId();
 
     /**************************************************************************/
     /* Any Initial Configuration (Commandline Options)  */
@@ -447,43 +413,38 @@ Control *Init::createControl(QString name, NotifyBase &notifybase) {
     /* setup classes / structures */
     /**************************************************************************/
 
-    /* Setup Notify Early - So we can use it. */
     notify = new p3Notify();
+    connMgr = new p3ConnectMgr(name);
+    connMgr->addNetAssistFirewall(new upnphandler());
+    server->mDhtMgr  = new OpenDHTMgr(ownId, connMgr, userdir);
+    connMgr->addNetAssistConnect(server->mDhtMgr);
 
-    conMgr = new p3ConnectMgr(name, server->mAuthMgr);
-    server->mConnMgr = conMgr;
-    server->mConnMgr->addNetAssistFirewall(new upnphandler());
-    server->mDhtMgr  = new OpenDHTMgr(ownId, server->mConnMgr, userdir);
-    server->mConnMgr->addNetAssistConnect(server->mDhtMgr);
-
-    SecurityPolicy *none = secpolicy_create();
-    server->pqih = new pqisslpersongrp(none, flags);
+    server->pqih = new pqisslpersongrp(flags);
 
     /****** New Ft Server **** !!! */
-    files = server->ftserver = ftserver = new ftServer(server->mAuthMgr, server->mConnMgr);
-    server->ftserver->setP3Interface(server->pqih);
+    files = ftserver = new ftServer();
+    ftserver->setP3Interface(server->pqih);
 
-    server->ftserver->SetupFtServer();
+    ftserver->SetupFtServer();
 
     /* setup any extra bits (Default Paths) */
-    server->ftserver->setDownloadDirectory(emergencySaveDir, true);
-    server->ftserver->setPartialsDirectory(emergencyPartialsDir, true);
+    ftserver->loadOrSetDownloadDirectory(emergencySaveDir);
+    ftserver->loadOrSetPartialsDirectory(emergencyPartialsDir);
 
     /* create Services */
     server->pqih->addService(new StatusService());
 
-    p3ChatService *chatservice = new p3ChatService(server->mConnMgr);
-    server->pqih-> addService(chatservice);
+    p3ChatService *chatservice = new p3ChatService();
+    server->pqih->addService(chatservice);
 
     MixologyService *mixologyservice = new MixologyService();
     server->pqih->addService(mixologyservice);
-    server->ftserver->setMixologyService(mixologyservice);
+    ftserver->setMixologyService(mixologyservice);
 
     /**************************************************************************/
     /* need to Monitor too! */
-    //the mCacheStrapper and mCacheTransfer are already added by ftServer::SetupFtServer
 
-    server->mConnMgr->addMonitor(server->pqih);
+    connMgr->addMonitor(server->pqih);
 
     /**************************************************************************/
 
@@ -514,14 +475,14 @@ Control *Init::createControl(QString name, NotifyBase &notifybase) {
         // universal
         laddr.sin_addr.s_addr = inet_addr(inet);
 
-        server->mConnMgr->setLocalAddress(librarymixer_id, laddr);
+        connMgr->setLocalAddress(librarymixer_id, laddr);
     }
 
     if (forceExtPort) {
-        server->mConnMgr->setOwnNetConfig(NET_MODE_EXT, VIS_STATE_STD);
+        connMgr->setOwnNetConfig(NET_MODE_EXT, VIS_STATE_STD);
     }
 
-    server->mConnMgr -> checkNetAddress();
+    connMgr -> checkNetAddress();
 
     /**************************************************************************/
     /* startup (stuff dependent on Ids/peers is after this point) */
@@ -529,36 +490,17 @@ Control *Init::createControl(QString name, NotifyBase &notifybase) {
 
     server->pqih->init_listener();
 
-
-
-
-    /**************************************************************************/
-    /* load caches and secondary data */
-    /**************************************************************************/
-
-
     /**************************************************************************/
     /* Force Any Last Configuration Options */
     /**************************************************************************/
 
-    /**************************************************************************/
-    /* Start up Threads */
-    /**************************************************************************/
-    // create loopback device, and add to pqisslgrp.
-
-    SearchModule *mod = new SearchModule();
     pqiloopback *ploop = new pqiloopback(ownId, librarymixer_id);
-
-    mod -> cert_id = ownId;
-    mod -> pqi = ploop;
-    mod -> sp = secpolicy_create();
-
-    server->pqih->AddSearchModule(mod);
+    server->pqih->AddPQI(ploop);
 
     /* Setup GUI Interfaces. */
 
-    peers = new p3Peers(server->mConnMgr, server->mAuthMgr);
-    msgs  = new p3Msgs(server->mConnMgr, chatservice); //not actually for messages, used to be for both chat and messages, now only chat
+    peers = new p3Peers();
+    msgs = new p3Msgs(chatservice); //not actually for messages, used to be for both chat and messages, now only chat
 
     return server;
 }

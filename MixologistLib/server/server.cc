@@ -26,12 +26,12 @@
 // for blocking signals
 #include <signal.h>
 #include "util/debug.h"
-#include "pqi/p3notify.h"
 #include "upnp/upnphandler.h"
 #include "dht/opendhtmgr.h"
 #include "pqi/pqisslpersongrp.h"
 #include "pqi/pqiloopback.h"
 #include "ft/ftcontroller.h"
+#include "pqi/p3connmgr.h"
 /* Implemented Rs Interfaces */
 #include "server/p3peers.h"
 #include "server/p3msgs.h"
@@ -46,16 +46,6 @@
 #define DEBUG_TICK 1
 ****/
 
-Server::Server(Iface &i, NotifyBase &callback)
-    :Control(i, callback) {
-    return;
-}
-
-Server::~Server() {
-    return;
-}
-
-
 bool Server::StartupMixologist() {
     ftserver->StartupThreads();
     ftserver->ResumeTransfers();
@@ -67,8 +57,12 @@ bool Server::StartupMixologist() {
 
 bool Server::ShutdownMixologist() {
     //Should also disconnect all peers here
-    mConnMgr->shutdown();
+    connMgr->shutdown();
     return true;
+}
+
+void    Server::ReloadTransferRates() {
+    pqih->load_transfer_rates();
 }
 
 /* Thread Fn: Run the Core */
@@ -99,12 +93,6 @@ void    Server::run() {
 
         /* for the fast ticked stuff */
         if (delta > timeDelta) {
-#ifdef  DEBUG_TICK
-            std::cerr << "Delta: " << delta << std::endl;
-            std::cerr << "Time Delta: " << timeDelta << std::endl;
-            std::cerr << "Avg Tick Rate: " << avgTickRate << std::endl;
-#endif
-
             lastts = ts;
 
             /******************************** RUN SERVER *****************/
@@ -112,14 +100,10 @@ void    Server::run() {
 
             int moreToTick = ftserver -> tick();
 
-#ifdef  DEBUG_TICK
-            std::cerr << "Server::run() ftserver->tick(): moreToTick: " << moreToTick << std::endl;
-#endif
-
             unlockCore();
 
             /* tick the connection Manager */
-            mConnMgr->tick();
+            connMgr->tick();
             /******************************** RUN SERVER *****************/
 
             /* adjust tick rate depending on whether there is more.
@@ -149,7 +133,6 @@ void    Server::run() {
 
             /* Fast Updates */
 
-
             /* now we have the slow ticking stuff */
             /* stuff ticked once a second (but can be slowed down) */
             if ((int) ts > lastSec) {
@@ -158,24 +141,6 @@ void    Server::run() {
                 // Every second! (UDP keepalive).
                 tou_tick_stunkeepalive();
 
-                // every five loops (> 5 secs)
-                if (loop % 5 == 0) {
-                    UpdateAllConfig();
-                }
-
-                // every 60 loops (> 1 min)
-                if (++loop >= 60) {
-                    loop = 0;
-
-                    /* force saving FileTransferStatus TODO */
-                    //ftserver->saveFileTransferStatus();
-
-                    /* see if we need to resave certs */
-                    //mAuthMgr->CheckSaveCertificates();
-                }
-
-                // slow update tick as well.
-                // update();
             } // end of slow tick.
 
         } // end of only once a second.

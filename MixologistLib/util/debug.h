@@ -23,28 +23,26 @@
 #ifndef LOG_DEBUG_H
 #define LOG_DEBUG_H
 
+#include <QString>
 
-
+/*
+ * All logging at or below LOG_DEBUG_ALERT should begin with the containing class and function.
+ * All logging at or above LOG_WARNING should not include those, but rather be in plain text form suitable for end-users.
+ */
 #define LOG_NONE        -1
 #define LOG_ALERT        1
-#define LOG_ERROR    3
-#define LOG_WARNING  5
+#define LOG_ERROR        3
+#define LOG_WARNING      5 //Default log level
 #define LOG_DEBUG_ALERT  6
 #define LOG_DEBUG_BASIC  8
 #define LOG_DEBUG_ALL   10
-
-
-#include <QString>
 
 int setOutputLevel(int lvl);
 int setZoneLevel(int lvl, int zone);
 int log(unsigned int lvl, int zone, QString msg);
 
-
-
 /* Retaining old #DEFINES and functions for backward compatibility */
 
-//int pqioutput(unsigned int lvl, int zone, std::string msg);
 #define pqioutput log
 
 #define PQL_ALERT   LOG_ALERT
@@ -54,12 +52,16 @@ int log(unsigned int lvl, int zone, QString msg);
 #define PQL_DEBUG_BASIC LOG_DEBUG_BASIC
 #define PQL_DEBUG_ALL   LOG_DEBUG_ALL
 
-
 /* Zone constants for various files. */
+#define PQISTREAMERZONE 8221
+#define MIXOLOGYSERVICEZONE 12409
 #define FTTRANSFERMODULEZONE 29384
 #define FTCONTROLLERZONE 29422
-#define MIXOLOGYSERVICEZONE 12409
-#define UPNPHANDLERZONE 99283
+#define FTDATADEMULTIPLEXZONE 29592
+#define FTFILEPROVIDERZONE 29800
+#define FTFILECREATORZONE 29801
+#define PQIHANDLERZONE 34283
+#define PQISSLZONE 37714
 #define AUTHMGRZONE 38383
-
+#define UPNPHANDLERZONE 99283
 #endif

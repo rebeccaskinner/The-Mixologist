@@ -22,6 +22,7 @@
 
 #include "ftfileprovider.h"
 
+#include "util/debug.h"
 #include <util/dir.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -29,14 +30,10 @@
 
 #include <QFile>
 
-/*
- * #define DEBUG_FT_FILE_PROVIDER
- */
-
-ftFileProvider::ftFileProvider(QString _path, uint64_t size, std::string
-                               hash) : mSize(size), hash(hash), path(_path), file(NULL), transfer_rate(0), total_size(0) {
-    lastTS = time(NULL) ;
-    lastTS_t = lastTS ;
+ftFileProvider::ftFileProvider(QString _path, uint64_t size, std::string hash)
+    : fullFileSize(size), hash(hash), path(_path), file(NULL), transferRate(0), transferredSinceLastCalc(0) {
+    lastRequestTime = time(NULL);
+    lastTransferRateCalc = lastRequestTime;
 }
 
 ftFileProvider::~ftFileProvider() {
@@ -46,135 +43,96 @@ ftFileProvider::~ftFileProvider() {
     }
 }
 
-void ftFileProvider::setPeerId(const std::string &id) {
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
+void ftFileProvider::setLastRequestor(const std::string &id) {
+    MixStackMutex stack(ftcMutex);
     lastRequestor = id ;
 }
 
-std::string ftFileProvider::getHash() {
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
-    return hash;
-}
+bool ftFileProvider::FileDetails(FileInfo &fileInfo) {
+    MixStackMutex stack(ftcMutex);
+    fileInfo.hash = hash;
+    fileInfo.size = fullFileSize;
+    fileInfo.paths.append(path);
+    fileInfo.transfered = lastRequestedEnd;
+    fileInfo.lastTS = lastRequestTime;
+    fileInfo.status = FT_STATE_DOWNLOADING;
 
-bool    ftFileProvider::FileDetails(FileInfo &info) {
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
-    info.hash = hash;
-    info.size = mSize;
-    info.paths.append(path);
-    info.transfered = req_loc ;
-    info.lastTS = lastTS;
-    info.status = FT_STATE_DOWNLOADING ;
+    fileInfo.peers.clear();
 
-    info.peers.clear() ;
+    TransferInfo tInfo;
+    tInfo.cert_id = lastRequestor;
+    tInfo.librarymixer_id = peers->findLibraryMixerByCertId(lastRequestor);
+    tInfo.status = FT_STATE_DOWNLOADING;
+    tInfo.tfRate = transferRate/1024.0;
 
-    TransferInfo inf ;
-    inf.cert_id = lastRequestor;
-    inf.librarymixer_id = peers->findLibraryMixerByCertId(lastRequestor);
-    inf.status = FT_STATE_DOWNLOADING ;
-
-    inf.tfRate = transfer_rate/1024.0 ;
-    info.tfRate = transfer_rate/1024.0 ;
-    info.peers.push_back(inf) ;
-
-    /* Use req_loc / req_size to estimate data rate */
+    fileInfo.tfRate = transferRate/1024.0;
+    fileInfo.peers.push_back(tInfo);
 
     return true;
 }
 
-
 bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *data) {
-    /* dodgey checking outside of mutex...
-     * much check again inside FileAttrs().
-     */
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
+
+    MixStackMutex stack(ftcMutex);
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return false;
 
-    /*
-     * FIXME: Warning of comparison between unsigned and signed int?
-     */
+    uint32_t requestSize = chunk_size;
+    uint64_t baseFileOffset = offset;
 
-    uint32_t data_size    = chunk_size;
-    uint64_t base_loc     = offset;
-
-    if (base_loc + data_size > mSize) {
-        data_size = mSize - base_loc;
-        chunk_size = mSize - base_loc;
-#ifdef DEBUG_FT_FILE_PROVIDER
-        std::cerr <<"Chunk Size greater than total file size, adjusting chunk size " << data_size << std::endl;
-#endif
+    if (baseFileOffset + requestSize > fullFileSize) {
+        requestSize = fullFileSize - baseFileOffset;
+        chunk_size = fullFileSize - baseFileOffset;
+        log(LOG_DEBUG_BASIC, FTFILEPROVIDERZONE,
+            "ftFileProvider::getFileData() Chunk Size greater than total file size, adjusting chunk size " +
+            QString::number(requestSize));
     }
 
-    if (data_size > 0) {
-        /*
-                 * seek for base_loc
-                 */
-        file.seek(base_loc);
-
-        // Data space allocated by caller.
-        //void *data = malloc(chunk_size);
-
-        /*
-         * read the data
-                 */
-
-        if (file.read((char *)data, data_size) == -1) {
-#ifdef DEBUG_FT_FILE_PROVIDER
-            std::cerr << "ftFileProvider::getFileData() Failed to get data!";
-#endif
-            //free(data); no! already deleted in ftDataMultiplex::locked_handleServerRequest()
-            return 0;
-        }
-
-        /*
-         * Update status of ftFileStatus to reflect last usage (for GUI display)
-         * We need to store.
-         * (a) Id,
-         * (b) Offset,
-         * (c) Size,
-         * (d) timestamp
-         */
-
-        time_t now_t = time(NULL) ;
-
-        long int diff = (long int)now_t - (long int)lastTS_t ;  // in bytes/s. Average over multiple samples
-
-#ifdef DEBUG_FT_FILE_PROVIDER
-        std::cout << "diff = " << diff << std::endl ;
-#endif
-
-        if (diff > 3) {
-            transfer_rate = total_size / (float)diff ;
-#ifdef DEBUG_FT_FILE_PROVIDER
-            std::cout << "updated TR = " << transfer_rate << ", total_size=" << total_size << std::endl ;
-#endif
-            lastTS_t = now_t ;
-            total_size = 0 ;
-        }
-
-        req_loc = offset;
-        lastTS = time(NULL) ;
-        req_size = data_size;
-        total_size += req_size ;
-    } else {
-#ifdef DEBUG_FT_FILE_PROVIDER
-        std::cerr << "No data to read" << std::endl;
-#endif
-        return 0;
+    if (requestSize <= 0) {
+        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::getFileData() No data to read");
+        return false;
     }
-    return 1;
+
+    file.seek(baseFileOffset);
+
+    if (file.read((char *)data, requestSize) == -1) return false;
+
+    //Update stats
+    time_t currentTime = time(NULL);
+
+    long int timeSinceLastCalc = (long int)currentTime - (long int)lastTransferRateCalc;
+
+    if (timeSinceLastCalc > 3) {
+        transferRate = transferredSinceLastCalc / (float)timeSinceLastCalc ;
+        log(LOG_DEBUG_BASIC, FTFILEPROVIDERZONE,
+            "ftFileProvider::getFileData() transfer rate: " + QString::number(transferRate) +
+            " transferredSinceLastCalc: " + QString::number(transferredSinceLastCalc));
+        lastTransferRateCalc = currentTime;
+        transferredSinceLastCalc = 0;
+    }
+
+    lastRequestedEnd = baseFileOffset + requestSize;
+    lastRequestTime = currentTime;
+    lastRequestSize = requestSize;
+    transferredSinceLastCalc += lastRequestSize;
+
+    return true;
 }
 
 bool ftFileProvider::moveFile(QString newPath) {
     bool ok;
-    MixStackMutex stack(ftcMutex); /********** STACK LOCKED MTX ******/
+    MixStackMutex stack(ftcMutex);
     file->close();
     ok = DirUtil::moveFile(path, newPath);
     if (ok) {
+        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() succeeded");
         file->deleteLater();
         file=NULL;
         path = newPath;
         return true;
-    } else return false;
+    } else {
+        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() failed");
+        return false;
+    }
 }

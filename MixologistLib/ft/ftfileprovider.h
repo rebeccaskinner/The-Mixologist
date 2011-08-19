@@ -23,53 +23,60 @@
 #ifndef FT_FILE_PROVIDER_HEADER
 #define FT_FILE_PROVIDER_HEADER
 
-/*
- * ftFileProvider.
- * Corresponds to a single file that is being read from.
- */
 #include <iostream>
 #include <stdint.h>
 #include "util/threads.h"
 #include "interface/files.h"
 #include <QFile>
 
+/*
+ * ftFileProvider represents a single file that is being read from.
+ * This is extended ftFileCreator in order to represent a file being written to.
+ */
 class ftFileProvider {
 public:
     ftFileProvider(QString path, uint64_t size, std::string hash);
     virtual ~ftFileProvider();
 
-    virtual bool    getFileData(uint64_t offset, uint32_t &chunk_size, void *data);
-    virtual bool    FileDetails(FileInfo &info);
-    std::string getHash();
-    uint64_t getFileSize(){return mSize;}
-
-    void setPeerId(const std::string &id) ;
-
+    //Reads from the file starting at the specified offset for an amount equal to chunk_size into data
+    //Returns false on any type of failure to read
+    virtual bool getFileData(uint64_t offset, uint32_t &chunk_size, void *data);
+    //Called by ftDataDemultiplex to fill out the FileInfo with all of the stats on this file
+    virtual bool FileDetails(FileInfo &fileInfo);
+    //Returns the file hash
+    std::string getHash() {return hash;}
+    //Returns the file size
+    uint64_t getFileSize() {return fullFileSize;}
+    //Called from ftDataDemultiplex to update the stat on the last friend to have requested this
+    void setLastRequestor(const std::string &id) ;
     //Moves the old file to new location and updates internal variables
     bool moveFile(QString newPath);
 
 protected:
-    uint64_t    mSize;
+    //Total file size of the file
+    uint64_t fullFileSize;
+    //Hash of the file
     std::string hash;
+    //Path to the file
     QString path;
+    //QFile object that we use for all file operations
     QFile *file;
 
-    /*
-     * Structure to gather statistics FIXME: lastRequestor - figure out a
-     * way to get last requestor (peerID)
-     */
+    //These stats are used to report information to the GUI
+    //Right now, we are combining stats if multiple friends are requesting the same file
+    //This is not ideal, and should be fixed in the future
+    //The cert_id of the last friend to have requested this
     std::string lastRequestor;
-    uint64_t   req_loc;
-    uint32_t   req_size;
-    time_t    lastTS;           // used for checking if it's alive
-    time_t    lastTS_t;     // used for estimating transfer rate.
+    //The offset of the last request + the amount last requested
+    uint64_t lastRequestedEnd;
+    uint32_t lastRequestSize;
+    time_t lastRequestTime; //Used for checking if it's alive
 
-    // these two are used for speed estimation
-    float       transfer_rate ;
-    uint32_t    total_size ;
+    float transferRate;
+    time_t lastTransferRateCalc; //Used for estimating transfer rate.
+    uint32_t transferredSinceLastCalc;
 
     MixMutex ftcMutex;
 };
-
 
 #endif // FT_FILE_PROVIDER_HEADER

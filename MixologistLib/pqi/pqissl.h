@@ -82,8 +82,7 @@ class pqissllistener;
 
 class pqissl: public NetBinInterface {
 public:
-    pqissl(pqissllistener *l, PQInterface *parent,
-           AuthMgr *am, p3ConnectMgr *cm);
+    pqissl(pqissllistener *l, PQInterface *parent);
     virtual ~pqissl();
 
     // NetInterface
@@ -97,7 +96,7 @@ public:
 
     // BinInterface
     virtual int tick();
-    virtual int     status();
+    virtual int status();
 
     virtual int senddata(void *, int);
     virtual int readdata(void *, int);
@@ -110,6 +109,7 @@ public:
     virtual std::string gethash(); /* not used here */
     virtual bool bandwidthLimited() {
         return true ;    // replace by !sameLAN to avoid bandwidth limiting on lAN
+        return false;
     }
 
 protected:
@@ -118,10 +118,10 @@ protected:
     // to allow full Non-Blocking Connect behaviour.
 
     //Variable that indicates state of the connection.
-    int     waiting;
+    int waiting;
 
     //This loops through the following functions based on the variable waiting to complete a connection.
-    int     ConnectAttempt();
+    int ConnectAttempt();
 
     virtual int Failed_Connection();
 
@@ -202,14 +202,9 @@ protected:
     int ssl_connect_timeout; /* timeout to ensure that we don't get stuck (can happen on udp!) */
 
     uint32_t mConnectDelay;
-    time_t   mConnectTS;
+    time_t mConnectTS;
     uint32_t mConnectTimeout;
-    time_t   mTimeoutTS;
-
-
-    AuthMgr *mAuthMgr;
-
-    p3ConnectMgr *mConnMgr;
+    time_t mTimeoutTS;
 
 private:
     // ssl only fns.

@@ -92,13 +92,9 @@ public:
 
 class pqiConnectCbStun: public pqiConnectCb {
 public:
-    pqiConnectCbStun() {
-        return;
-    }
+    pqiConnectCbStun() {return;}
 
-    virtual ~pqiConnectCbStun() {
-        return;
-    }
+    virtual ~pqiConnectCbStun() {return;}
 
     void    addPeer(std::string id) {
         MixStackMutex stack(peerMtx); /**** LOCK MUTEX ***/

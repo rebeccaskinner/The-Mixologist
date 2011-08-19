@@ -91,8 +91,6 @@ void NotifyQt::UpdateGUI() {
     /* hack to force updates until we've fixed that part */
     static  time_t lastTs = 0;
 
-    //  std::cerr << "Got update signal t=" << lastTs << std::endl ;
-
     if (time(NULL) > lastTs) {              // always update, every 1 sec.
         emit transfersChanged(); //This is the timer that keeps TransfersDialog up to date
         emit friendsChanged(); //This is the time that keeps PeersDialog up to date

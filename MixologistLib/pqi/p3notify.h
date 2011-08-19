@@ -59,13 +59,13 @@ public:
     }
 
     /* Output for gui */
-    //These pop off an element from the pending messages lists and uses it to populate the values.
+    //These pop off an element from the pending messages lists and uses it to populate the values, called from MixologistGui.
     virtual bool NotifySysMessage(uint32_t &sysid, uint32_t &type,
                                   QString &title, QString &msg);
     virtual bool NotifyPopupMessage(uint32_t &ptype, QString &name, QString &msg);
 
     /* Overloaded from pqiNotify */
-    //These methods add messages to the pending messages lists.
+    //These methods add messages to the pending messages lists, called from MixologistLib.
     virtual bool AddPopupMessage(uint32_t ptype, QString name, QString msg);
     virtual bool AddSysMessage(uint32_t sysid, uint32_t type, QString title, QString msg);
 

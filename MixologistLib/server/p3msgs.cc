@@ -37,11 +37,6 @@ const int p3facemsgzone = 11453;
 //#include "services/p3msgservice.h"
 #include "services/p3chatservice.h"
 
-/* external reference point */
-
-Msgs *msgs = NULL;
-
-
 /****************************************/
 /****************************************/
 void    p3Msgs::ChatSend(const std::string &peer_id,const QString &message) {
@@ -83,7 +78,7 @@ bool    p3Msgs::getNewChat(std::list<ChatInfo> &chats) {
 
 void p3Msgs::initChatInfo(ChatMsgItem *c, ChatInfo &i) {
     i.rsid = c -> PeerId();
-    i.name = mConnMgr->getFriendName(i.rsid);
+    i.name = connMgr->getFriendName(i.rsid);
     i.chatflags = 0 ;
     i.msg  = c -> message;
 

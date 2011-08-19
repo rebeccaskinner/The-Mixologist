@@ -31,10 +31,8 @@
 class p3Peers: public Peers {
 public:
 
-    p3Peers(p3ConnectMgr *cm, AuthMgr *am);
-    virtual ~p3Peers() {
-        return;
-    }
+    p3Peers() {return;}
+    virtual ~p3Peers() {return;}
 
     /* Peer Details (Net & Auth) */
     virtual std::string getOwnCertId();
@@ -51,6 +49,9 @@ public:
     virtual bool    isOnline(int librarymixer_id);
     virtual bool    isFriend(int librarymixer_id);
     virtual QString getPeerName(int librarymixer_id);
+    /*Fills in PeerDetails for user with librarymixer_id
+      Can be used for friends or self.
+      Returns true, or false if unable to find user with librarymixer_id*/
     virtual bool    getPeerDetails(int librarymixer_id, PeerDetails &d);
 
     //Returns the associated cert_id or "" if unable to find.
@@ -69,11 +70,6 @@ public:
     virtual bool setExtAddress(int librarymixer_id, std::string addr, uint16_t port);
     virtual bool setNetworkMode(int librarymixer_id, uint32_t netMode);
     virtual bool setVisState(int librarymixer_id, uint32_t mode);
-
-private:
-
-    p3ConnectMgr *mConnMgr;
-    AuthMgr    *mAuthMgr;
 };
 
 #endif

@@ -38,7 +38,7 @@ public:
         return;
     }
 
-    /* Input from MixologistLib */
+    //These methods add messages to the pending messages lists, called from MixologistLib.
     virtual bool AddPopupMessage(uint32_t ptype, QString name, QString msg) = 0;
     virtual bool AddSysMessage(uint32_t sysid, uint32_t type, QString title, QString msg) = 0;
 

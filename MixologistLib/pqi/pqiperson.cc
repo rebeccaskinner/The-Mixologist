@@ -61,9 +61,8 @@ int     pqiperson::SendItem(NetItem *i) {
         out << " Active: Sending On";
         return activepqi -> SendItem(i);
     } else {
-        out << " Not Active: Used to put in ToGo Store";
+        out << " Not Active: deleting";
         out << std::endl;
-        out << " Now deleting...";
         delete i;
     }
     pqioutput(PQL_DEBUG_BASIC, pqipersonzone, out.str().c_str());
@@ -90,18 +89,15 @@ int pqiperson::tick() {
     {
         std::ostringstream out;
         out << "pqiperson::tick() Id: " << PeerId() << " ";
-        if (active)
-            out << "***Active***";
-        else
-            out << ">>InActive<<";
 
+        if (active) out << "***Active***";
+        else out << ">>InActive<<";
         out << std::endl;
+
         out << "Activepqi: " << activepqi << " inConnectAttempt: ";
 
-        if (inConnectAttempt)
-            out << "In Connection Attempt";
-        else
-            out << "   Not Connecting    ";
+        if (inConnectAttempt) out << "In Connection Attempt";
+        else out << "   Not Connecting    ";
         out << std::endl;
 
 
@@ -126,7 +122,7 @@ int pqiperson::tick() {
 int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
     {
         std::ostringstream out;
-        out << "pqiperson::notifyEvent() Id: " << PeerId();
+        out << "pqiperson::notifyEvent() Id: " << LibraryMixerId();
         out << std::endl;
         out << "Message: " << newState << " from: " << ni << std::endl;
 
@@ -143,7 +139,7 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
     for (it = kids.begin(); it != kids.end(); it++) {
         {
             std::ostringstream out;
-            out << "pqiperson::connectattempt() Kid# ";
+            out << "pqiperson::notifyEvent() Kid# ";
             out << (i + 1) << " of " << kids.size();
             out << std::endl;
             out << " type: " << (it->first);
@@ -160,7 +156,7 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
     }
 
     if (!pqi) {
-        pqioutput(LOG_DEBUG_ALERT, pqipersonzone, "Unknown notfyEvent Source!");
+        pqioutput(LOG_DEBUG_ALERT, pqipersonzone, "pqiperson::notifyEvent() Unknown notifyEvent Source!");
         return -1;
     }
 
@@ -173,22 +169,17 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
             if (pqipg)
                 pqipg->notifyConnect(PeerId(), type, true);
 
-            if ((active) && (activepqi != pqi)) { // already connected - trouble
+            if ((active) && (activepqi != pqi)) {
                 pqioutput(PQL_DEBUG_ALERT, pqipersonzone,
-                          "CONNECT_SUCCESS+active->trouble: shutdown EXISTING->switch to new one!");
-
-                // This is the RESET that's killing the connections.....
+                          "pqiperson::notifyEvent() Connected to friend, but there was an existing connection, resetting");
                 activepqi -> reset();
-                // this causes a recursive call back into this fn.
-                // which cleans up state.
-                // we only do this if its not going to mess with new conn.
             }
 
             /* now install a new one. */
             {
 
                 pqioutput(LOG_DEBUG_ALERT, pqipersonzone,
-                          "CONNECT_SUCCESS->marking so! (resetting others)");
+                          "pqiperson::notifyEvent() Successful connection");
                 // mark as active.
                 active = true;
                 activepqi = pqi;
@@ -200,7 +191,7 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
                     if (it->second != activepqi) {
                         {
                             std::ostringstream out;
-                            out << "pqiperson about to call reset on: ";
+                            out << "pqiperson::notifyEvent() about to call reset on: ";
                             out << " type: " << (it->first);
                             out << " ni: " << (it->second)->ni;
                             out << " input ni: " << ni;
@@ -215,24 +206,22 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
         case CONNECT_UNREACHABLE:
         case CONNECT_FIREWALLED:
         case CONNECT_FAILED:
-
-
             if (active) {
                 if (activepqi == pqi) {
                     pqioutput(PQL_DEBUG_ALERT, pqipersonzone,
-                              "CONNECT_FAILED->marking so!");
+                              "pqiperson::notifyEvent() Connection failed");
                     active = false;
                     activepqi = NULL;
                 } else {
                     pqioutput(PQL_DEBUG_ALERT, pqipersonzone,
-                              "CONNECT_FAIL+not activepqi->strange!");
+                              "pqiperson::notifyEvent() Connection failed (not activepqi->strange)");
                     // probably UDP connect has failed,
                     // TCP connection has been made since attempt started.
                     return -1;
                 }
             } else {
                 pqioutput(PQL_DEBUG_ALERT, pqipersonzone,
-                          "CONNECT_FAILED+NOT active -> try connect again");
+                          "pqiperson::notifyEvent() Connection failed while not active");
             }
 
             /* notify up (But not if we are actually active: rtn -1 case above) */

@@ -46,8 +46,8 @@ QString *startupSettings;
 QString *mainSettings;
 QString *savedTransfers;
 
-StartDialog::StartDialog(NotifyQt *_notify, QWidget *parent, Qt::WFlags flags)
-    : QMainWindow(parent, flags), notify(_notify) {
+StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
+    : QMainWindow(parent, flags) {
     loadedOk = false;
     /* Invoke Qt Designer generated QObject setup routine */
     ui.setupUi(this);
@@ -269,7 +269,7 @@ void StartDialog::downloadedInfo(QString name, int librarymixer_id,
     }
 
     //Must start server now so that we can get the IP address to upload in the next step
-    Init::createControl(name, *notify);
+    Init::createControl(name);
     ui.loadStatus->setText("Updating info on server");
     ui.progressBar->setValue(50);
     librarymixerconnect->uploadInfo(link_to_set, public_key);

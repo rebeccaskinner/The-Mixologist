@@ -23,9 +23,6 @@
 #include "pqi/p3notify.h"
 #include <stdint.h>
 
-/* external reference point */
-Notify *notify = NULL;
-
 pqiNotify *getPqiNotify() {
     return ((p3Notify *) notify);
 }

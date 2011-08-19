@@ -198,9 +198,6 @@ const uint16_t TLV_TYPE_WKEYVALUESET  = 0x1013;
 const uint16_t TLV_TYPE_PEERSET       = 0x1020;
 const uint16_t TLV_TYPE_SERVICESET    = 0x1030;
 
-const uint16_t TLV_TYPE_SECURITYKEY   = 0x1040;
-const uint16_t TLV_TYPE_SECURITYKEYSET= 0x1041;
-
 const uint16_t TLV_TYPE_KEYSIGNATURE  = 0x1050;
 
 const uint16_t TLV_TYPE_IMAGE         = 0x1060;

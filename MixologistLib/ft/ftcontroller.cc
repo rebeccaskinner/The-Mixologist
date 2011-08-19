@@ -25,7 +25,7 @@
 #include "ft/ftfilecreator.h"
 #include "ft/fttransfermodule.h"
 #include "ft/ftsearch.h"
-#include "ft/ftdatamultiplex.h"
+#include "ft/ftdatademultiplex.h"
 #include "ft/ftitemlist.h"
 #include "ft/ftserver.h"
 
@@ -47,23 +47,28 @@
  * #define CONTROL_DEBUG 1
  *****/
 
-/* Format of settings
-//a hash
-    Transfers
-        //iniEncode of (an orig_item_id with filename appended)
-            Orig_item_id = the item id
-            Librarymixer_name = a library mixer name
-            Filename = a file name (possibly including subdirectories)
-        //another orig_item_id
-    Sources
-        //a source id = ""
-        //another source = ""
-    Filesize = filesize
-//another hash
-*/
+ftController::ftController(ftDataDemultiplex *dm, ftSearch *fs, ftItemList *fil)
+    :mDataplex(dm), mSearch(fs), mItemList(fil), mFtActive(false) {
 
-ftController::ftController(ftDataMultiplex *dm)
-    :mDataplex(dm), mFtActive(false) {
+    /*
+    Restore the saved transfers.
+    No need for mutex protection because requestFile is protected,
+    and requestFile is the only time we touch class-level variables.
+
+    Format of the saved transfer settings
+    //a hash
+        Transfers
+            //iniEncode of (an orig_item_id with filename appended)
+                Orig_item_id = the item id
+                Librarymixer_name = a library mixer name
+                Filename = a file name (possibly including subdirectories)
+            //another orig_item_id
+        Sources
+            //a source id = ""
+            //another source = ""
+        Filesize = filesize
+    //another hash
+    */
     QSettings saved(*savedTransfers, QSettings::IniFormat);
     saved.beginGroup("Files");
     QStringList fileTransfers = saved.childGroups();
@@ -98,14 +103,8 @@ ftController::ftController(ftDataMultiplex *dm)
 
         saved.endGroup(); //fileTransfers[i]
 
-        requestFile(librarymixer_names, orig_item_ids, filenames, fileTransfers[i].toStdString(),
-                    filesize, 0, sourceIds);
+        requestFile(librarymixer_names, orig_item_ids, filenames, fileTransfers[i].toStdString(), filesize, 0, sourceIds);
     }
-}
-
-void ftController::setFtSearchNItem(ftSearch *search, ftItemList *list) {
-    mSearch = search;
-    mItemList = list;
 }
 
 void ftController::run() {
@@ -118,16 +117,16 @@ void ftController::run() {
 #endif
 
         //Initial items to load
-        bool doPending = false;
+        bool initialLoad = false;
         {
             MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-            doPending = (mFtActive) && (!mFtPendingDone);
+            initialLoad = (mFtActive) && (!mFtInitialLoadDone);
         }
 
-        if (doPending) {
+        if (initialLoad) {
             if (!handleAPendingRequest()) {
                 MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-                mFtPendingDone = true;
+                mFtInitialLoadDone = true;
             }
         }
 
@@ -145,7 +144,13 @@ void ftController::run() {
             }
         }
     }
+}
 
+bool ftController::activate() {
+    MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
+    mFtActive = true;
+    mFtInitialLoadDone = false;
+    return true;
 }
 
 //Not mutex protected, called by transfer module's tick by our tick from within mutex
@@ -159,7 +164,7 @@ void ftController::finishFile(ftFileControl *fc) {
     if ((fc->mCreator && !fc->mCreator->finished()) ||
             (fc->mTransfer && fc->mState == ftFileControl::DOWNLOADING)) {
         log(LOG_ERROR, FTCONTROLLERZONE, "Tried to close out a transfer on a file that was not done! " +
-            QString::number(fc->mCreator->getRecvd()) + "/" + QString::number(fc->mCreator->getFileSize()));
+            QString::number(fc->mCreator->amountReceived()) + "/" + QString::number(fc->mCreator->getFileSize()));
         return;
     }
     if (fc->mTransfer) {
@@ -320,29 +325,22 @@ void ftController::completeTransfer(int orig_item_id) {
 /********************** Controller Access **********************/
 /***************************************************************/
 
-bool    ftController::activate() {
-    MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-    mFtActive = true;
-    mFtPendingDone = false;
-    return true;
-}
-
-bool    ftController::handleAPendingRequest() {
+bool ftController::handleAPendingRequest() {
     ftPendingRequest req;
     {
         MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
 
-        if (mPendingRequests.size() < 1) {
+        if (mInitialToLoad.size() < 1) {
             return false;
         }
-        req = mPendingRequests.front();
-        mPendingRequests.pop_front();
+        req = mInitialToLoad.front();
+        mInitialToLoad.pop_front();
     }
     requestFile(req.librarymixer_name, req.orig_item_id, req.filename, req.mHash, req.mSize, req.mFlags, req.sourceIds);
     return true;
 }
 
-bool    ftController::requestFile(QString librarymixer_name, int orig_item_id, QString fname, std::string hash,
+bool ftController::requestFile(QString librarymixer_name, int orig_item_id, QString fname, std::string hash,
                                   uint64_t size, uint32_t flags, QList<int> &sourceIds) {
 
     if (orig_item_id == 0 || fname.isEmpty() || hash.empty()) return false;
@@ -353,8 +351,8 @@ bool    ftController::requestFile(QString librarymixer_name, int orig_item_id, Q
         if (!mFtActive) {
             /* store in pending queue */
             ftPendingRequest req(librarymixer_name, orig_item_id, fname, hash, size, flags, sourceIds);
-            mPendingRequests.push_back(req);
-            mFtPendingDone = false;
+            mInitialToLoad.push_back(req);
+            mFtInitialLoadDone = false;
             return true;
         }
     }
@@ -404,7 +402,7 @@ bool    ftController::requestFile(QString librarymixer_name, int orig_item_id, Q
                     }
                     log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftcontroller::requestFile - Adding a new source " + QString::number(sourceIds[i]));
                     download_it.value().mTransfer->addFileSource(sourceIds[i]);
-                    setPeerState(download_it.value().mTransfer, sourceIds[i], mConnMgr->isOnline(sourceIds[i]));
+                    setPeerState(download_it.value().mTransfer, sourceIds[i], connMgr->isOnline(sourceIds[i]));
                     saved.setValue(QString::number(sourceIds[i]), "");
                 }
                 saved.endGroup(); //Sources
@@ -441,7 +439,7 @@ bool    ftController::requestFile(QString librarymixer_name, int orig_item_id, Q
     /* get current state for transfer module */
     for (int i = 0; i < sourceIds.size(); i++) {
         log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftcontroller::requestFile - Adding a source to a new request " + QString::number(sourceIds[i]));
-        setPeerState(ftfc.mTransfer, sourceIds[i], mConnMgr->isOnline(sourceIds[i]));
+        setPeerState(ftfc.mTransfer, sourceIds[i], connMgr->isOnline(sourceIds[i]));
     }
 
     mDownloads[hash] = ftfc;
@@ -478,7 +476,7 @@ bool ftController::requestFile(QStringList librarymixer_names, QList<int> orig_i
 }
 
 
-bool    ftController::cancelFile(int orig_item_id, QString filename, std::string hash, bool checkComplete) {
+bool ftController::cancelFile(int orig_item_id, QString filename, std::string hash, bool checkComplete) {
     /*check if the file in the download map*/
     QMap<std::string,ftFileControl>::iterator mit;
     MixStackMutex stack(ctrlMutex);
@@ -503,7 +501,7 @@ bool    ftController::cancelFile(int orig_item_id, QString filename, std::string
         }
     }
     if (index < 0) {
-        log(LOG_WARNING, FTCONTROLLERZONE, "Tried to cancel a non-existent transfer!");
+        log(LOG_WARNING, FTCONTROLLERZONE, "Tried to cancel a non-existent file!");
         return false;
     }
 
@@ -572,7 +570,7 @@ bool    ftController::LibraryMixerTransferCancel(int orig_item_id) {
     return true;
 }
 
-bool    ftController::controlFile(int orig_item_id, std::string hash, uint32_t flags) {
+bool ftController::controlFile(int orig_item_id, std::string hash, uint32_t flags) {
 #ifdef false
     /*check if the file in the download map*/
     std::map<std::string,ftFileControl>::iterator mit;
@@ -600,13 +598,13 @@ bool    ftController::controlFile(int orig_item_id, std::string hash, uint32_t f
     return true;
 }
 
-void    ftController::clearCompletedFiles() {
+void ftController::clearCompletedFiles() {
     log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftController.clearCompletedFiles - clearing all completed transfers");
     mCompleted.clear();
 }
 
 /* get Details of File Transfers */
-bool    ftController::FileDownloads(QList<FileInfo> &downloads) {
+bool ftController::FileDownloads(QList<FileInfo> &downloads) {
     MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
 
     QMap<std::string, ftFileControl>::const_iterator it;
@@ -623,7 +621,7 @@ bool    ftController::FileDownloads(QList<FileInfo> &downloads) {
     return true;
 }
 
-bool    ftController::FileDetails(QMap<std::string, ftFileControl>::const_iterator file, FileInfo &info) {
+bool ftController::FileDetails(QMap<std::string, ftFileControl>::const_iterator file, FileInfo &info) {
     /* extract details */
     info.hash = file.value().mHash;
     info.paths = file.value().filenames;
@@ -686,7 +684,7 @@ bool    ftController::FileDetails(QMap<std::string, ftFileControl>::const_iterat
     info.size = file.value().mSize;
 
     if (file.value().mState == ftFileControl::DOWNLOADING) {
-        info.transfered  = file.value().mCreator->getRecvd();
+        info.transfered  = file.value().mCreator->amountReceived();
         info.avail = info.transfered;
     } else {
         info.transfered  = info.size;
@@ -697,97 +695,71 @@ bool    ftController::FileDetails(QMap<std::string, ftFileControl>::const_iterat
 }
 
 /* Directory Handling */
-bool    ftController::setDownloadDirectory(QString path, bool trySavedSettings) {
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    QString tentativePath;
-    if (trySavedSettings) {
-        tentativePath = settings.value("Transfers/DownloadsDirectory", path).toString();
-    } else {
-        tentativePath = path;
-    }
-    /* check if it exists */
-    if (DirUtil::checkCreateDirectory(tentativePath)) {
-        MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-        mDownloadPath = tentativePath;
-        settings.setValue("Transfers/DownloadsDirectory", mDownloadPath);
-        return true;
-    }
-    return false;
-}
-
-bool    ftController::setPartialsDirectory(QString path, bool trySavedSettings) {
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    QString tentativePath;
-    if (trySavedSettings) {
-        tentativePath = settings.value("Transfers/PartialsDirectory", path).toString();
-    } else {
-        tentativePath = path;
-    }
-    /* check if it exists */
-    if (DirUtil::checkCreateDirectory(tentativePath)) {
-        MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-        mPartialsPath = tentativePath;
-        settings.setValue("Transfers/PartialsDirectory", mPartialsPath);
-        /* move all existing files! */
-        QMap<std::string, ftFileControl>::const_iterator it;
-        for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
-            it.value().mCreator->moveFile(mPartialsPath);
+bool ftController::setDownloadDirectory(QString path) {
+    if (DirUtil::checkCreateDirectory(path)) {
+        MixStackMutex stack(ctrlMutex);
+        if (mDownloadPath != path){
+            mDownloadPath = path;
+            QSettings settings(*mainSettings, QSettings::IniFormat);
+            settings.setValue("Transfers/DownloadsDirectory", mDownloadPath);
         }
         return true;
     }
     return false;
 }
 
-QString ftController::getDownloadDirectory() {
-    return mDownloadPath;
+bool ftController::loadOrSetDownloadDirectory(QString path) {
+    QSettings settings(*mainSettings, QSettings::IniFormat);
+    return setDownloadDirectory(settings.value("Transfers/DownloadsDirectory", path).toString());
 }
 
-QString ftController::getPartialsDirectory() {
-    return mPartialsPath;
+bool ftController::setPartialsDirectory(QString path) {
+    if (DirUtil::checkCreateDirectory(path)) {
+        MixStackMutex stack(ctrlMutex);
+        if (mPartialsPath != path){
+            mPartialsPath = path;
+            QSettings settings(*mainSettings, QSettings::IniFormat);
+            settings.setValue("Transfers/PartialsDirectory", mPartialsPath);
+            /* move all existing files! */
+            QMap<std::string, ftFileControl>::const_iterator it;
+            for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
+                it.value().mCreator->moveFile(mPartialsPath);
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool ftController::loadOrSetPartialsDirectory(QString path) {
+    QSettings settings(*mainSettings, QSettings::IniFormat);
+    return setPartialsDirectory(settings.value("Transfers/PartialsDirectory", path).toString());
 }
 
 /***************************************************************/
 /********************** Controller Access **********************/
 /***************************************************************/
 
-/* pqiMonitor callback:
- * Used to tell TransferModules new available peers
- */
-void    ftController::statusChange(const std::list<pqipeer> &plist) {
+void ftController::statusChange(const std::list<pqipeer> &changeList) {
     log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftController.statusChange");
-    MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
+    MixStackMutex stack(ctrlMutex);
 
     /* add online to all downloads */
     QMap<std::string, ftFileControl>::const_iterator it;
-    std::list<pqipeer>::const_iterator pit;
+    std::list<pqipeer>::const_iterator changeListIt;
 
     for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
-        for (pit = plist.begin(); pit != plist.end(); pit++) {
-            if (pit->actions & PEER_CONNECTED) {
-#ifdef CONTROL_DEBUG
-                std::cerr << " is Newly Connected!";
-                std::cerr << std::endl;
-#endif
-                setPeerState(it.value().mTransfer, pit->librarymixer_id, true);
-            } else if (pit->actions & PEER_DISCONNECTED) {
-#ifdef CONTROL_DEBUG
-                std::cerr << " is Just disconnected!";
-                std::cerr << std::endl;
-#endif
-                setPeerState(it.value().mTransfer, pit->librarymixer_id, false);
+        for (changeListIt = changeList.begin(); changeListIt != changeList.end(); changeListIt++) {
+            if (changeListIt->actions & PEER_CONNECTED) {
+                setPeerState(it.value().mTransfer, changeListIt->librarymixer_id, true);
             } else {
-#ifdef CONTROL_DEBUG
-                std::cerr << " had something happen to it: ";
-                std::cerr << pit-> actions;
-                std::cerr << std::endl;
-#endif
-                setPeerState(it.value().mTransfer, pit->librarymixer_id, false);
+                setPeerState(it.value().mTransfer, changeListIt->librarymixer_id, false);
             }
         }
     }
 }
 
-bool    ftController::setPeerState(ftTransferModule *tm, int librarymixer_id, bool online) {
+bool ftController::setPeerState(ftTransferModule *tm, int librarymixer_id, bool online) {
     if (tm != NULL){
         if (librarymixer_id == peers->getOwnLibraryMixerId()) {
             tm->setPeerState(librarymixer_id, PQIPEER_IDLE);
@@ -799,4 +771,3 @@ bool    ftController::setPeerState(ftTransferModule *tm, int librarymixer_id, bo
     }
     return true;
 }
-

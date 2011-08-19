@@ -37,7 +37,7 @@
 
 class p3ChatService: public p3Service {
 public:
-    p3ChatService(p3ConnectMgr *cm);
+    p3ChatService();
 
     /* overloaded */
     virtual int   tick();
@@ -83,8 +83,6 @@ private:
     void sendAvatarRequest(const std::string &peer_id) ;
 
     ChatAvatarItem *makeOwnAvatarItem() ;
-
-    p3ConnectMgr *mConnMgr;
 
     AvatarInfo *_own_avatar ;
     std::map<std::string,AvatarInfo *> _avatars ;

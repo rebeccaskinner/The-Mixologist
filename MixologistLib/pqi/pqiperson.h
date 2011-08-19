@@ -54,9 +54,9 @@ public:
     virtual ~pqiperson(); // must clean up children.
 
     // control of the connection.
-    int     reset();
-    int     listen();
-    int     stoplistening();
+    int reset();
+    int listen();
+    int stoplistening();
     int connect(uint32_t type, struct sockaddr_in raddr, uint32_t delay, uint32_t period, uint32_t timeout);
 
     //Add in connection method to kids.
@@ -64,18 +64,18 @@ public:
     int addChildInterface(uint32_t type, pqiconnect *pqi);
 
     // The PQInterface interface.
-    virtual int     SendItem(NetItem *);
+    virtual int SendItem(NetItem *);
     virtual NetItem *GetItem();
 
-    virtual int     status();
+    virtual int status();
     virtual int tick();
 
     // Called by kids to notify the pqiperson of a connection event.
-    int     notifyEvent(NetInterface *ni, int event);
+    int notifyEvent(NetInterface *ni, int event);
 
     // PQInterface for rate control overloaded....
-    virtual float   getRate(bool in);
-    virtual void    setMaxRate(bool in, float val);
+    virtual float getRate(bool in);
+    virtual void setMaxRate(bool in, float val);
 
 private:
 
@@ -89,7 +89,7 @@ private:
 
 /*
 A method of communication to be used by the pqiperson.
-A combination of a pqistreamer with a NetBinInterface.  Connection control
+A combination of a NetBinInterface with a pqistreamer.  Connection control
 commands are passed directly to the NetInterface side of it, while PQInterface
 events are handled by the pqistreamer half (which uses the BinInterface part
 of the NetBinInterface).
@@ -144,9 +144,6 @@ public:
 
     NetBinInterface *ni;
 };
-
-
-
 
 #endif
 

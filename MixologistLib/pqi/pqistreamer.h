@@ -30,15 +30,11 @@
 #include <list>
 
 /*
-A full implementation of the PQInterface that must be supplied
-a BinInterface to communicate via.
-
-Implementations include pqistreamer, pqiperson (which presents it as an interface
-to underlying pqistreamers), pqiloopback.
+Each connection method a pqiperson has will have a pqistramer.
+A pqistreamer is a PQInterface, and it is the final PQInterface that takes structured data
+and converts it into binary data for the BinInterface.
+While doing so, it also manages the bandwidth based on limits passed down to it from above.
 */
-
-// The interface does not handle connection, just communication.
-// possible bioflags: BIN_FLAGS_NO_CLOSE | BIN_FLAGS_NO_DELETE
 
 class pqistreamer: public PQInterface {
 public:
@@ -46,51 +42,51 @@ public:
     virtual ~pqistreamer();
 
     // PQInterface
-    virtual int     SendItem(NetItem *);
+    //Takes a NetItem, and adds it to the appropriate output queue
+    virtual int SendItem(NetItem *);
+    //Returns the first NetItem off the incoming queue
     virtual NetItem *GetItem();
 
-    virtual int     tick();
-    virtual int     status();
+    virtual int tick();
+    virtual int status();
 
 private:
     /* Implementation */
-
-    // to filter functions - detect filecancel/data and act!
-    int queue_outpqi(      NetItem *i);
-    int     handleincomingitem(NetItem *i);
-
-    // ticked regularly (manages out queues and sending via above interfaces.
+    //Called by tick to handle the outbound and inbound queues. Heavyweight functions that do almost all of the work.
     int handleoutgoing();
     int handleincoming();
 
     // Bandwidth/Streaming Management.
-    float   outTimeSlice();
-
+    // On each call, resets the timer on currRead/currSent and returns the rate at which read/send is allowed.
+    // Takes into account any overage in the last period.
     int outAllowedBytes();
-    void    outSentBytes(int );
-
     int inAllowedBytes();
-    void    inReadBytes(int );
+
+    // Updates totalRead, currRead, and avgReadCount based on amount sent
+    // Also periodically updates the rate at which both read and send have been occurring on this PQInterface
+    void outSentBytes(int outb);
+    // Updates totalRead, currRead, and avgReadCount based on amount read
+    void inReadBytes(int inb);
 
     // Serialiser - determines which packets can be serialised.
     Serialiser *serialiser;
     // Binary Interface for IO, initialized at startup.
     BinInterface *bio;
-    unsigned int  bio_flags; // BIN_FLAGS_NO_CLOSE | BIN_FLAGS_NO_DELETE
+    unsigned int bio_flags; // possible are BIN_FLAGS_NO_CLOSE | BIN_FLAGS_NO_DELETE
 
     void *pkt_wpending; // storage for pending packet to write.
-    int   pkt_rpend_size; // size of pkt_rpending.
+    int pkt_rpend_size; // size of pkt_rpending.
     void *pkt_rpending; // storage for read in pending packets.
 
     enum {reading_state_packet_started=1,
           reading_state_initial=0
-         } ;
+         };
 
-    int   reading_state ;
-    int   failed_read_attempts ;
+    int reading_state;
+    int failed_read_attempts;
 
     // Temp Storage for transient data.....
-    std::list<void *> out_pkt; // Cntrl / Search / Results queue
+    std::list<void *> out_pkt; // Control / Search / Results queue
     std::list<void *> out_data; // FileData - secondary queue.
     //A queue of incoming items of all types, waiting for GetItem to be called to take them off
     std::list<NetItem *> incoming;
@@ -100,7 +96,7 @@ private:
     int totalSent;
 
     // these are representative (but not exact)
-    int currRead;
+    int currRead; // Amount read/sent since TS
     int currSent;
     int currReadTS; // TS from which these are measured.
     int currSentTS;
@@ -109,8 +105,7 @@ private:
     float avgReadCount;
     float avgSentCount;
 
-    MixMutex streamerMtx ;
-    //  pthread_t thread_id;
+    MixMutex streamerMtx;
 };
 
 

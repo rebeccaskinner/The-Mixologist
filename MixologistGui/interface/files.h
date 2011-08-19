@@ -34,8 +34,6 @@
 class Files;
 extern Files *files;
 
-class Expression;
-
 /* These are used mainly by ftController at the moment */
 const uint32_t FILE_CTRL_PAUSE   = 0x00000100;
 const uint32_t FILE_CTRL_START   = 0x00000200;
@@ -72,6 +70,7 @@ enum borrowStatuses {
     BORROW_STATUS_BORROWED //When we have something borrowed from a friend
 };
 
+/* The interface by which MixologistGui can control file transfers */
 class  Files {
 public:
 
@@ -118,10 +117,10 @@ public:
     /***
      * Directory Control
      ***/
-    /* Sets the directory to path. If trySavedSettings is set, then path is only a fallback if a directory cannot be loaded
-       from the settings file. */
-    virtual void    setDownloadDirectory(QString path, bool trySavedSettings = false) = 0;
-    virtual void    setPartialsDirectory(QString path, bool trySavedSettings = false) = 0;
+    /* Set the directories as specified, saving changes to settings file. */
+    virtual void setDownloadDirectory(QString path) = 0;
+    virtual void setPartialsDirectory(QString path) = 0;
+    /* Return the directories currently being used */
     virtual QString getDownloadDirectory() = 0;
     virtual QString getPartialsDirectory() = 0;
 

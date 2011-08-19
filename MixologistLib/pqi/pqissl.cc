@@ -36,8 +36,6 @@
 
 #include "pqi/pqissllistener.h"
 
-const int pqisslzone = 37714;
-
 static const int PQISSL_MAX_READ_ZERO_COUNT = 20;
 static const int PQISSL_SSL_CONNECT_TIMEOUT = 30;
 
@@ -65,7 +63,7 @@ static const int PQISSL_SSL_CONNECT_TIMEOUT = 30;
  *
  */
 
-pqissl::pqissl(pqissllistener *l, PQInterface *parent, AuthMgr *am, p3ConnectMgr *cm)
+pqissl::pqissl(pqissllistener *l, PQInterface *parent)
     :NetBinInterface(parent, parent->PeerId(), parent->LibraryMixerId()),
      waiting(WAITING_NOT), active(false), certvalid(false),
      sslmode(PQISSL_ACTIVE), ssl_connection(NULL), sockfd(-1),
@@ -75,9 +73,7 @@ pqissl::pqissl(pqissllistener *l, PQInterface *parent, AuthMgr *am, p3ConnectMgr
      net_attempt(0), net_failure(0), net_unreachable(0),
      sameLAN(false), n_read_zero(0),
      mConnectDelay(0), mConnectTS(0),
-     mConnectTimeout(0), mTimeoutTS(0),
-
-     mAuthMgr((AuthMgr *) am), mConnMgr(cm)
+     mConnectTimeout(0), mTimeoutTS(0)
 
 {
     /* set address to zero */
@@ -86,14 +82,14 @@ pqissl::pqissl(pqissllistener *l, PQInterface *parent, AuthMgr *am, p3ConnectMgr
     {
         std::ostringstream out;
         out << "pqissl for PeerId: " << PeerId();
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
     }
 
     return;
 }
 
 pqissl::~pqissl() {
-    log(LOG_DEBUG_ALERT, pqisslzone,
+    log(LOG_DEBUG_ALERT, PQISSLZONE,
         "pqissl::~pqissl -> destroying pqissl");
     stoplistening(); /* remove from pqissllistener only */
     reset();
@@ -151,7 +147,7 @@ int     pqissl::reset() {
         toLog.append(" (");
         toLog.append(inet_ntoa(remote_addr.sin_addr));
         toLog.append(")");
-        log(LOG_DEBUG_ALERT, pqisslzone, toLog);
+        log(LOG_DEBUG_ALERT, PQISSLZONE, toLog);
     }
     out << "pqissl::reset State Before Reset:" << std::endl;
     out << "\tActive: " << (int) active << std::endl;
@@ -191,7 +187,7 @@ int     pqissl::reset() {
     }
 
     out << "pqissl::reset() Complete!" << std::endl;
-    log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+    log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
 
     // notify people of problem!
     // but only if we really shut something down.
@@ -209,14 +205,14 @@ bool    pqissl::connect_parameter(uint32_t type, uint32_t value) {
         std::ostringstream out;
         out << "pqissl::connect_parameter() Peer: " << PeerId();
         out << " type: " << type << "value: " << value;
-        log(LOG_DEBUG_ALL, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALL, PQISSLZONE, out.str().c_str());
     }
 
     if (type == NET_PARAM_CONNECT_DELAY) {
         std::ostringstream out;
         out << "pqissl::connect_parameter() Peer: " << PeerId();
         out << " DELAY: " << value;
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
 
 
         mConnectDelay = value;
@@ -225,7 +221,7 @@ bool    pqissl::connect_parameter(uint32_t type, uint32_t value) {
         std::ostringstream out;
         out << "pqissl::connect_parameter() Peer: " << PeerId();
         out << " TIMEOUT: " << value;
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
 
         mConnectTimeout = value;
         return true;
@@ -271,7 +267,7 @@ int     pqissl::status() {
         out << " Waiting for connection!" << std::endl;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+    log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
 
     if (active) {
         return 1;
@@ -293,7 +289,7 @@ int pqissl::tick() {
             std::ostringstream out;
             out << "pqissl::tick() ";
             out << "Continuing Connection Attempt for " << PeerId();
-            log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
 
             ConnectAttempt();
             pqisslMtx.unlock();
@@ -313,7 +309,7 @@ int     pqissl::ConnectAttempt() {
 
             sslmode = PQISSL_ACTIVE; /* we're starting this one */
 
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "pqissl::ConnectAttempt() STATE = Not Waiting, starting connection");
 
             return Init_Or_Delay_Connection();
@@ -321,7 +317,7 @@ int     pqissl::ConnectAttempt() {
             break;
         case WAITING_DELAY:
 
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "pqissl::ConnectAttempt() STATE = Waiting Delay, starting connection");
 
             return Init_Or_Delay_Connection();
@@ -330,7 +326,7 @@ int     pqissl::ConnectAttempt() {
 
         case WAITING_SOCK_CONNECT:
 
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "pqissl::ConnectAttempt() STATE = Waiting Sock Connect");
 
             return Initiate_SSL_Connection();
@@ -338,7 +334,7 @@ int     pqissl::ConnectAttempt() {
 
         case WAITING_SSL_CONNECTION:
 
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "pqissl::ConnectAttempt() STATE = Waiting SSL Connection");
 
             return Authorise_SSL_Connection();
@@ -346,14 +342,14 @@ int     pqissl::ConnectAttempt() {
 
         case WAITING_SSL_AUTHORISE:
 
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "pqissl::ConnectAttempt() STATE = Waiting SSL Authorise");
 
             return Authorise_SSL_Connection();
             break;
         case WAITING_FAIL_INTERFACE:
 
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "pqissl::ConnectAttempt() Failed - Retrying");
 
             return Failed_Connection();
@@ -361,13 +357,13 @@ int     pqissl::ConnectAttempt() {
 
 
         default:
-            log(LOG_DEBUG_ALERT, pqisslzone,
+            log(LOG_DEBUG_ALERT, PQISSLZONE,
                 "pqissl::ConnectAttempt() STATE = Unknown - Reset");
 
             reset();
             break;
     }
-    log(LOG_DEBUG_ALERT, pqisslzone, "pqissl::ConnectAttempt() Unknown");
+    log(LOG_DEBUG_ALERT, PQISSLZONE, "pqissl::ConnectAttempt() Unknown");
 
     return -1;
 }
@@ -386,7 +382,7 @@ int     pqissl::ConnectAttempt() {
  */
 
 int     pqissl::Failed_Connection() {
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::ConnectAttempt() Failed - Notifying");
 
     if (parent()) {
@@ -410,7 +406,7 @@ int     pqissl::Failed_Connection() {
  */
 
 int     pqissl::Init_Or_Delay_Connection() {
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Init_Or_Delay_Connection() Attempting Outgoing Connection....");
 
     if (waiting == WAITING_NOT) {
@@ -430,7 +426,7 @@ int     pqissl::Init_Or_Delay_Connection() {
             out << PeerId() << " for ";
             out << mConnectDelay;
             out << " seconds";
-            log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
         }
 
 
@@ -444,7 +440,7 @@ int     pqissl::Init_Or_Delay_Connection() {
             out << PeerId() << " starting in ";
             out << mConnectTS - time(NULL);
             out << " seconds";
-            log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
         }
 
         if (time(NULL) > mConnectTS) {
@@ -453,7 +449,7 @@ int     pqissl::Init_Or_Delay_Connection() {
         return 0;
     }
 
-    log(LOG_DEBUG_ALERT, pqisslzone,
+    log(LOG_DEBUG_ALERT, PQISSLZONE,
         "pqissl::Initiate_Connection() Already Attempt in Progress!");
     return -1;
 }
@@ -463,16 +459,16 @@ int     pqissl::Initiate_Connection() {
     int err;
     struct sockaddr_in addr = remote_addr;
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_Connection() Attempting Outgoing Connection....");
 
     if (waiting != WAITING_DELAY) {
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::Initiate_Connection() Already Attempt in Progress!");
         return -1;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_Connection() Opening Socket");
 
     // open socket connection to addr.
@@ -481,21 +477,21 @@ int     pqissl::Initiate_Connection() {
     {
         std::ostringstream out;
         out << "pqissl::Initiate_Connection() osock = " << osock;
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
     }
 
     if (osock < 0) {
         std::ostringstream out;
         out << "Failed to open socket!" << std::endl;
         out << "Socket Error:" << socket_errorType(errno) << std::endl;
-        log(LOG_WARNING, pqisslzone, out.str().c_str());
+        log(LOG_WARNING, PQISSLZONE, out.str().c_str());
 
         net_internal_close(osock);
         waiting = WAITING_FAIL_INTERFACE;
         return -1;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_Connection() Making Non-Blocking");
 
     err = unix_fcntl_nonblock(osock);
@@ -503,7 +499,7 @@ int     pqissl::Initiate_Connection() {
         std::ostringstream out;
         out << "Error: Cannot make socket NON-Blocking: ";
         out << err << std::endl;
-        log(LOG_WARNING, pqisslzone, out.str().c_str());
+        log(LOG_WARNING, PQISSLZONE, out.str().c_str());
 
         waiting = WAITING_FAIL_INTERFACE;
         net_internal_close(osock);
@@ -517,7 +513,7 @@ int     pqissl::Initiate_Connection() {
         out << PeerId() << " via: ";
         out << inet_ntoa(addr.sin_addr);
         out << ":" << ntohs(addr.sin_port);
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
     }
 
     if (addr.sin_addr.s_addr == 0) {
@@ -526,7 +522,7 @@ int     pqissl::Initiate_Connection() {
         out << "Invalid (0.0.0.0) Remote Address,";
         out << " Aborting Connect.";
         out << std::endl;
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
         waiting = WAITING_FAIL_INTERFACE;
         net_internal_close(osock);
         return -1;
@@ -548,12 +544,12 @@ int     pqissl::Initiate_Connection() {
             sockfd = osock;
 
             out << " EINPROGRESS Waiting for Socket Connection";
-            log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
 
             return 0;
         } else if ((errno == ENETUNREACH) || (errno == ETIMEDOUT)) {
             out << "ENETUNREACHABLE: cert: " << PeerId();
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             // Then send unreachable message.
             net_internal_close(osock);
@@ -579,20 +575,20 @@ int     pqissl::Initiate_Connection() {
         osock=-1;
         waiting = WAITING_FAIL_INTERFACE;
 
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
         // extra output for the moment.
         //std::cerr << out.str();
 
         return -1;
     } else {
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::Init_Connection() connect returned 0");
     }
 
     waiting = WAITING_SOCK_CONNECT;
     sockfd = osock;
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_Connection() Waiting for Socket Connect");
 
     return 1;
@@ -614,7 +610,7 @@ int     pqissl::Initiate_Connection() {
  */
 
 int     pqissl::Basic_Connection_Complete() {
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Basic_Connection_Complete()...");
 
     /* new TimeOut code. */
@@ -624,7 +620,7 @@ int     pqissl::Basic_Connection_Complete() {
         out << "Peer: " << PeerId() << " Period: ";
         out << mConnectTimeout;
 
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
         /* as sockfd is valid, this should close it all up */
 
         reset();
@@ -633,7 +629,7 @@ int     pqissl::Basic_Connection_Complete() {
 
 
     if (waiting != WAITING_SOCK_CONNECT) {
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() Wrong Mode");
         return -1;
     }
@@ -653,14 +649,14 @@ int     pqissl::Basic_Connection_Complete() {
     timeout.tv_sec = 0;
     timeout.tv_usec = 0;
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Basic_Connection_Complete() Selecting ....");
 
     int sr = 0;
     if (0 > (sr = select(sockfd + 1,
                          &ReadFDs, &WriteFDs, &ExceptFDs, &timeout))) {
         // select error.
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() Select ERROR(1)");
 
         net_internal_close(sockfd);
@@ -674,7 +670,7 @@ int     pqissl::Basic_Connection_Complete() {
         std::ostringstream out;
         out << "pqissl::Basic_Connection_Complete() Select ";
         out << " returned " << sr;
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
     }
 
 
@@ -682,7 +678,7 @@ int     pqissl::Basic_Connection_Complete() {
         // error - reset socket.
         // this is a definite bad socket!.
 
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() Select ERROR(2)");
 
         net_internal_close(sockfd);
@@ -693,20 +689,20 @@ int     pqissl::Basic_Connection_Complete() {
     }
 
     if (FD_ISSET(sockfd, &WriteFDs)) {
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() Can Write!");
     } else {
         // happens frequently so switched to debug msg.
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() Not Yet Ready!");
         return 0;
     }
 
     if (FD_ISSET(sockfd, &ReadFDs)) {
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() Can Read!");
     } else {
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::Basic_Connection_Complete() No Data to Read!");
     }
 
@@ -721,13 +717,13 @@ int     pqissl::Basic_Connection_Complete() {
                 out << ":";
                 out << ntohs(remote_addr.sin_port);
                 out << ", initializing encrypted connection";
-                log(LOG_WARNING, pqisslzone, out.str().c_str());
+                log(LOG_WARNING, PQISSLZONE, out.str().c_str());
                 out.clear();
                 out << "pqissl::Basic_Connection_Complete()";
                 out << " TCP Connection Complete: cert: ";
                 out << PeerId();
                 out << " on osock: " << sockfd;
-                log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
             }
             return 1;
         } else if (err == EINPROGRESS) {
@@ -735,7 +731,7 @@ int     pqissl::Basic_Connection_Complete() {
             std::ostringstream out;
             out << "pqissl::Basic_Connection_Complete()";
             out << " EINPROGRESS: cert: " << PeerId();
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             return 0;
         } else if ((err == ENETUNREACH) || (err == ETIMEDOUT)) {
@@ -743,7 +739,7 @@ int     pqissl::Basic_Connection_Complete() {
             out << "pqissl::Basic_Connection_Complete()";
             out << " ENETUNREACH/ETIMEDOUT: cert: ";
             out << PeerId();
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             // Then send unreachable message.
             net_internal_close(sockfd);
@@ -760,7 +756,7 @@ int     pqissl::Basic_Connection_Complete() {
             out << "pqissl::Basic_Connection_Complete()";
             out << " EHOSTUNREACH/EHOSTDOWN: cert: ";
             out << PeerId();
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             // Then send unreachable message.
             net_internal_close(sockfd);
@@ -774,7 +770,7 @@ int     pqissl::Basic_Connection_Complete() {
             out << "pqissl::Basic_Connection_Complete()";
             out << " ECONNREFUSED: cert: ";
             out << PeerId();
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             // Then send unreachable message.
             net_internal_close(sockfd);
@@ -788,7 +784,7 @@ int     pqissl::Basic_Connection_Complete() {
         std::ostringstream out;
         out << "Error: Connection Failed UNKNOWN ERROR: " << err;
         out << " - " << socket_errorType(err);
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
         net_internal_close(sockfd);
         sockfd=-1;
@@ -796,7 +792,7 @@ int     pqissl::Basic_Connection_Complete() {
         return -1;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Basic_Connection_Complete() BAD GETSOCKOPT!");
     waiting = WAITING_FAIL_INTERFACE;
 
@@ -807,14 +803,14 @@ int     pqissl::Basic_Connection_Complete() {
 int     pqissl::Initiate_SSL_Connection() {
     int err;
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_SSL_Connection() Checking Basic Connection");
 
     if (0 >= (err = Basic_Connection_Complete())) {
         return err;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_SSL_Connection() Basic Connection Okay");
 
     // setup timeout value.
@@ -822,14 +818,14 @@ int     pqissl::Initiate_SSL_Connection() {
 
     // Perform SSL magic.
     // library already inited by sslroot().
-    SSL *ssl = SSL_new(mAuthMgr->getCTX());
+    SSL *ssl = SSL_new(authMgr->getCTX());
     if (ssl == NULL) {
-        log(LOG_WARNING, pqisslzone,
+        log(LOG_WARNING, PQISSLZONE,
             "Failed to initiate SSL system!");
         return -1;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_SSL_Connection() SSL Connection Okay");
 
     ssl_connection = ssl;
@@ -842,11 +838,11 @@ int     pqissl::Initiate_SSL_Connection() {
         printSSLError(ssl, err, SSL_get_error(ssl, err),
                       ERR_get_error(), out);
 
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
         return -1;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Initiate_SSL_Connection() Waiting for SSL Connection");
 
     waiting = WAITING_SSL_CONNECTION;
@@ -854,23 +850,23 @@ int     pqissl::Initiate_SSL_Connection() {
 }
 
 int     pqissl::SSL_Connection_Complete() {
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::SSL_Connection_Complete()??? ... Checking");
 
     if (waiting == WAITING_SSL_AUTHORISE) {
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::SSL_Connection_Complete() Waiting = W_SSL_AUTH");
 
         return 1;
     }
     if (waiting != WAITING_SSL_CONNECTION) {
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::SSL_Connection_Complete() Still Waiting..");
 
         return -1;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::SSL_Connection_Complete() Attempting SSL_connect");
 
     /* if we are in the role of a server then accept,
@@ -878,10 +874,10 @@ int     pqissl::SSL_Connection_Complete() {
     int result;
 
     if (sslmode) {
-        log(LOG_DEBUG_BASIC, pqisslzone, "--------> Active Connect!");
+        log(LOG_DEBUG_BASIC, PQISSLZONE, "--------> Active Connect!");
         result = SSL_connect(ssl_connection);
     } else {
-        log(LOG_DEBUG_BASIC, pqisslzone, "--------> Passive Accept!");
+        log(LOG_DEBUG_BASIC, PQISSLZONE, "--------> Passive Accept!");
         result = SSL_accept(ssl_connection);
     }
 
@@ -889,7 +885,7 @@ int     pqissl::SSL_Connection_Complete() {
         int serr = SSL_get_error(ssl_connection, result);
         if ((serr == SSL_ERROR_WANT_READ)
                 || (serr == SSL_ERROR_WANT_WRITE)) {
-            log(LOG_DEBUG_BASIC, pqisslzone,
+            log(LOG_DEBUG_BASIC, PQISSLZONE,
                 "Waiting for SSL handshake!");
 
             waiting = WAITING_SSL_CONNECTION;
@@ -899,7 +895,7 @@ int     pqissl::SSL_Connection_Complete() {
         {
             std::ostringstream out;
             out << "Unable to setup encrypted connection" << std::endl;
-            log(LOG_WARNING, pqisslzone, out.str().c_str());
+            log(LOG_WARNING, PQISSLZONE, out.str().c_str());
         }
 
         {
@@ -907,7 +903,7 @@ int     pqissl::SSL_Connection_Complete() {
             out << "Issues with SSL connection (" << result << ")!" << std::endl;
             printSSLError(ssl_connection, result, serr,
                           ERR_get_error(), out);
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
         }
 
         reset();
@@ -920,7 +916,7 @@ int     pqissl::SSL_Connection_Complete() {
     {
         std::ostringstream out;
         out << "pqissl::SSL_Connection_Complete() Success!: Peer: " << PeerId();
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
     }
 
     waiting = WAITING_SSL_AUTHORISE;
@@ -928,11 +924,11 @@ int     pqissl::SSL_Connection_Complete() {
 }
 
 int     pqissl::Authorise_SSL_Connection() {
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Authorise_SSL_Connection()");
 
     if (time(NULL) > ssl_connect_timeout) {
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::Authorise_SSL_Connection timed out");
         /* as sockfd is valid, this should close it all up */
         reset();
@@ -944,7 +940,7 @@ int     pqissl::Authorise_SSL_Connection() {
         return err;
     }
 
-    log(LOG_DEBUG_BASIC, pqisslzone,
+    log(LOG_DEBUG_BASIC, PQISSLZONE,
         "pqissl::Authorise_SSL_Connection() SSL_Connection_Complete");
 
     // reset switch.
@@ -954,7 +950,7 @@ int     pqissl::Authorise_SSL_Connection() {
         // then okay...
         std::ostringstream out;
         out << "pqissl::Authorise_SSL_Connection() Accepting Conn. Peer: " << PeerId();
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
         accept(ssl_connection, sockfd, remote_addr);
         return 1;
@@ -969,23 +965,23 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
         // shut that one down and keep the already accepted listening connection.
         pqisslMtx.lock();
         unlock_when_done = true;
-        log(LOG_WARNING, pqisslzone, "Two connections to same friend in progress - Shutting down outbound and keeping inbound");
+        log(LOG_WARNING, PQISSLZONE, "Two connections to same friend in progress - Shutting down outbound and keeping inbound");
 
         switch (waiting) {
             case WAITING_SOCK_CONNECT:
-                log(LOG_DEBUG_BASIC, pqisslzone, "pqissl::accept() STATE = Waiting Sock Connect");
+                log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::accept() STATE = Waiting Sock Connect");
                 break;
             case WAITING_SSL_CONNECTION:
-                log(LOG_DEBUG_BASIC, pqisslzone, "pqissl::accept() STATE = Waiting SSL Connection");
+                log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::accept() STATE = Waiting SSL Connection");
                 break;
             case WAITING_SSL_AUTHORISE:
-                log(LOG_DEBUG_BASIC, pqisslzone, "pqissl::accept() STATE = Waiting SSL Authorise");
+                log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::accept() STATE = Waiting SSL Authorise");
                 break;
             case WAITING_FAIL_INTERFACE:
-                log(LOG_DEBUG_BASIC, pqisslzone, "pqissl::accept() STATE = Failed");
+                log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::accept() STATE = Failed");
                 break;
             default:
-                log(LOG_DEBUG_ALERT, pqisslzone, "pqissl::accept() STATE = Unknown, Reseting connection");
+                log(LOG_DEBUG_ALERT, PQISSLZONE, "pqissl::accept() STATE = Unknown, Reseting connection");
                 reset();
                 break;
         }
@@ -994,7 +990,7 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
 
     /* shutdown existing - in all cases use the new one */
     if ((ssl_connection) && (ssl_connection != ssl)) {
-        log(LOG_DEBUG_BASIC, pqisslzone, "pqissl::accept() closing previously existing ssl_connection");
+        log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::accept() closing previously existing ssl_connection");
         SSL_shutdown(ssl_connection);
     }
 
@@ -1016,7 +1012,7 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
         tolog.append(QString::number(sockfd));
         tolog.append(" current socket is: ");
         tolog.append(QString::number(fd));
-        log(LOG_WARNING, pqisslzone, tolog);
+        log(LOG_WARNING, PQISSLZONE, tolog);
 
         net_internal_close(sockfd);
     }
@@ -1035,7 +1031,7 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
     /* check whether it is on the same LAN */
 
     peerConnectState details;
-    mConnMgr->getPeerConnectState(mAuthMgr->OwnLibraryMixerId(), details);
+    connMgr->getPeerConnectState(authMgr->OwnLibraryMixerId(), details);
     sameLAN = isSameSubnet(&(remote_addr.sin_addr), &(details.localaddr.sin_addr));
 
     {
@@ -1055,7 +1051,7 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
         }
         out << std::endl;
 
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
     }
 
     // establish the ssl details.
@@ -1069,12 +1065,12 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
         out << "SSL Cipher Bits:" << SSL_get_cipher_bits(ssl, &alg);
         out << " - " << alg << std::endl;
         out << "SSL Cipher Version:" << SSL_get_cipher_version(ssl) << std::endl;
-        log(LOG_DEBUG_BASIC, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
     }
 
     // make non-blocking / or check.....
     if ((err = net_internal_fcntl_nonblock(sockfd)) < 0) {
-        log(LOG_WARNING, pqisslzone, "Error: Cannot make socket NON-Blocking: ");
+        log(LOG_WARNING, PQISSLZONE, "Error: Cannot make socket NON-Blocking: ");
 
         active = false;
         waiting = WAITING_FAIL_INTERFACE;
@@ -1083,7 +1079,7 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
         if (unlock_when_done) pqisslMtx.unlock();
         return -1;
     } else {
-        log(LOG_DEBUG_BASIC, pqisslzone, "pqissl::accept() Socket Made Non-Blocking!");
+        log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::accept() Socket Made Non-Blocking!");
     }
 
     // we want to continue listening - incase this socket is crap, and they try again.
@@ -1100,7 +1096,7 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
     std::ostringstream out;
     out << "Completing encrypted connection with " << std::endl;
     out << inet_ntoa(remote_addr.sin_addr) << ":" << ntohs(remote_addr.sin_port);
-    log(LOG_WARNING, pqisslzone, out.str().c_str());
+    log(LOG_WARNING, PQISSLZONE, out.str().c_str());
     return 1;
 }
 
@@ -1132,18 +1128,18 @@ int     pqissl::senddata(void *data, int len) {
             out << std::endl;
             out << "Socket Closed Abruptly.... Resetting PQIssl";
             out << std::endl;
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
             reset();
             return -1;
         } else if (err == SSL_ERROR_WANT_WRITE) {
             out << "SSL_write() SSL_ERROR_WANT_WRITE";
             out << std::endl;
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
             return -1;
         } else if (err == SSL_ERROR_WANT_READ) {
             out << "SSL_write() SSL_ERROR_WANT_READ";
             out << std::endl;
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
             return -1;
         } else {
             out << "SSL_write() UNKNOWN ERROR: " << err;
@@ -1152,7 +1148,7 @@ int     pqissl::senddata(void *data, int len) {
             out << std::endl;
             out << "\tResetting!";
             out << std::endl;
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             reset();
             return -1;
@@ -1221,7 +1217,7 @@ int     pqissl::readdata(void *data, int len) {
                     reset();
                 }
 
-                log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
                 return -1;
             }
 
@@ -1232,13 +1228,13 @@ int     pqissl::readdata(void *data, int len) {
                 while ((err_error = ERR_get_error()) != 0){
                     out << ERR_error_string(err_error, NULL) << std::endl;
                 }*/
-                log(LOG_WARNING, pqisslzone, out.str().c_str());
+                log(LOG_WARNING, PQISSLZONE, out.str().c_str());
                 reset();
                 return -1;
             } else if (error == SSL_ERROR_WANT_WRITE) {
                 out << "SSL_read() SSL_ERROR_WANT_WRITE";
                 out << std::endl;
-                log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
                 return -1;
             } else if (error == SSL_ERROR_WANT_READ) {
                 /* SSL_WANT_READ is not a critical error. It's just a sign that
@@ -1246,19 +1242,19 @@ int     pqissl::readdata(void *data, int len) {
                    is returned, and the connection will be retried as is on next call of readdata().*/
                 out << "SSL_read() SSL_ERROR_WANT_READ";
                 out << std::endl;
-                log(LOG_DEBUG_ALL, pqisslzone, out.str().c_str());
+                log(LOG_DEBUG_ALL, PQISSLZONE, out.str().c_str());
                 return -1;
             } else {
                 out << "SSL_read() UNKNOWN ERROR: " << error;
                 out << std::endl;
                 out << "\tResetting!";
                 printSSLError(ssl_connection, tmppktlen, error, err2, out);
-                log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
                 reset();
                 return -1;
             }
 
-            log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
             //exit(1);
         } else
             total_len+=tmppktlen ;
@@ -1274,7 +1270,7 @@ int     pqissl::readdata(void *data, int len) {
         out << " Full Packet Not read!" << std::endl;
         out << " -> Expected len(" << len << ") actually read(";
         out << total_len << ")" << std::endl;
-        log(LOG_DEBUG_ALERT, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
     }
     total_len = 0 ;     // reset the packet pointer as we have finished a packet.
     n_read_zero = 0;
@@ -1296,7 +1292,7 @@ bool    pqissl::moretoread() {
         std::ostringstream out;
         out << "pqissl::moretoread()";
         out << "  polling socket (" << sockfd << ")";
-        log(LOG_DEBUG_ALL, pqisslzone, out.str().c_str());
+        log(LOG_DEBUG_ALL, PQISSLZONE, out.str().c_str());
     }
 
     fd_set ReadFDs, WriteFDs, ExceptFDs;
@@ -1313,14 +1309,14 @@ bool    pqissl::moretoread() {
     timeout.tv_usec = 0;
 
     if (select(sockfd + 1, &ReadFDs, &WriteFDs, &ExceptFDs, &timeout) < 0) {
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::moretoread() Select ERROR!");
         return 0;
     }
 
     if (FD_ISSET(sockfd, &ExceptFDs)) {
         // error - reset socket.
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::moretoread() Select Exception ERROR!");
 
         // this is a definite bad socket!.
@@ -1331,20 +1327,20 @@ bool    pqissl::moretoread() {
 
     if (FD_ISSET(sockfd, &WriteFDs)) {
         // write can work.
-        log(LOG_DEBUG_ALL, pqisslzone,
+        log(LOG_DEBUG_ALL, PQISSLZONE,
             "pqissl::moretoread() Can Write!");
     } else {
         // write can work.
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::moretoread() Can *NOT* Write!");
     }
 
     if (FD_ISSET(sockfd, &ReadFDs)) {
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::moretoread() Data to Read!");
         return 1;
     } else {
-        log(LOG_DEBUG_ALL, pqisslzone,
+        log(LOG_DEBUG_ALL, PQISSLZONE,
             "pqissl::moretoread() No Data to Read!");
         return 0;
     }
@@ -1352,7 +1348,7 @@ bool    pqissl::moretoread() {
 }
 
 bool    pqissl::cansend() {
-    log(LOG_DEBUG_ALL, pqisslzone,
+    log(LOG_DEBUG_ALL, PQISSLZONE,
         "pqissl::cansend() polling socket!");
 
     // Interestingly - This code might be portable....
@@ -1372,7 +1368,7 @@ bool    pqissl::cansend() {
 
     if (select(sockfd + 1, &ReadFDs, &WriteFDs, &ExceptFDs, &timeout) < 0) {
         // select error.
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::cansend() Select Error!");
 
         return 0;
@@ -1380,7 +1376,7 @@ bool    pqissl::cansend() {
 
     if (FD_ISSET(sockfd, &ExceptFDs)) {
         // error - reset socket.
-        log(LOG_DEBUG_ALERT, pqisslzone,
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
             "pqissl::cansend() Select Exception!");
 
         // this is a definite bad socket!.
@@ -1391,12 +1387,12 @@ bool    pqissl::cansend() {
 
     if (FD_ISSET(sockfd, &WriteFDs)) {
         // write can work.
-        log(LOG_DEBUG_ALL, pqisslzone,
+        log(LOG_DEBUG_ALL, PQISSLZONE,
             "pqissl::cansend() Can Write!");
         return 1;
     } else {
         // write can work.
-        log(LOG_DEBUG_BASIC, pqisslzone,
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
             "pqissl::cansend() Can *NOT* Write!");
 
         return 0;

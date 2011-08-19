@@ -34,7 +34,7 @@
    Also contains loop that steps through list of friends and controls retry of connections with them. */
 
 class p3ConnectMgr;
-extern p3ConnectMgr *conMgr;
+extern p3ConnectMgr *connMgr;
 
 /* VIS_STATE_XXXX
  * determines how public this peer wants to be...
@@ -228,7 +228,7 @@ public:
 class p3ConnectMgr: public pqiConnectCb {
 
 public:
-    p3ConnectMgr(QString name, AuthMgr *authMgr);
+    p3ConnectMgr(QString name);
 
     void    tick();
 
@@ -385,7 +385,6 @@ private:
     //representation of form ###.###.###.###:##.
     std::string address_to_string(struct sockaddr_in address);
 
-    AuthMgr *mAuthMgr;
     pqiNetAssistFirewall *mUpnpMgr;
     pqiNetAssistConnect *mDhtMgr;
 

@@ -25,7 +25,6 @@
 #define _STARTDIALOG_H
 
 #include "interface/librarymixer-connect.h"
-#include "interface/notifyqt.h"
 #include "interface/settings.h"
 
 #include "ui_StartDialog.h"
@@ -35,7 +34,7 @@ class StartDialog : public QMainWindow {
 
 public:
 	/** Default constructor */
-        StartDialog(NotifyQt *_notify, QWidget *parent = 0, Qt::WFlags flags = 0);
+        StartDialog(QWidget *parent = 0, Qt::WFlags flags = 0);
 
 	bool loadedOk;
 
@@ -66,8 +65,6 @@ private:
 
         //This variable is populated from saved settings, and indicates that version numbers <= this we are not interested in
         qlonglong skip_to_version;
-
-	NotifyQt* notify;
 
 };
 

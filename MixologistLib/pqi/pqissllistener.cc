@@ -44,12 +44,11 @@ const int pqissllistenzone = 49787;
  */
 
 
-pqissllistenbase::pqissllistenbase(struct sockaddr_in addr, AuthMgr *am, p3ConnectMgr *cm)
-    :laddr(addr), active(false),
-     mAuthMgr(am), mConnMgr(cm)
+pqissllistenbase::pqissllistenbase(struct sockaddr_in addr)
+    :laddr(addr), active(false)
 
 {
-    if (!(mAuthMgr -> active())) {
+    if (!(authMgr->active())) {
         pqioutput(LOG_DEBUG_ALERT, pqissllistenzone,
                   "SSL-CTX-CERT-ROOT not initialised!");
 
@@ -280,7 +279,7 @@ int pqissllistenbase::acceptconnection() {
     // Negotiate certificates. SSL stylee.
     // Allow negotiations for secure transaction.
 
-    SSL *ssl = SSL_new(mAuthMgr -> getCTX());
+    SSL *ssl = SSL_new(authMgr->getCTX());
     SSL_set_fd(ssl, fd);
 
     return continueSSL(ssl, remote_addr, true); // continue and save if incomplete.
@@ -418,8 +417,8 @@ int pqissllistenbase::continueaccepts() {
  *
  */
 
-pqissllistener::pqissllistener(struct sockaddr_in addr, AuthMgr *am, p3ConnectMgr *cm)
-    :pqissllistenbase(addr, am, cm) {
+pqissllistener::pqissllistener(struct sockaddr_in addr)
+    :pqissllistenbase(addr) {
     return;
 }
 
@@ -506,7 +505,7 @@ int pqissllistener::completeConnection(int fd, SSL *ssl, struct sockaddr_in &rem
 
     // Check cert.
     unsigned char peercert_id[20];
-    if (!mAuthMgr->getCertId(peercert, peercert_id)) return false;
+    if (!authMgr->getCertId(peercert, peercert_id)) return false;
     std::string cert_id = std::string((char *)peercert_id, sizeof(peercert_id));
     X509_free(peercert);
 

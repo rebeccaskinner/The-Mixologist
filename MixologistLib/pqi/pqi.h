@@ -52,10 +52,10 @@ public:
 
     // FileTransfer.
     virtual FileRequest *GetFileRequest() = 0;
-    virtual int     SendFileRequest(FileRequest *) = 0;
+    virtual int SendFileRequest(FileRequest *) = 0;
 
     virtual FileData *GetFileData() = 0;
-    virtual int     SendFileData(FileData *) = 0;
+    virtual int SendFileData(FileData *) = 0;
 
 };
 

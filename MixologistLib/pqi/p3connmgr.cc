@@ -104,16 +104,16 @@ peerConnectState::peerConnectState()
 }
 
 
-p3ConnectMgr::p3ConnectMgr(QString name, AuthMgr *am)
-    :mAuthMgr(am), mNetStatus(NET_UNKNOWN),
+p3ConnectMgr::p3ConnectMgr(QString name)
+    :mNetStatus(NET_UNKNOWN),
      mStunStatus(0), mStunFound(0), mStunMoreRequired(true),
      mStatusChanged(false), mUpnpAddrValid(false),
      mStunAddrValid(false), mStunAddrStable(false) {
 
     /* setup basics of own state */
-    if (am) {
-        ownState.id = mAuthMgr->OwnCertId();
-        ownState.librarymixer_id = mAuthMgr->OwnLibraryMixerId();
+    if (authMgr) {
+        ownState.id = authMgr->OwnCertId();
+        ownState.librarymixer_id = authMgr->OwnLibraryMixerId();
         ownState.name = name;
         ownState.netMode = NET_MODE_UDP;
     }
@@ -599,7 +599,7 @@ void p3ConnectMgr::netUdpCheck() {
                     msg +=  "You can fix this by:\n";
                     msg +=  "   (1) opening an External Port\n";
                     msg +=  "   (2) enabling UPnP, or\n";
-                    msg +=  "   (3) get a new (approved) Firewall/Router\n";
+                    msg +=  "   (3) get a newer Firewall/Router\n";
 
                     notify->AddSysMessage(0, SYS_WARNING, title, msg);
                 }
@@ -891,14 +891,13 @@ void p3ConnectMgr::addMonitor(pqiMonitor *mon) {
     //Should not happen that a monitor is added twice
     if (it != clients.end()) exit(-1);
 
-    mon->setConnectionMgr(this);
     clients.push_back(mon);
     return;
 }
 
 const std::string p3ConnectMgr::getOwnCertId() {
-    if (mAuthMgr) {
-        return mAuthMgr->OwnCertId();
+    if (authMgr) {
+        return authMgr->OwnCertId();
     } else {
         std::string nullStr;
         return nullStr;
@@ -1082,7 +1081,7 @@ bool p3ConnectMgr::connectResult(int librarymixer_id, bool success, uint32_t fla
     if (success) {
         /* remove other attempts */
         it->second.connAddrs.clear();
-        mDhtMgr->dropPeer(mAuthMgr->findCertByLibraryMixerId(librarymixer_id));
+        mDhtMgr->dropPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
         usedIps[address_to_string(it->second.currentConnAddr.addr)] = USED_IP_CONNECTED;
 
         /* update address (will come through from DISC) */
@@ -1118,7 +1117,7 @@ bool p3ConnectMgr::connectResult(int librarymixer_id, bool success, uint32_t fla
 
         it->second.lastcontact = time(NULL);  /* time of disconnect */
 
-        mDhtMgr->findPeer(mAuthMgr->findCertByLibraryMixerId(librarymixer_id));
+        mDhtMgr->findPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
         if (it->second.visState & VIS_STATE_NODHT) {
             /* hidden from DHT world */
         } else {
@@ -1208,7 +1207,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
         }
 
         /* look up the id */
-        it = mFriendList.find(mAuthMgr->findLibraryMixerByCertId(cert_id));
+        it = mFriendList.find(authMgr->findLibraryMixerByCertId(cert_id));
         if (it == mFriendList.end()) {
             /* not found - ignore */
 #ifdef CONN_DEBUG
@@ -1457,7 +1456,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
     /* notify if they say we can, or we cannot connect ! */
     if (details.type & NET_CONN_UDP_DHT_SYNC) {
-        retryConnectNotify(mAuthMgr->findLibraryMixerByCertId(cert_id));
+        retryConnectNotify(authMgr->findLibraryMixerByCertId(cert_id));
     }
 #else
     } // P3CONNMGR_NO_AUTO_CONNECTION /****** STACK UNLOCK MUTEX *******/
@@ -1526,7 +1525,7 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
     std::cerr << std::endl;
 #endif
 
-    retryConnectTCP(getAuthMgr()->findLibraryMixerByCertId(id));
+    retryConnectTCP(authMgr->findLibraryMixerByCertId(id));
 
     /******************** UDP PART *****************************/
 
@@ -1542,7 +1541,7 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
 
     /* look up the id */
     std::map<int, peerConnectState>::iterator it;
-    it = mFriendList.find(getAuthMgr()->findLibraryMixerByCertId(id));
+    it = mFriendList.find(authMgr->findLibraryMixerByCertId(id));
     if (it == mFriendList.end()) {
         /* not found - ignore */
 #ifdef CONN_DEBUG
@@ -1650,14 +1649,14 @@ bool p3ConnectMgr::addUpdateFriend(int librarymixer_id, QString cert, QString na
     MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
 
     //First try to insert the certificate
-    int authResult = mAuthMgr->addUpdateCertificate(cert, librarymixer_id);
+    int authResult = authMgr->addUpdateCertificate(cert, librarymixer_id);
 
     std::map<int, peerConnectState>::iterator it = mFriendList.find(librarymixer_id);
     //Existing friend
     if (it != mFriendList.end()) {
         //Update the name
         it->second.name = name;
-        it->second.id = mAuthMgr->findCertByLibraryMixerId(librarymixer_id);
+        it->second.id = authMgr->findCertByLibraryMixerId(librarymixer_id);
         //If the cert has been updated
         if (authResult >= 1) {
             if (it->second.state == PEER_S_NO_CERT) {
@@ -1687,7 +1686,7 @@ bool p3ConnectMgr::addUpdateFriend(int librarymixer_id, QString cert, QString na
             pstate.actions = 0;
         } else { //If cert was added
             //Should not be able to reach here with a null Cert
-            if ((pstate.id = mAuthMgr->findCertByLibraryMixerId(librarymixer_id)).empty())
+            if ((pstate.id = authMgr->findCertByLibraryMixerId(librarymixer_id)).empty())
                 return false;
             pstate.state = 0;
             //Only have pqiperson built if we actually got a key
@@ -1703,7 +1702,7 @@ bool p3ConnectMgr::addUpdateFriend(int librarymixer_id, QString cert, QString na
         mFriendList[librarymixer_id] = pstate;
 
         /* expect it to be a standard DHT */
-        //mDhtMgr->findPeer(mAuthMgr->findCertByLibraryMixerId(librarymixer_id));
+        //mDhtMgr->findPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
 
         return true;
     }
@@ -1730,7 +1729,7 @@ bool p3ConnectMgr::removeFriend(std::string id) {
         //      peer.actions = PEER_MOVED;
         peer.inConnAttempt = false;
         mStatusChanged = true;
-        mAuthMgr->RemoveCertificate(id);
+        authMgr->RemoveCertificate(id);
 
         success = true;
     }
@@ -2005,7 +2004,7 @@ bool   p3ConnectMgr::retryConnectNotify(int librarymixer_id) {
         }
 
         /* attempt UDP connection */
-        mDhtMgr->notifyPeer(mAuthMgr->findCertByLibraryMixerId(librarymixer_id));
+        mDhtMgr->notifyPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
     }
 
     return true;
@@ -2053,7 +2052,7 @@ bool    p3ConnectMgr::setExtAddress(int librarymixer_id, struct sockaddr_in addr
 }
 
 bool    p3ConnectMgr::setNetworkMode(int librarymixer_id, uint32_t netMode) {
-    if (librarymixer_id == mAuthMgr->OwnLibraryMixerId()) {
+    if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
         uint32_t visState = ownState.visState;
         setOwnNetConfig(netMode, visState);
 
@@ -2073,7 +2072,7 @@ bool    p3ConnectMgr::setNetworkMode(int librarymixer_id, uint32_t netMode) {
 }
 
 bool    p3ConnectMgr::setVisState(int librarymixer_id, uint32_t visState) {
-    if (librarymixer_id == mAuthMgr->OwnLibraryMixerId()) {
+    if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
         uint32_t netMode = ownState.netMode;
         setOwnNetConfig(netMode, visState);
 
@@ -2092,8 +2091,8 @@ bool    p3ConnectMgr::setVisState(int librarymixer_id, uint32_t visState) {
     /* toggle DHT state */
     if (it->second.visState & VIS_STATE_NODHT) {
         /* hidden from DHT world */
-        mDhtMgr->dropPeer(mAuthMgr->findCertByLibraryMixerId(librarymixer_id));
-    } else mDhtMgr->findPeer(mAuthMgr->findCertByLibraryMixerId(librarymixer_id));
+        mDhtMgr->dropPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
+    } else mDhtMgr->findPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
 
     return false;
 }

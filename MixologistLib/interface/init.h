@@ -20,53 +20,53 @@
  ****************************************************************/
 
 /* Initialisation Class (not publicly disclosed to Iface) */
-#include <QString>
+    #include <QString>
 
-class NotifyBase;
-class Control;
+    class NotifyBase;
+    class Control;
 
-class Init {
-public:
-    //Startup Process, in order of usage
-    //Sets default values for variables
-    static void InitNetConfig() ;
-    /* Commandline/Directory options */
-    static void processCmdLine(int argc, char **argv);
-    //Checks for or creates the basic config dirs, which in Unix reside at ~/.mixologist
-    static void loadBaseDir() ;
-    //Sets up the user directory and all subdirectories
-    static void loadUserDir(int librarymixer_id);
-    //Initializes SSL for the entire application
-    static QString InitEncryption(int librarymixer_id);
-    //Creates, initializes and returns a new Control object. Also inits the interface extern.
-    static Control *createControl(QString name, NotifyBase &notify);
+    class Init {
+    public:
+            //Startup Process, in order of usage
+            //Sets default values for variables
+            static void	InitNetConfig() ;
+            /* Commandline/Directory options */
+            static void processCmdLine(int argc, char **argv);
+            //Checks for or creates the basic config dir, which in Unix reside at ~/.mixologist
+            static void	loadBaseDir() ;
+            //Sets up the user directory and all subdirectories
+            static void loadUserDir(int librarymixer_id);
+            //Initializes SSL for the entire application
+            static QString InitEncryption(int librarymixer_id);
+            //Creates, initializes and returns a new Control object.
+            static Control* createControl(QString name);
 
-    //Returns the basedir, without or without a separator
-    static QString getBaseDirectory(bool withDirSeperator);
-    //Returns the userdir
-    static QString getUserDirectory(bool withDirSeperator);
+            //Returns the basedir, without or without a separator
+            static QString getBaseDirectory(bool withDirSeperator);
+            //Returns the userdir
+            static QString getUserDirectory(bool withDirSeperator);
 
-    /* Key Parameters that must be set before the Mixologist will start up: */
+            /* Key Parameters that must be set before the Mixologist will start up: */
 
-    /* Win/Unix Differences */
-    static char dirSeperator;
+            /* Win/Unix Differences */
+            static char dirSeperator;
 
-    /* Directories */
-    static QString basedir;
-    static QString userdir;
+            /* Directories */
+            static QString basedir;
+            static QString userdir;
 
-    /* Listening Port */
-    //These configuration variables are probably not working at this time, and need to be looked into more
-    static bool forceExtPort;
-    static bool forceLocalAddr;
-    static unsigned short port;
-    static char inet[256];
-    static bool udpListenerOnly;
+            /* Listening Port */
+            //These configuration variables are probably not working at this time, and need to be looked into more
+            static bool forceExtPort;
+            static bool forceLocalAddr;
+            static unsigned short port;
+            static char inet[256];
+            static bool udpListenerOnly;
 
-    /* Logging */
-    static bool haveDebugLevel;
-    static int  debugLevel;
-    static char logfname[1024];
+            /* Logging */
+            static bool haveDebugLevel;
+            static int  debugLevel;
+            static char logfname[1024];
 
-};
+    };
 

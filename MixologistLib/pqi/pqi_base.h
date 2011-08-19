@@ -54,9 +54,9 @@ int fixme(char *str, int n);
 The basic exchange interface.
 Includes methods for getting and sending items, ongoing maintenance,
 notification from NetInterfaces and bandwidth control.
-Types include pqistreamer for sending data over a network, pqiperson
-which holds multiple pqistreamers and uses PQInterface as an interface
-to pass through to them, and pqiloopback.
+Types include pqistreamer for taking structured data and converting it into binary data to send over a network,
+pqiperson which holds multiple pqistreamers (one for each connection method) and uses PQInterface as an interface to pass through to them,
+and pqiloopback.
 */
 
 class NetInterface;
@@ -200,10 +200,12 @@ public:
     virtual int     tick() = 0;
 
     virtual int senddata(void *data, int len) = 0;
+    //Returns -1 on errors, otherwise returns the size in bytes of the packet this is read
     virtual int readdata(void *data, int len) = 0;
     virtual int netstatus() = 0;
     virtual int isactive() = 0;
     virtual bool    moretoread() = 0;
+    //Returns true if the BinInterface is ready to accept sending
     virtual bool    cansend() = 0;
 
     /* method for streamer to shutdown bininterface */
@@ -217,13 +219,15 @@ public:
 
     /* used by pqistreamer to limit transfers */
     virtual bool    bandwidthLimited() {
-        return true;
+        //return true;
+        return false;
     }
 };
 
 /*
-Combined NetInterface with a BinInterface to send information over.
-Types include pqissl and pqissludp.
+A complete connection, which implements both NetInterface for connection control,
+as well as BinInterface for data transfer.
+Implementations include pqissl and pqissludp.
 */
 
 class NetBinInterface: public NetInterface, public BinInterface {

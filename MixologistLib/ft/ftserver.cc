@@ -28,7 +28,7 @@ const int ftserverzone = 29539;
 #include "ft/ftfilesearch.h"
 #include "ft/ftcontroller.h"
 #include "ft/ftfileprovider.h"
-#include "ft/ftdatamultiplex.h"
+#include "ft/ftdatademultiplex.h"
 #include "ft/mixologyborrower.h"
 
 #include "services/mixologyservice.h"
@@ -44,15 +44,9 @@ const int ftserverzone = 29539;
 #include <iostream>
 #include <sstream>
 
-/***
- * #define SERVER_DEBUG 1
- * #define DEBUG_TICK   1
- ***/
-
 /* Setup */
-ftServer::ftServer(AuthMgr *authMgr, p3ConnectMgr *connMgr)
+ftServer::ftServer()
     : mP3iface(NULL),
-      mAuthMgr(authMgr), mConnMgr(connMgr),
       mFtController(NULL), mFtItems(NULL),
       mFtDataplex(NULL), mFtSearch(NULL) {
 }
@@ -65,8 +59,8 @@ void    ftServer::setP3Interface(P3Interface *pqi) {
 
 std::string ftServer::OwnId() {
     std::string ownId;
-    if (mConnMgr)
-        ownId = mConnMgr->getOwnCertId();
+    if (connMgr)
+        ownId = connMgr->getOwnCertId();
     return ownId;
 }
 
@@ -74,18 +68,17 @@ std::string ftServer::OwnId() {
 void ftServer::SetupFtServer() {
 
     /* needed to setup FiStore/Monitor */
-    std::string ownId = mConnMgr->getOwnCertId();
+    std::string ownId = connMgr->getOwnCertId();
 
     /* search/items List */
     mFtItems = new ftItemList();
     mFtSearch = new ftFileSearch();
 
     /* Transport */
-    mFtDataplex = new ftDataMultiplex(ownId, this, mFtSearch);
+    mFtDataplex = new ftDataDemultiplex(ownId, mFtSearch);
 
     /* make Controller */
-    mFtController = new ftController(mFtDataplex);
-    mFtController -> setFtSearchNItem(mFtSearch, mFtItems);
+    mFtController = new ftController(mFtDataplex, mFtSearch, mFtItems);
 
     /* Create borrowing manager */
     mixologyborrower = new MixologyBorrower();
@@ -93,7 +86,7 @@ void ftServer::SetupFtServer() {
     /* complete search setup, add each searchable object to mFtSearch */
     mFtSearch->addSearchMode(mFtItems, FILE_HINTS_ITEM);
 
-    mConnMgr->addMonitor(mFtController);
+    connMgr->addMonitor(mFtController);
 
     return;
 }
@@ -167,16 +160,24 @@ void ftServer::clearUploads() {
 }
 
 /* Directory Handling */
-void ftServer::setDownloadDirectory(QString path, bool trySavedSettings) {
-    mFtController->setDownloadDirectory(path, trySavedSettings);
+void ftServer::setDownloadDirectory(QString path) {
+    mFtController->setDownloadDirectory(path);
+}
+
+void ftServer::setPartialsDirectory(QString path) {
+    mFtController->setPartialsDirectory(path);
+}
+
+void ftServer::loadOrSetDownloadDirectory(QString path) {
+    mFtController->loadOrSetDownloadDirectory(path);
+}
+
+void ftServer::loadOrSetPartialsDirectory(QString path) {
+    mFtController->loadOrSetPartialsDirectory(path);
 }
 
 QString ftServer::getDownloadDirectory() {
     return mFtController->getDownloadDirectory();
-}
-
-void ftServer::setPartialsDirectory(QString path, bool trySavedSettings) {
-    mFtController->setPartialsDirectory(path, trySavedSettings);
 }
 
 QString ftServer::getPartialsDirectory() {
@@ -322,34 +323,25 @@ bool    ftServer::sendDataRequest(std::string peerId, std::string hash,
     return true;
 }
 
-//const uint32_t    MAX_FT_CHUNK  = 32 * 1024; /* 32K */
-//const uint32_t    MAX_FT_CHUNK  = 16 * 1024; /* 16K */
-const uint32_t  MAX_FT_CHUNK  = 8 * 1024; /* 16K */
+const uint32_t MAX_FT_CHUNK  = 8 * 1024; /* 8K */
 
 /* Server Send */
-bool    ftServer::sendData(std::string peerId, std::string hash, uint64_t size,
-                           uint64_t baseoffset, uint32_t chunksize, void *data) {
-    /* create a packet */
-    /* push to networking part */
-    uint32_t tosend = chunksize;
+bool ftServer::sendData(std::string peerId, std::string hash, uint64_t size,
+                           uint64_t baseOffset, uint32_t chunkSize, void *data) {
+    uint32_t remainingToSend = chunkSize;
     uint64_t offset = 0;
     uint32_t chunk;
 
-#ifdef SERVER_DEBUG
-    std::cerr << "ftServer::sendData() to " << peerId << std::endl;
-    std::cerr << "hash: " << hash;
-    std::cerr << " offset: " << baseoffset;
-    std::cerr << " chunk: " << chunksize;
-    std::cerr << " data: " << data;
-    std::cerr << std::endl;
-#endif
+    log(LOG_DEBUG_ALL, ftserverzone,
+        QString("ftServer::sendData") +
+        " hash: " + hash.c_str() +
+        " offset: " + QString::number(baseOffset) +
+        " chunksize: " + QString::number(chunkSize));
 
-    while (tosend > 0) {
+    //We must now break up the chunk into multiple packets, each of which is <= than MAX_FT_CHUNK
+    while (remainingToSend > 0) {
         /* workout size */
-        chunk = MAX_FT_CHUNK;
-        if (chunk > tosend) {
-            chunk = tosend;
-        }
+        chunk = (remainingToSend > MAX_FT_CHUNK) ? MAX_FT_CHUNK : remainingToSend;
 
         /******** New Serialiser Type *******/
 
@@ -366,27 +358,15 @@ bool    ftServer::sendData(std::string peerId, std::string hash, uint64_t size,
         rfd->fd.file.pop      = 0;
         rfd->fd.file.age      = 0;
 
-        rfd->fd.file_offset = baseoffset + offset;
+        rfd->fd.file_offset = baseOffset + offset;
 
         /* file data */
-        rfd->fd.binData.setBinData(
-            &(((uint8_t *) data)[offset]), chunk);
-
-        /* print the data pointer */
-#ifdef SERVER_DEBUG
-        std::cerr << "ftServer::sendData() Packet: " << std::endl;
-        std::cerr << " offset: " << rfd->fd.file_offset;
-        std::cerr << " chunk: " << chunk;
-        std::cerr << " len: " << rfd->fd.binData.bin_len;
-        std::cerr << " data: " << rfd->fd.binData.bin_data;
-        std::cerr << std::endl;
-#endif
-
+        rfd->fd.binData.setBinData(&(((uint8_t *) data)[offset]), chunk);
 
         mP3iface->SendFileData(rfd);
 
         offset += chunk;
-        tosend -= chunk;
+        remainingToSend -= chunk;
     }
 
     /* clean up data */
@@ -407,32 +387,16 @@ int ftServer::tick() {
     log(LOG_DEBUG_ALL, ftserverzone, "ftServer::tick()");
 
     if (mP3iface == NULL) {
-#ifdef SERVER_DEBUG
-        std::cerr << "ftServer::tick() ERROR: mP3iface == NULL";
-#endif
-
         std::ostringstream out;
-        log(LOG_DEBUG_BASIC, ftserverzone,
-            "ftServer::tick() Invalid Interface()");
+        log(LOG_DEBUG_ALERT, ftserverzone, "ftServer::tick() Invalid Interface()");
 
         return 1;
     }
 
     int moreToTick = 0;
+    if (0 < mP3iface -> tick()) moreToTick = 1;
+    if (0 < handleFileData()) moreToTick = 1;
 
-    if (0 < mP3iface -> tick()) {
-        moreToTick = 1;
-#ifdef DEBUG_TICK
-        std::cerr << "ftServer::tick() moreToTick from mP3iface" << std::endl;
-#endif
-    }
-
-    if (0 < handleFileData()) {
-        moreToTick = 1;
-#ifdef DEBUG_TICK
-        std::cerr << "ftServer::tick() moreToTick from InputQueues" << std::endl;
-#endif
-    }
     return moreToTick;
 }
 
@@ -446,16 +410,6 @@ bool    ftServer::handleFileData() {
 
     i_init = i;
     while ((fr = mP3iface -> GetFileRequest()) != NULL ) {
-#ifdef SERVER_DEBUG
-        std::cerr << "ftServer::handleFileData() Recvd ftFiler Request" << std::endl;
-        std::ostringstream out;
-        if (i == i_init) {
-            out << "Incoming(Net) File Item:" << std::endl;
-        }
-        fr -> print(out);
-        log(LOG_DEBUG_BASIC, ftserverzone, out.str());
-#endif
-
         i++; /* count */
         mFtDataplex->recvDataRequest(fr->PeerId(),
                                      fr->file.hash,  fr->file.filesize,
@@ -468,20 +422,6 @@ bool    ftServer::handleFileData() {
     // now File Data.
     i_init = i;
     while ((fd = mP3iface -> GetFileData()) != NULL ) {
-#ifdef SERVER_DEBUG
-        std::cerr << "ftServer::handleFileData() Recvd ftFiler Data" << std::endl;
-        std::cerr << "hash: " << fd->fd.file.hash;
-        std::cerr << " length: " << fd->fd.binData.bin_len;
-        std::cerr << " data: " << fd->fd.binData.bin_data;
-        std::cerr << std::endl;
-
-        std::ostringstream out;
-        if (i == i_init) {
-            out << "Incoming(Net) File Data:" << std::endl;
-        }
-        fd -> print(out);
-        log(LOG_DEBUG_BASIC, ftserverzone, out.str());
-#endif
         i++; /* count */
 
         /* incoming data */

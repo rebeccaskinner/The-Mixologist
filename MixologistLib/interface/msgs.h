@@ -46,7 +46,7 @@ public:
 std::ostream &operator<<(std::ostream &out, const ChatInfo &info);
 
 class Msgs;
-extern Msgs   *msgs;
+extern Msgs *msgs;
 
 class Msgs {
 public:
