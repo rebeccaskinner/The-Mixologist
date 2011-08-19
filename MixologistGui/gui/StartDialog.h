@@ -29,6 +29,10 @@
 
 #include "ui_StartDialog.h"
 
+/*
+ * The window that appears with login information before the Mixologist starts in earnest.
+ */
+
 class StartDialog : public QMainWindow {
 	Q_OBJECT
 
@@ -43,30 +47,38 @@ public slots:
 
 private slots:
 
-	void edited();
+        //Enables or disables the login button if we have all necessary login information
+        void edited();
+        //Begin 1st step after clicking Log In button to check client version
 	void checkVersion();
+        //Begin 2nd step to query server for: id, name, communications links
         void downloadedVersion(qlonglong version, QString description, QString importances);
-        void downloadInfo();
+        //Begin 3rd step to upload info to server
         void downloadedInfo(QString name, int librarymixer_id,
                             QString checkout_link1, QString contact_link1, QString link_title1,
                             QString checkout_link2, QString contact_link2, QString link_title2,
                             QString checkout_link3, QString contact_link3, QString link_title3);
-	void downloadFriends();
+        //Begin 4th step to download library
         void downloadLibrary();
+        //Begin 5th step to download friends
+        void downloadFriends();
+        //Loading complete, start the Mioxlogist
 	void finishLoading();
-	void updateDataReadProgress(int bytesRead, int totalBytes);
-	void errorReceived(int errorCode);
+        //Updates the progress bar from librarymixer-connect with information on data transfer progress
+        void updateDataReadProgress(int bytesRead, int totalBytes);
+        //Used by librarymixer-connect to signal a problem in a data transfer
+        void errorReceived(int errorCode);
 
 private:
 	void closeEvent (QCloseEvent * event);
 
-	/** Qt Designer generated object */
+	/* Qt Designer generated object */
         Ui::StartDialog ui;
 
         //This variable is populated from saved settings, and indicates that version numbers <= this we are not interested in
         qlonglong skip_to_version;
 
-};
+    };
 
 #endif
 

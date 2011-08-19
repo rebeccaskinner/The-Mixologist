@@ -94,13 +94,25 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
         ui.loadEmail->setText(email);
         if (!password.isEmpty()) {
             ui.loadPassword->setText(password);
-            ui.autoBox->setChecked(true);
         }
+    }
+
+    /*
+    * Auto-logon has 3 states, which we track with the DefaultPassword setting:
+    * No DefaultPassword: Default to auto-login box checked, but obviously we can't login without a password
+    * Saved DefaultPassword: Auto-login checked
+    * Blank DefaultPassword: Auto-login unchecekd
+    */
+
+    if (!settings.contains("DefaultPassword") || !settings.value("DefaultPassword").toString().isEmpty()){
+        ui.autoBox->setChecked(true);
     }
 
     //Disable box until fully ready for user interaction
     ui.groupBox->setEnabled(false);
     ui.loadButton->setEnabled(false);
+
+    //All UI elements now setup and ready for display
     show();
 
     if (!getMixologyLinksAssociated()) {
@@ -121,9 +133,11 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
 
     }
 
-    //If we set the auto login box earlier in the constructor, auto login now.
-    if (ui.autoBox->isChecked()) checkVersion();
-    else {
+    //If we are autologging in, then do so
+    if (!ui.loadEmail->text().isEmpty() &&
+        !ui.loadPassword->text().isEmpty()) {
+        checkVersion();
+    } else {
         ui.groupBox->setEnabled(true);
         ui.loadButton->setEnabled(true);
         if (!email.isEmpty()) {
@@ -142,7 +156,6 @@ void StartDialog::edited() {
     }
 }
 
-//First step after clicking Log In button is to check client version
 void StartDialog::checkVersion() {
     ui.groupBox->setEnabled(false);
     ui.loadButton->setEnabled(false);
@@ -182,16 +195,7 @@ void StartDialog::downloadedVersion(qlonglong _version, QString description, QSt
         }
 
     }
-    downloadInfo();
-}
 
-/*Second step after clicking Log In button is to query server for:
-  id
-  name
-  communications links
-*/
-
-void StartDialog::downloadInfo() {
     QString email = ui.loadEmail->text();
     QString password = ui.loadPassword->text();
     librarymixerconnect->setLogin(email, password);
@@ -205,14 +209,16 @@ void StartDialog::downloadedInfo(QString name, int librarymixer_id,
                                  QString checkout_link1, QString contact_link1, QString link_title1,
                                  QString checkout_link2, QString contact_link2, QString link_title2,
                                  QString checkout_link3, QString contact_link3, QString link_title3) {
-    bool savePassword = ui.autoBox -> checkState();
-
     //First time we have the librarymixer_id and can initialize user directory
     Init::loadUserDir(librarymixer_id);
     //First time we have verified that the credentials are good, and can save them to the autoload
     QSettings settings(*startupSettings, QSettings::IniFormat, this);
     settings.setValue("DefaultEmail", rot13(ui.loadEmail->text()));
-    if (savePassword) settings.setValue("DefaultPassword", rot13(ui.loadPassword->text()));
+    if (ui.autoBox -> checkState()){
+        settings.setValue("DefaultPassword", rot13(ui.loadPassword->text()));
+    } else {
+        settings.setValue("DefaultPassword", "");
+    }
 
     //Now that user dir, we can setup the other settings object
     mainSettings = new QString(Init::getUserDirectory(true).append("settings.ini"));
@@ -275,7 +281,6 @@ void StartDialog::downloadedInfo(QString name, int librarymixer_id,
     librarymixerconnect->uploadInfo(link_to_set, public_key);
 }
 
-//Fourth step after clicking Log In button is to download library
 void StartDialog::downloadLibrary() {
     ui.loadStatus->setText("Downloading your library");
     ui.progressBar->setValue(60);
@@ -283,7 +288,6 @@ void StartDialog::downloadLibrary() {
     librarymixerconnect->downloadLibrary();
 }
 
-//Fifth step after clicking Log In button is to download friend list
 void StartDialog::downloadFriends() {
     ui.loadStatus->setText("Downloading friend list");
     ui.progressBar->setValue(80);
