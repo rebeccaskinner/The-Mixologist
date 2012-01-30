@@ -411,11 +411,15 @@ struct in_addr getPreferredInterface() { // returns best addr.
     std::list<std::string>::iterator it;
     /* This strange syntax is to silence some irritating spurious GCC warnings.
        See: http://stackoverflow.com/questions/5434865/quickest-way-to-initialize-an-array-of-structures-to-all-0s */
+#ifdef WINDOWS_SYS
     struct in_addr addr_zero = {{{0}}};
     struct in_addr addr_loop = {{{0}}};
     struct in_addr addr_priv = {{{0}}};
     struct in_addr addr_ext = {{{0}}};
-    struct in_addr addr = {{{0}}};
+    struct in_addr addr = {{{0}}}; 
+#else    
+    struct in_addr addr_zero = {0}, addr_loop = {0}, addr_priv = {0}, addr_ext = {0}, addr = {0};
+#endif
 
     bool found_zero = false;
     bool found_loopback = false;
