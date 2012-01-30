@@ -275,6 +275,32 @@ void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
     ui.loadStatus->setText("Initializing Encryption");
     ui.progressBar->setValue(30);
 
+    if (!settings.value("Tutorial/Initial", DEFAULT_TUTORIAL_DONE_INITIAL).toBool()) {
+        settings.setValue("Tutorial/Initial", true);
+        QMessageBox helpBox(this);
+        helpBox.setText("Welcome to the Mixologist!");
+        QString info = "The Mixologist is a chat and file transfer program that works with LibraryMixer.";
+        info += "<p>The chat part is pretty simple, just like any instant messenger, you can type text or drag files directly into the chat box.</p>";
+        info += "<p>The Mixologist also integrates into LibraryMixer, and any items you list as in your library and available for friends to checkout will by synced with the Mixologist. ";
+        info += "When a friend clicks on a link in LibraryMixer to ask you for it, you can setup an automatic response such as lending or sending a file or message that the Mixologist will automatically use whenever any friend asks for it again.</p>";
+        info += "<p>Finally, the Mixologist also has an optional file transfer method, where you can drag and drop folders that your friends can copy or borrow. ";
+        info += "You can browse or search the list of files your friends have shared with you in this fashion whether they're on or offline.</p>";
+        info += "<p>If this seems really confusing to you, you can disable this additional file transfer method. ";
+        info += "If you disable it, you can basically just leave the Mixologist minimized all the time, and interact with your friends entirely through the LibraryMixer website.</p>";
+        info += "<p>Do you want to disable the optional Mixologist-based file transfer method now?</p>";
+        helpBox.addButton(QMessageBox::Yes);
+        QPushButton* No = helpBox.addButton(QMessageBox::No);
+        helpBox.setInformativeText(info);
+        helpBox.setTextFormat(Qt::RichText);
+        helpBox.exec();
+
+        if (helpBox.clickedButton() == No) {
+            settings.setValue("Gui/EnableOffLibraryMixer", true);
+        } else {
+            settings.setValue("Gui/EnableOffLibraryMixer", false);
+        }
+    }
+
     QString public_key = Init::InitEncryption(librarymixer_id);
     if (public_key.isEmpty()) {
         QMessageBox::warning (this,
@@ -368,4 +394,3 @@ void StartDialog::closeEvent (QCloseEvent *event) {
         exit(1);
     }
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      

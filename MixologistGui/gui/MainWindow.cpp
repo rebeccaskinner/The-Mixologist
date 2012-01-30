@@ -47,32 +47,6 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
     /* Tutorials */
-    if (!settings.value("Tutorial/Initial", DEFAULT_TUTORIAL_DONE_INITIAL).toBool()) {
-        settings.setValue("Tutorial/Initial", true);
-        QMessageBox helpBox(this);
-        helpBox.setText("Welcome to the Mixologist!");
-        QString info = "The Mixologist is a chat and file transfer program that works with LibraryMixer.";
-        info += "<p>The chat part is pretty simple, just like any instant messenger, you can type text or drag files directly into the chat box.</p>";
-        info += "<p>The Mixologist also integrates into LibraryMixer, and any items you list as in your library and available for friends to checkout will by synced with the Mixologist. ";
-        info += "When a friend clicks on a link in LibraryMixer to ask you for it, you can setup an automatic response such as lending or sending a file or message that the Mixologist will automatically use whenever any friend asks for it again.</p>";
-        info += "<p>Finally, the Mixologist also has an optional file transfer method, where you can drag and drop folders that your friends can copy or borrow. ";
-        info += "You can browse or search the list of files your friends have shared with you in this fashion whether they're on or offline.</p>";
-        info += "<p>If this seems really confusing to you, you can disable this additional file transfer method. ";
-        info += "If you disable it, you can basically just leave the Mixologist minimized all the time, and interact with your friends entirely through the LibraryMixer website.</p>";
-        info += "<p>Do you want to disable the optional Mixologist-based file transfer method now?</p>";
-        helpBox.addButton(QMessageBox::Yes);
-        QPushButton* No = helpBox.addButton(QMessageBox::No);
-        helpBox.setInformativeText(info);
-        helpBox.setTextFormat(Qt::RichText);
-        helpBox.exec();
-
-        if (helpBox.clickedButton() == No) {
-            settings.setValue("Gui/EnableOffLibraryMixer", true);
-        } else {
-            settings.setValue("Gui/EnableOffLibraryMixer", false);
-        }
-    }
-
     tutorial_library_done = settings.value("Tutorial/Library", DEFAULT_TUTORIAL_DONE_LIBRARY).toBool();
     tutorial_friends_library_done = settings.value("Tutorial/FriendsLibrary", DEFAULT_TUTORIAL_DONE_FRIENDS_LIBRARY).toBool();
 
@@ -269,4 +243,57 @@ void MainWindow::showPage(QAction *pageAction) {
         QSettings settings(*mainSettings, QSettings::IniFormat, this);
         settings.setValue("Tutorial/FriendsLibrary", true);
         tutorial_friends_library_done = true;
-        QMessageBox 
+        QMessageBox helpBox(this);
+        QString info("This is the Friends' Library tab of the Mixologist.");
+        info += "<p>The <b>upper box</b> syncs with LibraryMixer to display the things your friends have listed on LibraryMixer as available for you to check out.</p>";
+        info += "<p>The <b>lower box</b> lists files and folders your friends have shared with you only in the Mixologist and not on the LibraryMixer website.</p>";
+        info += "<p>This is the optional second method of file transfers you enabled on startup.</p>";
+        info += "<p>The <b>search bar</b> up top lets you just type to search both of these at the same time.</p>";
+        helpBox.setText(info);
+        helpBox.setTextFormat(Qt::RichText);
+        helpBox.exec();
+    }
+}
+
+void MainWindow::updateMenu() {
+    toggleVisibilityAction->setText(isVisible() ? tr("Hide") : tr("Show"));
+}
+
+void MainWindow::toggleVisibility(QSystemTrayIcon::ActivationReason e) {
+    if (e == QSystemTrayIcon::Trigger || e == QSystemTrayIcon::DoubleClick) {
+        if (isHidden()) {
+            show();
+            if (isMinimized()) {
+                if (isMaximized()) showMaximized();
+                else showNormal();
+            }
+            raise();
+            activateWindow();
+        } else hide();
+    }
+}
+
+void MainWindow::toggleVisibilitycontextmenu() {
+    if (isVisible()) hide();
+    else show();
+}
+
+void MainWindow::trayMsgClicked() {
+    if(trayOpenDownloadsFolder){
+        trayOpenDownloadsFolder = false;
+        transfersDialog->openContaining();
+    } else {
+        ui.stackPages->setCurrentWidget(trayOpenTo);
+        show();
+        raise();
+        activateWindow();
+    }
+}
+
+/*
+void MainWindow::setTrayIcon(float downKb, float upKb){
+    if (upKb > 0 && downKb <= 0) trayIcon->setIcon(QIcon(":/Images/Up1Down0.png"));
+    else if (upKb <= 0 && downKb > 0) trayIcon->setIcon(QIcon(":/Images/Up0Down1.png"));
+    else if (upKb > 0 && downKb > 0) trayIcon->setIcon(QIcon(":/Images/Up1Down1.png"));
+    else trayIcon->setIcon(QIcon(":/Images/Up0Down0.png"));
+}*/
