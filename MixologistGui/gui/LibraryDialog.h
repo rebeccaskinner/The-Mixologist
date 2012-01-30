@@ -23,57 +23,30 @@
 #ifndef _LIBRARYDIALOG_H
 #define _LIBRARYDIALOG_H
 
-#include <QMovie>
-
 #include "ui_LibraryDialog.h"
-#include "LibraryHelper.h"
+
+class LibraryModel;
 
 class LibraryDialog : public QWidget {
 	Q_OBJECT
 
     public:
-	/** Default Constructor */
+        /* Default Constructor */
         LibraryDialog(QWidget *parent = 0);
-	/** Default Destructor */
-
-    public slots:
-        void insertLibrary();
 
     private slots:
+        /* Opens the Mixology server (generally LibraryMixer) in the browser to manage library. */
+        void addLibraryClicked();
+        /* addLibraryClicked sets a timer before popping up a box, this finishes the action. */
+        void addLibraryClickedComplete();
         //Updates the library
         void updateLibrary();
         //Updates the UI that we are no longer updating the library
         void updatedLibrary();
-        //Opens a text dialog for the user to set an auto response message
-        void setMatchToMessage();
-        //Opens a file dialog to set files
-        void setMatchToFiles();
-        //Opens a file dialog to set files to lend
-        void setMatchToLend();
-        //Sets an item to chat, and never bother again about auto match
-        void setMatchToChat();
-        //Toggle an item set to file to lend
-        void setFilesToLend();
-        //Toggle an item set to lend to file
-        void setLendToFiles();
-        //Shows the help window
-        void showHelp();
-        //Chat with the borrower of a lent item
-        void chatBorrower();
-        //Opens the file on a matched or lend item
-        void openFile();
-
-        //Opens the context menu for unmatched items
-        void unmatchedContextMenu(QPoint point);
-        //Opens the context for matched items
-        void matchedContextMenu(QPoint point);
 
     private:
-        QMovie* movie;
-
-        //Pointers for keeping track of context menu actions
-        QTreeWidgetItem* contextItem;
-        LibraryBox* contextBox;
+        LibraryModel* unmatchedModel;
+        LibraryModel* libraryModel;
 
 	/** Qt Designer generated object */
         Ui::LibraryDialog ui;

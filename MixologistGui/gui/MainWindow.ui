@@ -1021,7 +1021,7 @@
    </property>
    <property name="iconSize">
     <size>
-     <width>60</width>
+     <width>95</width>
      <height>24</height>
     </size>
    </property>
@@ -1040,6 +1040,7 @@
    <addaction name="actionFriends"/>
    <addaction name="actionRequests"/>
    <addaction name="actionLibrary"/>
+   <addaction name="actionFriendsLibrary"/>
   </widget>
   <widget class="QToolBar" name="rightToolbar">
    <property name="enabled">
@@ -1114,6 +1115,9 @@
    </property>
   </action>
   <action name="actionRequests">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
    <property name="icon">
     <iconset resource="images.qrc">
      <normaloff>:/Images/Transfers.png</normaloff>:/Images/Transfers.png</iconset>
@@ -1122,10 +1126,16 @@
     <string>Requests</string>
    </property>
    <property name="toolTip">
-    <string>Requests</string>
+    <string>Requests (Ctrl-2)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+2</string>
    </property>
   </action>
   <action name="actionFriends">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
    <property name="icon">
     <iconset resource="images.qrc">
      <normaloff>:/Images/Peers.png</normaloff>:/Images/Peers.png</iconset>
@@ -1133,17 +1143,29 @@
    <property name="text">
     <string>Friends</string>
    </property>
+   <property name="toolTip">
+    <string>Friends (Ctrl-1)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+1</string>
+   </property>
   </action>
   <action name="actionLibrary">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
    <property name="icon">
     <iconset resource="images.qrc">
      <normaloff>:/Images/Library.png</normaloff>:/Images/Library.png</iconset>
    </property>
    <property name="text">
-    <string>Library</string>
+    <string>My Library</string>
    </property>
    <property name="toolTip">
-    <string>Library</string>
+    <string>Your Library (Ctrl-3)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+3</string>
    </property>
    <property name="iconSize" stdset="0">
     <size>
@@ -1153,12 +1175,33 @@
    </property>
   </action>
   <action name="actionNetwork">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
    <property name="icon">
     <iconset resource="images.qrc">
      <normaloff>:/Images/Network.png</normaloff>:/Images/Network.png</iconset>
    </property>
    <property name="text">
     <string>Network</string>
+   </property>
+  </action>
+  <action name="actionFriendsLibrary">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="images.qrc">
+     <normaloff>:/Images/OffLibrary.png</normaloff>:/Images/OffLibrary.png</iconset>
+   </property>
+   <property name="text">
+    <string>Friends' Libraries</string>
+   </property>
+   <property name="toolTip">
+    <string>Libraries of your friends (Ctrl-4)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+4</string>
    </property>
   </action>
  </widget>

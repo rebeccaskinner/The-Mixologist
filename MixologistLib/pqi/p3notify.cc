@@ -29,7 +29,7 @@ pqiNotify *getPqiNotify() {
 
 bool p3Notify::NotifySysMessage(uint32_t &sysid, uint32_t &type,
                                 QString &title, QString &msg) {
-    MixStackMutex stack(noteMtx); /************* LOCK MUTEX ************/
+    QMutexLocker stack(&noteMtx);
     if (pendingSysMsgs.size() > 0) {
         p3NotifySysMsg smsg = pendingSysMsgs.front();
         pendingSysMsgs.pop_front();
@@ -46,7 +46,7 @@ bool p3Notify::NotifySysMessage(uint32_t &sysid, uint32_t &type,
 }
 
 bool p3Notify::NotifyPopupMessage(uint32_t &ptype, QString &name, QString &msg) {
-    MixStackMutex stack(noteMtx); /************* LOCK MUTEX ************/
+    QMutexLocker stack(&noteMtx);
     if (pendingPopupMsgs.size() > 0) {
         p3NotifyPopupMsg pmsg = pendingPopupMsgs.front();
         pendingPopupMsgs.pop_front();
@@ -63,7 +63,7 @@ bool p3Notify::NotifyPopupMessage(uint32_t &ptype, QString &name, QString &msg) 
 
 /* Input from MixologistLib */
 bool p3Notify::AddPopupMessage(uint32_t ptype, QString name, QString msg) {
-    MixStackMutex stack(noteMtx); /************* LOCK MUTEX ************/
+    QMutexLocker stack(&noteMtx);
 
     p3NotifyPopupMsg pmsg;
 
@@ -79,7 +79,7 @@ bool p3Notify::AddPopupMessage(uint32_t ptype, QString name, QString msg) {
 
 bool p3Notify::AddSysMessage(uint32_t sysid, uint32_t type,
                              QString title, QString msg) {
-    MixStackMutex stack(noteMtx); /************* LOCK MUTEX ************/
+    QMutexLocker stack(&noteMtx);
 
     p3NotifySysMsg smsg;
 

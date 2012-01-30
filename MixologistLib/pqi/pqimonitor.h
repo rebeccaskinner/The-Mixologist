@@ -74,7 +74,7 @@ const uint32_t STUN_FRIEND_OF_FRIEND    = 0x0040;
 
 class pqipeer {
 public:
-    int librarymixer_id;
+    unsigned int librarymixer_id;
     std::string cert_id;
     QString name;
     uint32_t    state;
@@ -88,7 +88,8 @@ public:
     pqiMonitor() {return;}
     virtual ~pqiMonitor() {return;}
 
-    virtual void    statusChange(const std::list<pqipeer> &plist) = 0;
+    /* Called by the p3ConnectMgr's tick function with a list of pqipeers whose statuses have changed. */
+    virtual void statusChange(const std::list<pqipeer> &plist) = 0;
 };
 
 

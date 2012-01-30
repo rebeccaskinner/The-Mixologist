@@ -15,4 +15,26 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#define VERSION    Q_INT64_C(2011011311)
+#ifndef VERSION_HEADER
+#define VERSION_HEADER
+
+#include <QString>
+
+#define VERSION Q_UINT64_C(2012013015)
+
+namespace VersionUtil {
+    QString inline convert_to_display_version(qlonglong inputVersion) {
+        int indexOfTime = QString::number(inputVersion).length() - 2;
+        int indexOfDate = QString::number(inputVersion).length() - 4;
+        int indexOfMonth = QString::number(inputVersion).length() - 6;
+        QString versionString = QString::number(inputVersion);
+        versionString.insert(indexOfTime, ":");
+        versionString.insert(indexOfDate, "/");
+        versionString.insert(indexOfMonth, "/");
+        return versionString;
+    }
+
+    QString inline display_version() {return convert_to_display_version(VERSION);}
+}
+
+#endif

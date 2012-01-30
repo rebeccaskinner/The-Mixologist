@@ -50,7 +50,7 @@ appropriate actual implementation.
 
 class pqiperson: public PQInterface {
 public:
-    pqiperson(std::string id, int librarymixer_id, pqipersongrp *ppg);
+    pqiperson(std::string id, unsigned int librarymixer_id, pqipersongrp *ppg);
     virtual ~pqiperson(); // must clean up children.
 
     // control of the connection.

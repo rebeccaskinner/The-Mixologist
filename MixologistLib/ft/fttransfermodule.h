@@ -23,107 +23,114 @@
 #ifndef FT_TRANSFER_MODULE_HEADER
 #define FT_TRANSFER_MODULE_HEADER
 
-#include <map>
-#include <list>
-#include <string>
-
 #include "ft/ftfilecreator.h"
 #include "ft/ftdatademultiplex.h"
 #include "ft/ftcontroller.h"
 
-#include "util/threads.h"
+#include <QMutex>
 
 /*
  * FUNCTION DESCRIPTION
  *
- * Each Transfer Module is paired up with a single File Creator, and responsible for the transfer of one file.
+ * Each Transfer Module is paired up with a single FileCreator it contains, and responsible for the download of one file.
  * The Transfer Module is responsible for sending requests to peers at the correct data rates, and storing the returned data
  * in a FileCreator.
- * There are multiple Transfer Modules in the File Transfer system. Their requests are multiplexed through the Client Module.
- * The Transfer Module contains all the algorithms for sensible Data Requests.
+ * The Transfer Module contains all the algorithms for sensible data requests.
  * It must be able to cope with varying data rates and dropped peers without flooding the system with too many requests.
  *
+ * In practice, the way this works for file transfers is that the ftController thread's loop will have the transferModule send requests for more data.
+ * Meanwhile, the incoming data is handled by the ftDataDemultiplex thread.
+ * Stats are collected on the incoming data, to try to keep the requests in sync with the speed of the connection to that friend.
+ * Reasons to avoid requesting a huge chunk all at once are (1) to avoid allocating too much of a file to one friend (for multi-source when enabled)
+ * and (2) to avoid the overhead on the sender side of reading a huge chunk into memory all at once.
+ * We do this by setting a target time to complete our requests of 9 seconds.
+ * If we have completed our requested amount of data, and the time is less than 9 seconds, we increase the rate.
+ * Conversely if we took more time to complete our request we decrease the rate.
  */
 
-const uint32_t  PQIPEER_INIT                 = 0x0000;
 const uint32_t  PQIPEER_NOT_ONLINE           = 0x0001;
 const uint32_t  PQIPEER_DOWNLOADING          = 0x0002;
-const uint32_t  PQIPEER_IDLE                 = 0x0004;
-const uint32_t  PQIPEER_SUSPEND              = 0x0010;
+const uint32_t  PQIPEER_ONLINE_IDLE          = 0x0004;
 
 class peerInfo;
 
 class ftTransferModule {
 public:
     enum fileTransferStatus {
-        FILE_DOWNLOADING,
-        FILE_COMPLETING,
-        FILE_COMPLETE,
-        FILE_FAIL_CANCEL
+        FILE_WAITING = 0,       //Not done, and not downloading at this moment, but could already be partially downloaded
+        FILE_DOWNLOADING = 1,   //Currently downloading
+        FILE_COMPLETE = 2       //Successful completion
     };
 
-    ftTransferModule(ftFileCreator *fc, ftDataDemultiplex *dm, ftController *c);
-    ~ftTransferModule(){};
+    ftTransferModule(unsigned int initial_friend_id, uint64_t size, const QString &hash);
+    ~ftTransferModule();
 
-    //Called from ftController
+    //Called from ftController, returns 0 normally, returns 1 when file is complete
     int tick();
+
+    //Returns the current status
+    ftTransferModule::fileTransferStatus transferStatus() const;
+
+    //Sets the current status
+    void transferStatus(fileTransferStatus newStatus);
+
     //Called from ftController, batch sets a list of friends by librarymixer_ids as file sources
-    bool setFileSources(QList<int> sourceIds);
+    bool setFileSources(QList<unsigned int> sourceIds);
+
     //Called from ftController, adds the friend as a file source
-    bool addFileSource(int librarymixer_id);
+    bool addFileSource(unsigned int librarymixer_id);
+
     //Called from ftController, sets the online state of a friend
-    bool setPeerState(int librarymixer_id,uint32_t state);  //state = ONLINE/OFFLINE
+    bool setPeerState(unsigned int librarymixer_id, uint32_t state);  //state = ONLINE/OFFLINE
+
     //Called from ftController, returns a list of librarymixer ids of file sources that are known
-    bool getFileSources(QList<int> &sourceIds);
+    bool getFileSources(QList<unsigned int> &sourceIds);
+
     //Called from ftController, gets the online state and target transfer rate for a friend
-    bool getPeerState(int librarmixer_id,uint32_t &state,uint32_t &tfRate);
+    bool getPeerState(unsigned int librarmixer_id, uint32_t &state, uint32_t &tfRate);
 
     /*
     TEMPORARILY REMOVED
     bool pauseTransfer();
     bool resumeTransfer();
     */
-    //Called from ftController, instructs the transfer module to stop doing anything in preparation for its imminent deletion
-    void cancelTransfer();
 
     //Called from ftDataDemultiplex when data is received, frees the data whether successful or not
     bool recvFileData(std::string cert_id, uint64_t offset, uint32_t chunk_size, void *data);
 
+    /* Has an independent Mutex, can be accessed directly */
+    ftFileCreator* mFileCreator;
+
 private:
     //Updates actualRate with the total from all sources
     void updateActualRate();
-    //Called to signal when a file transfer is complete
-    void completeFileTransfer();
     //Called by tick, handles calculating target rates and then requesting an appropriate amount of data
     bool locked_tickPeerTransfer(peerInfo &info);
     //Called by recvFileData, updates info about our transfer
     //If we are rttActive and calculating a new rate, and we have finished receiving the full chunk, calculates the new rate change
     void locked_recvDataUpdateStats(peerInfo &info, uint64_t offset, uint32_t chunk_size);
 
-    /* These have independent Mutexes / are const locally (no Mutex protection)*/
-    ftFileCreator *mFileCreator;
-    ftController *mFtController; //So we can let it know when a file completes
-
-    MixMutex tfMtx;
-
-    //List of all sources, with first element the cert_id of the source
-    QMap<std::string,peerInfo> mFileSources;
+    mutable QMutex tfMtx;
 
     //Controls the current status of the download
     fileTransferStatus mTransferStatus;
+
+    //List of all sources, with first element the cert_id of the source
+    QMap<std::string, peerInfo> mFileSources;
 
     //Total transfer speed on this file
     double actualRate;
 };
 
+/* Used internally to hold information about each friend we have as a file source. */
 class peerInfo {
 public:
-    peerInfo(int _librarymixer_id, std::string cert_id)
+    peerInfo(unsigned int _librarymixer_id, std::string cert_id)
         :librarymixer_id(_librarymixer_id), cert_id(cert_id), state(PQIPEER_NOT_ONLINE), actualRate(0),
         offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransfered(0), nResets(0),
         rtt(0), rttActive(false), rttStart(0), rttOffset(0),mRateChange(1), fastStart(true) {return;}
 
-    int librarymixer_id;
+    unsigned int librarymixer_id;
     std::string cert_id;
     uint32_t state;
     double actualRate;

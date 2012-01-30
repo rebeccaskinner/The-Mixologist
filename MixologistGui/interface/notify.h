@@ -34,12 +34,14 @@ const uint32_t SYS_ERROR 	= 0x0001;
 const uint32_t SYS_WARNING 	= 0x0002;
 const uint32_t SYS_INFO 	= 0x0004;
 
-//Indicates a new connection to a friend.
+//Indicates a new connection to a friend, where name is name of the friend.
 const uint32_t POPUP_CONNECT   = 0x0001;
-//Indicates a completed download.
+//Indicates a completed download, where name is the name of the download.
 const uint32_t POPUP_DOWNDONE  = 0x0002;
-//Indicates an unmatched file was encountered.
-const uint32_t POPUP_UNMATCHED = 0x0004;
+//Indicates a friend connected with a newer version of the Mixologist, where name is the friend's name, and msg is the new version.
+const uint32_t POPUP_NEW_VERSION_FROM_FRIEND = 0x0004;
+//Miscellaneous popup, where name is the title, and msg is the body
+const uint32_t POPUP_MISC      = 0x0008;
 
 /* This class is the output interface for notification events. */
 class Notify {

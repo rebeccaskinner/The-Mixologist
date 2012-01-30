@@ -23,24 +23,40 @@
 #include "ftfilecreator.h"
 #include <QFileInfo>
 #include "util/debug.h"
+#include <time.h>
 
 #define CHUNK_MAX_AGE 20 //20 seconds
 
-ftFileCreator::ftFileCreator(QString path, uint64_t size, std::string hash)
+ftFileCreator::ftFileCreator(QString path, uint64_t size, QString hash)
     : ftFileProvider(path, size, hash) {
 
     {
         QString toLog = "ftFileCreator()";
         toLog += " path: " + path;
         toLog += " size: " + QString::number(size);
-        toLog += " hash: " + QString(hash.c_str());
+        toLog += " hash: " + hash;
         log(LOG_DEBUG_BASIC, FTFILECREATORZONE, toLog);
     }
 
-    MixStackMutex stack(ftcMutex);
-
     firstUnreadByte = QFileInfo(path).size();
     lastRequestedByte = firstUnreadByte;
+
+    /* Handle the specical case of a 0 byte file, where addFileData will never be called. */
+    if (size == 0) {
+        QFile finishedFile(path);
+        finishedFile.open(QIODevice::WriteOnly);
+        finishedFile.close();
+    }
+}
+
+bool ftFileCreator::finished() const {
+    int received = amountReceived();
+    int total = getFileSize();
+    return received == total;
+}
+
+uint64_t ftFileCreator::amountReceived() const {
+    return firstUnreadByte;
 }
 
 bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data) {
@@ -51,7 +67,7 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
         log(LOG_DEBUG_BASIC, FTFILECREATORZONE, toLog);
     }
 
-    MixStackMutex stack(ftcMutex);
+    QMutexLocker stack(&ftcMutex);
 
     if (file == NULL){
         log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::addFileData() creating " + path);
@@ -73,12 +89,27 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
         return false;
     }
 
-    return 1;
+    /* Normally it's fine that the QFile is buffered, as it presumably improves performance.
+       However, on the final finish of the file, it is important that it is written to disk,
+       otherwise when the file is moved in ftController, it may be truncated. */
+    if (finished()) {
+        if (!file->flush()) {
+            log(LOG_ERROR, FTFILECREATORZONE, "Error while attempting to write to file " + path);
+            return false;
+        } else {
+            file->close();
+        }
+    }
+
+    return true;
 }
 
+bool ftFileCreator::deleteFileFromDisk() {
+    if (file) return file->remove();
+    return true;
+}
 
 bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) {
-
     /* Find the chunk */
     QMap<uint64_t, ftChunk>::iterator it;
     it = mChunks.find(offset);
@@ -120,10 +151,12 @@ bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) 
     return true;
 }
 
-bool ftFileCreator::getMissingChunk(uint64_t &offset, uint32_t &chunk_size) {
-    MixStackMutex stack(ftcMutex);
+bool ftFileCreator::allocateRemainingChunk(uint64_t &offset, uint32_t &chunk_size) {
+    QMutexLocker stack(&ftcMutex);
 
-    if (finished()) return false;
+    if (finished()) {
+        return false;
+    }
 
     time_t currentTime = time(NULL);
 
@@ -131,7 +164,7 @@ bool ftFileCreator::getMissingChunk(uint64_t &offset, uint32_t &chunk_size) {
     QMap<uint64_t, ftChunk>::iterator it;
     for (it = mChunks.begin(); it != mChunks.end(); it++) {
         if (it.value().requestTime < (currentTime - CHUNK_MAX_AGE)) {
-            log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::getMissingChunk() chunk request timed out, re-requesting");
+            log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::allocateRemainingChunk() chunk request timed out, re-requesting");
             it.value().requestTime = currentTime;
             chunk_size = it.value().chunk_size;
             offset = it.value().offset;
@@ -148,7 +181,7 @@ bool ftFileCreator::getMissingChunk(uint64_t &offset, uint32_t &chunk_size) {
 
     if (chunk_size > 0) {
         log(LOG_DEBUG_BASIC, FTFILECREATORZONE,
-            QString("ftFileCreator::getMissingChunk() adding new chunk") +
+            QString("ftFileCreator::allocateRemainingChunk() adding new chunk") +
             " firstUnreadByte: " + QString::number(firstUnreadByte) +
             " lastRequestedByte: " + QString::number(lastRequestedByte) +
             " fullFileSize: " + QString::number(fullFileSize));
@@ -162,7 +195,7 @@ bool ftFileCreator::getMissingChunk(uint64_t &offset, uint32_t &chunk_size) {
 #ifdef false
 bool    ftFileCreator::getFileData(uint64_t offset, uint32_t &chunk_size, void *data) {
     {
-        MixStackMutex stack(ftcMutex);
+        QMutexLocker stack(&ftcMutex);
         /* If we don't have the data */
         if (offset + chunk_size > firstUnreadByte) return false;
     }

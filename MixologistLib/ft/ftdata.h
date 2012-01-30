@@ -28,7 +28,7 @@
  * Internal Interfaces for sending and receiving data.
  */
 
-#include <string>
+#include <QString>
 #include <inttypes.h>
 
 /*************** SEND INTERFACE *******************/
@@ -40,11 +40,11 @@ public:
     }
 
     /* Client Send */
-    virtual bool    sendDataRequest(std::string peerId, std::string hash,
+    virtual bool    sendDataRequest(std::string peerId, QString hash,
                                     uint64_t size, uint64_t offset, uint32_t chunksize) = 0;
 
     /* Server Send */
-    virtual bool    sendData(std::string peerId, std::string hash, uint64_t size,
+    virtual bool    sendData(std::string peerId, QString hash, uint64_t size,
                              uint64_t offset, uint32_t chunksize, void *data) = 0;
 
 };
@@ -61,11 +61,11 @@ public:
     }
 
     /* Client Recv */
-    virtual bool    recvData(std::string peerId, std::string hash, uint64_t size,
+    virtual bool    recvData(std::string peerId, QString hash, uint64_t size,
                              uint64_t offset, uint32_t chunksize, void *data) = 0;
 
     /* Server Recv */
-    virtual bool    recvDataRequest(std::string peerId, std::string hash,
+    virtual bool    recvDataRequest(std::string peerId, QString hash,
                                     uint64_t size, uint64_t offset, uint32_t chunksize) = 0;
 
 

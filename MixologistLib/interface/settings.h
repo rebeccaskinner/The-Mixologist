@@ -26,7 +26,8 @@
   This file is a simple holder to be included by every file that needs to access the global settings.
 */
 
-class QString;
+#include <QString>
+#include <QSettings>
 
 extern QString *startupSettings;
 extern QString *mainSettings;
@@ -34,6 +35,8 @@ extern QString *savedTransfers;
 
 const bool DEFAULT_START_MINIMIZED = false;
 const bool DEFAULT_SHOW_ADVANCED = false;
+
+const bool DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING = false;
 
 const bool DEFAULT_INCOMING_ASK = false;
 
@@ -44,11 +47,15 @@ const int DEFAULT_MAX_TOTAL_UPLOAD = 0;
 
 const bool DEFAULT_NOTIFY_CONNECT = true;
 const bool DEFAULT_NOTIFY_DOWNLOAD_DONE = true;
-const bool DEFAULT_NOTIFY_UNMATCHED = false;
 
 const bool DEFAULT_UPNP = true;
 const bool DEFAULT_RANDOM_PORTS = true;
 
+const bool DEFAULT_TUTORIAL_DONE_INITIAL = false;
+const bool DEFAULT_TUTORIAL_DONE_LIBRARY = false;
+const bool DEFAULT_TUTORIAL_DONE_FRIENDS_LIBRARY = false;
+
 #define DEFAULT_MIXOLOGY_SERVER "LibraryMixer"
+#define DEFAULT_MIXOLOGY_SERVER_VALUE "https://librarymixer.heroku.com"
 
 #endif

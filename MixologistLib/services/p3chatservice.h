@@ -70,7 +70,7 @@ public:
     std::list<ChatMsgItem *> getChatQueue();
 
 private:
-    MixMutex mChatMtx;
+    mutable QMutex mChatMtx;
 
     class AvatarInfo ;
 

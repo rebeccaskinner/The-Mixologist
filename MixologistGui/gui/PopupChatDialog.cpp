@@ -24,13 +24,12 @@
 #include "PopupChatDialog.h"
 #include "MainWindow.h"
 #include "LibraryDialog.h"
-#include <gui/Util/SettingsUtil.h>
+#include <gui/Util/GuiSettingsUtil.h>
 #include <gui/Util/Helpers.h> //for the recursiveFileAdd on drop function
 
 #include "interface/peers.h"
 #include "interface/msgs.h"
 #include "interface/files.h"
-#include "interface/librarymixer-library.h"
 
 #include <time.h>
 
@@ -52,7 +51,7 @@ PopupChatDialog::PopupChatDialog(int _librarymixer_id, QWidget *parent, Qt::WFla
     /* Invoke Qt Designer generated QObject setup routine */
     ui.setupUi(this);
 
-    SettingsUtil::loadWidgetInformation(this);
+    GuiSettingsUtil::loadWidgetInformation(this);
 
     last_status_send_time = 0 ;
 
@@ -151,32 +150,32 @@ void PopupChatDialog::addSysMsg(const QString &text) {
     addText(display);
 }
 
-void PopupChatDialog::insertRequestEvent(int event, int item_id) {
+void PopupChatDialog::insertRequestEvent(int event, unsigned int item_id) {
     QString message;
     QString requestedItemName;
-    LibraryMixerItem item;
-    std::cerr << item_id << std::endl;
+    LibraryMixerItem* item;
+
     switch(event) {
         case NOTIFY_TRANSFER_CHAT:
-            requestedItemName = LibraryMixerLibraryManager::getLibraryMixerItem(item_id).title;
+            requestedItemName = files->getLibraryMixerItem(item_id)->title();
             message = friendName + " is interested in getting " +
                       requestedItemName + " from you.";
             break;
         case NOTIFY_TRANSFER_MESSAGE:
-            item = LibraryMixerLibraryManager::getLibraryMixerItem(item_id);
-            requestedItemName = item.title;
-            message = "Auto response for '" + requestedItemName + "': " + item.message;
+            item = files->getLibraryMixerItem(item_id);
+            requestedItemName = item->title();
+            message = "Auto response for '" + requestedItemName + "': " + item->message();
             linkify(message);
             break;
         case NOTIFY_TRANSFER_LENT:
-            requestedItemName = LibraryMixerLibraryManager::getLibraryMixerItem(item_id).title;
+            requestedItemName = files->getLibraryMixerItem(item_id)->title();
             message = friendName + " is interested in getting " +
                       requestedItemName + " but it's currently lent to " +
-                      peers->getPeerName(LibraryMixerLibraryManager::getLibraryMixerItem(item_id).lentTo) + ".";
+                      peers->getPeerName(files->getLibraryMixerItem(item_id)->lentTo()) + ".";
             break;
         case NOTIFY_TRANSFER_UNMATCHED:
             requestedItemId = item_id;
-            requestedItemName = LibraryMixerLibraryManager::getLibraryMixerItem(item_id).title;
+            requestedItemName = files->getLibraryMixerItem(item_id)->title();
             ui.requestLabel->setText("'" + requestedItemName + "'' requested");
             ui.requestButton->setVisible(true);
             message = friendName + " is interested in getting " +
@@ -184,7 +183,7 @@ void PopupChatDialog::insertRequestEvent(int event, int item_id) {
             break;
         case NOTIFY_TRANSFER_BROKEN_MATCH:
             requestedItemId = item_id;
-            requestedItemName = LibraryMixerLibraryManager::getLibraryMixerItem(item_id).title;
+            requestedItemName = files->getLibraryMixerItem(item_id)->title();
             ui.requestLabel->setText("'" + requestedItemName + "'' requested");
             ui.requestButton->setVisible(true);
             message = friendName + " is interested in getting " +
@@ -213,7 +212,7 @@ void PopupChatDialog::insertTransferEvent(int event, const QString &transfer_nam
             break;
         case NOTIFY_TRANSFER_LENT:
             message = friendName + " has currently lent " +
-                      transfer_name + "out to somebody.";
+                      transfer_name + " out to somebody.";
             break;
         case NOTIFY_TRANSFER_UNMATCHED:
             message = "Sent " + friendName + " a message that you're interested in' " +
@@ -426,7 +425,7 @@ void PopupChatDialog::setMatchToMessage() {
         bool ok;
         QString text = QInputDialog::getText(this, tr("Auto Response"), tr("Enter your auto response message:"), QLineEdit::Normal, "", &ok);
         if (ok) {
-            LibraryMixerLibraryManager::setMatchMessage(requestedItemId, text);
+            files->setMatchMessage(requestedItemId, text);
             clearRequest();
         }
     }
@@ -437,11 +436,18 @@ void PopupChatDialog::setMatchToFiles() {
         QStringList paths = QFileDialog::getOpenFileNames(this, "Select the files");
         if (!paths.empty()) {
             if (QMessageBox::question(this, "The Mixologist", "Send to " + friendName + " now?", QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
-                if (!files->matchAndSend(requestedItemId, paths, librarymixer_id))
+                if (files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE, librarymixer_id)) {
+                    if (paths.count() == 1){
+                        addSysMsg("Reading file, will send as soon as ready");
+                    } else {
+                        addSysMsg("Reading files, will send as soon as ready");
+                    }
+                    clearRequest();
+                } else {
                     addSysMsg("An error occurred trying to match and send =(");
-                else clearRequest();
+                }
             } else {
-                LibraryMixerLibraryManager::setMatchFile(requestedItemId, paths, ITEM_MATCHED_TO_FILE);
+                files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE);
                 clearRequest();
             }
         }
@@ -452,7 +458,7 @@ void PopupChatDialog::setMatchToLend() {
     if (requestedItemId != 0) {
         QStringList paths = QFileDialog::getOpenFileNames(this, "");
         if (!paths.empty()) {
-            LibraryMixerLibraryManager::setMatchFile(requestedItemId, paths, ITEM_MATCHED_TO_LEND);
+            files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_LEND);
             clearRequest();
         }
     }
@@ -460,7 +466,7 @@ void PopupChatDialog::setMatchToLend() {
 
 void PopupChatDialog::setMatchToChat() {
     if (requestedItemId != 0) {
-        LibraryMixerLibraryManager::setMatchChat(requestedItemId);
+        files->setMatchChat(requestedItemId);
         clearRequest();
     }
 }
@@ -506,45 +512,53 @@ void PopupChatDialog::sendFiles(QStringList paths) {
          */
 
         //QT file functions produce non-native directory separators, so we should convert them before we continue
+        /*
         for(int i = 0; i < paths.size(); i++){
             paths[i] = QDir::toNativeSeparators(paths[i]);
-        }
+        }*/
 
         //See if this is a match for something that was requested
         if (requestedItemId != 0) {
-            QString transferName = LibraryMixerLibraryManager::getLibraryMixerItem(requestedItemId).title;
+            QString transferName = files->getLibraryMixerItem(requestedItemId)->title();
             QString message;
             if (paths.count() > 1) message = "Automatically send these files on all future requests for " + transferName + "?";
             else message = "Automatically send this file on all future requests for " + transferName + "?";
             if (QMessageBox::question(this, transferName, message, QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
-                if (!files->matchAndSend(requestedItemId, paths, librarymixer_id))
+                if (files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE, librarymixer_id)) {
+                    if (paths.count() == 1){
+                        addSysMsg("Reading file, will send as soon as ready");
+                    } else {
+                        addSysMsg("Reading files, will send as soon as ready");
+                    }
+                    clearRequest();
+                } else {
                     addSysMsg("Unable to match " + transferName + " you either already matched it or removed it.");
-                else clearRequest();
+                }
                 return;
             }
         }
 
-        //See if this is a return being borrowed
+        //See if this is a return of something being borrowed
         QStringList borrowedTitles;
-        QList<int> borrowedItemIds;
-        if (files->getBorrowings(librarymixer_id, borrowedTitles, borrowedItemIds)) {
-            for(int i = 0; i < borrowedTitles.count(); i++) {
-                int choice = QMessageBox::question(this, "The Mixologist", "Are you returning '" + borrowedTitles[i] + "'?",
-                                                   QMessageBox::Yes|QMessageBox::No|QMessageBox::NoToAll|QMessageBox::Cancel, QMessageBox::No);
-                if (choice == QMessageBox::Cancel) return;
-                else if (choice == QMessageBox::NoToAll) break;
-                else if (choice == QMessageBox::Yes) {
-                    addSysMsg("Returning '" + borrowedTitles[i] + "' to " + friendName + ".");
-                    files->returnBorrowed(librarymixer_id, borrowedItemIds[i],borrowedTitles[i],  paths);
-                    return;
-                }
+        QStringList borrowedItemKeys;
+        files->getBorrowings(borrowedTitles, borrowedItemKeys, librarymixer_id);
+        for(int i = 0; i < borrowedTitles.count(); i++) {
+            int choice = (borrowedTitles.count() > 1) ?
+                         QMessageBox::question(this, "The Mixologist", "Are you returning '" + borrowedTitles[i] + "'?", QMessageBox::Yes|QMessageBox::No|QMessageBox::NoToAll|QMessageBox::Cancel, QMessageBox::No) :
+                         QMessageBox::question(this, "The Mixologist", "Are you returning '" + borrowedTitles[i] + "'?", QMessageBox::Yes|QMessageBox::No|QMessageBox::Cancel, QMessageBox::No);
+            if (choice == QMessageBox::Cancel) return;
+            else if (choice == QMessageBox::NoToAll) break;
+            else if (choice == QMessageBox::Yes) {
+                addSysMsg("Returning '" + borrowedTitles[i] + "' to " + friendName + ".");
+                files->returnFiles(borrowedTitles[i], paths, librarymixer_id, borrowedItemKeys[i]);
+                return;
             }
         }
 
         //See if paths are in library database
-        LibraryMixerItem item = files->getItem(paths);
-        if (!item.empty()) {
-            files->MixologySuggest(librarymixer_id, item.id);
+        LibraryMixerItem* item = files->getLibraryMixerItem(paths);
+        if (item != NULL) {
+            files->MixologySuggest(librarymixer_id, item->id());
             return;
         }
 

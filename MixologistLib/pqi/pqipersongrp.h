@@ -45,9 +45,7 @@ This is also a pqitunnelserver, to which services can be attached.
 Types include pqisslpersongrp.
 */
 
-const unsigned long PQIPERSON_NO_LISTENER =     0x0001;
-
-const unsigned long PQIPERSON_ALL_BW_LIMITED =  0x0010;
+const unsigned long PQIPERSON_NO_LISTENER = 0x0001;
 
 class pqipersongrp: public pqihandler, public pqiMonitor, public p3ServiceServer {
 public:
@@ -81,7 +79,7 @@ protected:
 
     /********* FUNCTIONS to OVERLOAD for specialisation ********/
     virtual pqilistener *createListener(struct sockaddr_in laddr) = 0;
-    virtual pqiperson *createPerson(std::string id, int librarymixer_id, pqilistener *listener) = 0;
+    virtual pqiperson *createPerson(std::string id, unsigned int librarymixer_id, pqilistener *listener) = 0;
     /********* FUNCTIONS to OVERLOAD for specialisation ********/
 
     /* Overloaded NetItem Check
@@ -97,10 +95,10 @@ private:
     /******************* Peer Control **************************/
     //These functions are called by statusChange
     //Sets up all the connection classes for a new peer
-    int addPeer(std::string id, int librarymixer_id);
+    int addPeer(std::string id, unsigned int librarymixer_id);
     /*Calls connMgr->connectAttempt to get address information and other information
       about how to connect, and then calls the appropriate pqiperson's connect method*/
-    int connectPeer(std::string cert_id, int librarymixer_id);
+    int connectPeer(std::string cert_id, unsigned int librarymixer_id);
     void timeoutPeer(std::string cert_id);
     //int removePeer(std::string id);
 

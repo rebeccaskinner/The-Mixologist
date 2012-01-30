@@ -32,6 +32,7 @@
 #include <list>
 #include <stdlib.h>
 #include <stdint.h>
+#include <QString>
 
 //#define TLV_TYPE_FILE_ITEM   0x0000
 
@@ -98,7 +99,7 @@ public:
     virtual std::ostream &print(std::ostream &out, uint16_t indent);
 
     uint64_t filesize; /// Mandatory: size of file to be downloaded
-    std::string hash;  /// Mandatory: to find file
+    QString hash;  /// Mandatory: to find file
     std::string name;  /// Optional: name of file
     std::string path;  /// Optional: path on host computer
     uint32_t    pop;   /// Optional: Popularity of file

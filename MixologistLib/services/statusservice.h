@@ -27,17 +27,37 @@
  * should be expanded in the future to become full on status messages.
  */
 
-#include "services/p3service.h"
-#include <serialiser/statusitems.h>
+#include <services/p3service.h>
+#include <pqi/pqimonitor.h>
 
-class StatusService: public p3Service {
+class StatusService;
+
+/* This extern is to provide access to sendStatusUpdateToAll. */
+extern StatusService *statusService;
+
+class StatusService: public p3Service, public pqiMonitor {
 
 public:
     StatusService();
     virtual int tick();
 
+    /* Requests that a status update be sent out to all friends on the next tick. */
+    void sendStatusUpdateToAll();
+
+    /* Sends an OnConnectStatusItem to friend. */
+    void sendOnConnect(unsigned int friend_id);
+
+    /**********************************************************************************
+     * Implementations for pqiMonitor
+     **********************************************************************************/
+    /* Called by the p3ConnectMgr's tick function with a list of pqipeers whose statuses have changed.
+       If action is PEER_CONNECTED, sends an OnConnectStatusItem. */
+    virtual void statusChange(const std::list<pqipeer> &plist);
+
 private:
     time_t timeOfLastTry; //The time of the last status update sent out
+
+    mutable QMutex statusMutex;
 };
 
 #endif

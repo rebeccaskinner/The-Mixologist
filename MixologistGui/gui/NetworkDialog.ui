@@ -17,10 +17,29 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
+      <spacer name="spacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>28</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
       <widget class="QPushButton" name="refreshButton">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <property name="minimumSize">
         <size>
-         <width>160</width>
+         <width>200</width>
          <height>34</height>
         </size>
        </property>
@@ -36,20 +55,10 @@
         <iconset resource="images.qrc">
          <normaloff>:/Images/Refresh.png</normaloff>:/Images/Refresh.png</iconset>
        </property>
+       <property name="shortcut">
+        <string>F5</string>
+       </property>
       </widget>
-     </item>
-     <item>
-      <spacer name="spacer">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>28</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
      </item>
     </layout>
    </item>
@@ -66,6 +75,9 @@
      </property>
      <property name="acceptDrops">
       <bool>false</bool>
+     </property>
+     <property name="toolTip">
+      <string>Reloads the latest information (F5)</string>
      </property>
      <property name="autoFillBackground">
       <bool>false</bool>
@@ -137,6 +149,14 @@
    </item>
    <item>
     <widget class="QLabel" name="label">
+     <property name="font">
+      <font>
+       <family>Arial</family>
+       <pointsize>9</pointsize>
+       <weight>75</weight>
+       <bold>true</bold>
+      </font>
+     </property>
      <property name="text">
       <string>Mixologist's Log</string>
      </property>

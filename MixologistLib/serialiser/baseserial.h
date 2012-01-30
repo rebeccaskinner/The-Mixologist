@@ -44,7 +44,6 @@
  *
  ******************************************************************/
 
-
 bool getRawUInt16(void *data, uint32_t size, uint32_t *offset, uint16_t *out);
 bool setRawUInt16(void *data, uint32_t size, uint32_t *offset, uint16_t in);
 

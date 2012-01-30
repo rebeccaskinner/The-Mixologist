@@ -43,20 +43,19 @@ public slots:
         //Pops up an input box for the user to enter a Mixology link.
         void download(const QString & link = "");
         //Connected to notifyqt through main, triggered when a file download suggestion is received.
-        void suggestionReceived(int librarymixer_id, int item_id, const QString& name);
+        void suggestionReceived(unsigned int librarymixer_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
         //Connected to notifyqt throughg main, populates the view.
         void insertTransfers();
-        //Connected to notifyqt through main, event corresponds to a NotifyBase::transferEvent (in iface.h).
-        //Opens a dialog window to get further user input.
-        void insertTransferEvent(int event, int librarymixer_id, const QString& transfer_name, const QString& extra_info);
+        /* When a response is received from a request, and it is an offer to lend a set of files. */
+        void responseLendOfferReceived(unsigned int friend_id, unsigned int item_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
         /* Opens the folder containing the file */
         void openContaining();
 
 private slots:
         /* Create the context popup menu and it's submenus */
-        void downloadsListContextMenu( QPoint point );
+        void downloadsListContextMenu(QPoint point);
         /* Create the context popup menu and it's submenus */
-        void uploadsListContextMenu( QPoint point );
+        void uploadsListContextMenu(QPoint point);
         /* Cancels either a transfer or a pending request */
 	void cancel();
         /* Removes finished downloads */
@@ -67,17 +66,23 @@ private slots:
         void openFile();
         /* Chats with the friend indicated in context_friend_id */
         void chat();
+        /* Opens a file browser for picking files to return for a borrow */
+        void returnFiles();
 
 private:
-        /*Finds or creates a top level item in the list transfers with that item id.
-          If it creates, uses name.*/
-        QTreeWidgetItem* findOrCreateTransferItem(int item_id, QString name, QList<QTreeWidgetItem*> &transfers);
-        //Info for keeping track of context menu actions
-        QString context_name;
-        //This stores the hash of the file that requested the context menu, or is necessarily null when a pending request requested the context menu
-        std::string context_hash;
-        int context_item_id;
-        int context_friend_id;
+        /* Called by insertTransfers() to handle the downloads and uploads separately.
+           Each return the total transfer rate as a float in that direction. */
+        float insertDownloads();
+        float insertUploads();
+
+        /* Info for keeping track of context menu actions. */
+        QString context_name; //display name of the item
+        QString context_parent; //item id of the parent, only used for subitems
+        QString context_item_type; //one of the pre-defined types allowed for display
+        QString context_item_id; //meaning varies depending on the type
+        QString context_item_location; //Only set for completed files and uploaded files
+        int context_friend_id; //librarymixer_id of the relevant friend
+        QString context_friend_name; //name of the relevant friend
 
         /** Qt Designer generated object */
 	Ui::TransfersDialog ui;

@@ -1,5 +1,6 @@
 /****************************************************************
  *  Copyright 2010, Fair Use, Inc.
+ *  Copyright 2008, Robert Fernie
  *
  *  This file is part of the Mixologist.
  *
@@ -19,32 +20,33 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#include <gui/Util/SettingsUtil.h>
-#include <QWidget>
-#include <QSettings>
+#ifndef FT_SEARCH_HEADER
+#define FT_SEARCH_HEADER
 
-void SettingsUtil::saveWidgetInformation(QWidget *widget, QString settingsFile) {
-    QSettings settings(settingsFile, QSettings::IniFormat);
-    settings.beginGroup("Geometry");
-    settings.beginGroup(widget->objectName());
+/* This is the interface implemented by all classes that will be making files available. */
 
-    settings.setValue("size", widget->size());
-    settings.setValue("pos", widget->pos());
+#include "interface/files.h" // includes interface/types.h too!
+#include "ft/ftfilewatcher.h"
+#include <QString>
 
-    settings.endGroup();
-    settings.endGroup();
-}
+class ftFileMethod: public QObject {
+    Q_OBJECT
 
+public:
+    enum searchResult {
+        SEARCH_RESULT_NOT_FOUND,
+        SEARCH_RESULT_FOUND_SHARED_FILE, //Used for files shared for transfer with friends
+        SEARCH_RESULT_FOUND_INTERNAL_FILE //Used for internal Mixologist files that are not user shares
+    };
 
-void SettingsUtil::loadWidgetInformation(QWidget *widget, QString settingsFile) {
-    QSettings settings(settingsFile, QSettings::IniFormat);
-    settings.beginGroup("Geometry");
-    settings.beginGroup(widget->objectName());
+    virtual ~ftFileMethod() {}
 
-    widget->resize(settings.value("size", widget->size()).toSize());
-    widget->move(settings.value("pos", QPoint(200, 200)).toPoint());
+    /* Returns true if it is able to find a file with matching hash and size.
+       If a file is found, populates path. */
+    virtual ftFileMethod::searchResult search(const QString &hash, qlonglong size, uint32_t hintflags, QString &path) = 0;
 
-    settings.endGroup();
-    settings.endGroup();
-}
+signals:
+    void fileNoLongerAvailable(QString hash, qulonglong size);
+};
 
+#endif

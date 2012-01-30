@@ -37,6 +37,8 @@
 
 #include "pqi/authmgr.h"
 
+#include <QMutex>
+
 //Used for variable waiting to indicate state of connection
 #define WAITING_NOT            0 //Uninitialized
 #define WAITING_DELAY          1 //Has been set by Init_Or_Delay_Connection()
@@ -109,7 +111,6 @@ public:
     virtual std::string gethash(); /* not used here */
     virtual bool bandwidthLimited() {
         return true ;    // replace by !sameLAN to avoid bandwidth limiting on lAN
-        return false;
     }
 
 protected:
@@ -210,7 +211,7 @@ private:
     // ssl only fns.
     int connectInterface(sockaddr_in &);
 
-    MixMutex pqisslMtx; /* accept can be called from a separate thread, so we need mutex protection */
+    mutable QMutex pqisslMtx; /* accept can be called from a separate thread, so we need mutex protection */
 
 };
 

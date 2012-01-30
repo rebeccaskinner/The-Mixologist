@@ -522,7 +522,7 @@
       <item row="1" column="0">
        <widget class="QCheckBox" name="startMinimized">
         <property name="text">
-         <string>Start minimized</string>
+         <string>Start minimized to tray</string>
         </property>
        </widget>
       </item>
@@ -543,6 +543,13 @@
      </property>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
+       <widget class="QCheckBox" name="offLM">
+        <property name="text">
+         <string>Enable additional off-LibraryMixer sharing method (requires restart)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="associateLinks">
         <property name="text">
          <string>Associate with mixology: links</string>
@@ -552,7 +559,7 @@
       <item>
        <widget class="QPushButton" name="showAdvanced">
         <property name="text">
-         <string>Show Advanced View</string>
+         <string>Enable advanced view</string>
         </property>
         <property name="checkable">
          <bool>true</bool>
@@ -580,4 +587,3 @@
  <resources/>
  <connections/>
 </ui>
-        

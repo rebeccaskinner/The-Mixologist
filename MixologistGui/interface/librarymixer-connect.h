@@ -26,7 +26,6 @@
 #include <QBuffer>
 #include <QtNetwork>
 
-#define DEFAULT_MIXOLOGY_SERVER_VALUE "librarymixer.heroku.com"
 #define MIXOLOGY_CHECKOUT_LINK "mixology:userid==[[id]]¦name==[[full_formatted_name]]¦itemid==[[item_id]]¦"
 #define MIXOLOGY_CONTACT_LINK "mixology:userid==[[id]]¦"
 #define MIXOLOGY_LINK_TITLE "Mixologist"
@@ -37,63 +36,72 @@
 
 class QHttp;
 
-//Handles all of the connections and transfers of information with LibraryMixer.com
 class LibraryMixerConnect : public QObject {
     Q_OBJECT
 
 public:
     LibraryMixerConnect();
-    /*Sets the login info that will be used when needed by the download/upload functions*/
+    /* Sets the login info that will be used when needed by the download/upload functions */
     void setLogin(const QString &_email,  const QString &_password);
-    /*Retrieves the latest version information.*/
+    /* Retrieves the latest version information.
+       Returns -1 on all failures. */
     int downloadVersion(qlonglong current);
-    /*Retrieves id, name, all checkout_links, public_scratch1, and private_scratch1*/
+    /* Retrieves id, name, all checkout_links, public_scratch1, and private_scratch1.
+       Returns -1 on all failures. */
     int downloadInfo();
-    /*If checkout_link_to_set == -1, does not set, otherwise sets that number checkout_link and checkout_link_title to STANDARD.*/
+    /* If checkout_link_to_set == -1, does not set, otherwise sets that number checkout_link and checkout_link_title to STANDARD. */
     int uploadInfo(const int link_to_set, const QString &public_key);
-    /*Downloads friends list from LibraryMixer.
+    /* Downloads friends list from LibraryMixer.
+      Returns -1 on all failures.
       If blocking is true, then does not return until done. Can only call blocking from a QObject.
-      Rate is limited by API, and calls before the cooldown period has passed will return -1.*/
+      Rate is limited by API, and calls before the cooldown period has passed will return -1. */
     int downloadFriends(bool blocking = false);
-    /*Downloads library from LibraryMixer.
+    /* Downloads friends library list from LibraryMixer
+       Returns -1 on all failures.
+       Rate is limited by API, and calls before the cooldown period has passed will return -1. */
+    int downloadFriendsLibrary();
+    /* Downloads library from LibraryMixer.
+      Returns -1 on all failures.
       If blocking is true, then does not return until done. Can only call blocking from a QObject.
-      Rate is limited by API, and calls before the cooldown period has passed will return -1.*/
+      Rate is limited by API, and calls before the cooldown period has passed will return -1. */
     int downloadLibrary(bool blocking = false);
 
     enum errors {
-        bad_login_error,
-        version_download_error,
-        ssl_error,
-        info_download_error,
-        info_upload_error,
-        friend_download_error,
-        library_download_error
+        bad_login_error = 0,
+        version_download_error = 1,
+        ssl_error  = 2,
+        info_download_error = 3,
+        info_upload_error = 4,
+        friend_download_error = 5,
+        friend_library_download_error = 6,
+        library_download_error = 7
     };
 
 signals:
-    void downloadedVersion(qlonglong version, QString description, QString importance);
-    void downloadedInfo(QString name, int librarymixer_id,
+    void downloadedVersion(qulonglong version, QString description, QString importance);
+    void downloadedInfo(QString name, unsigned int librarymixer_id,
                         QString checkout_link1, QString contact_link1, QString link_title1,
                         QString checkout_link2, QString contact_link2, QString link_title2,
                         QString checkout_link3, QString contact_link3, QString link_title3);
     void uploadedInfo();
-    void downloadedLibrary();
     void downloadedFriends();
+    void downloadedFriendsLibrary();
+    void downloadedLibrary();
     void dataReadProgress(int read, int total);
     void errorReceived(int errorCode);
 
 private slots:
     void httpRequestFinishedSlot(int requestId, bool error);
-    void sslErrorsSlot( const QList<QSslError> & errors );
+    void sslErrorsSlot(const QList<QSslError> & errors );
     void slotAuthenticationRequired();
     void blockingTimeOut();
 
 private:
-    /*Downloads an XML file from the user set server.*/
+    /* Downloads an XML file from the user set server. */
     int downloadXML(const QString &location, QIODevice *destination);
-    /*Downloads an XML file to the user set server.*/
+    /* Downloads an XML file to the user set server. */
     int uploadXML(const QString &path, QIODevice *source, QIODevice *destination);
-    /*Utility function used by downloadXML and uploadXML to setup the QT connection.*/
+    /* Utility function used by downloadXML and uploadXML to setup the QT connection. */
     void setupModeAndHost(QString *host, QHttp::ConnectionMode *mode);
     void handleErrorReceived(int error);
 
@@ -101,8 +109,9 @@ private:
     int version_check_id;
     int info_download_id;
     int info_upload_id;
-    int library_download_id;
     int friend_download_id;
+    int friend_library_download_id;
+    int library_download_id;
 
     QHttp *http;
     QBuffer *buffer;
@@ -112,6 +121,7 @@ private:
     bool doneTransfer; //Used for blocking transfers
 
     QDateTime lastFriendUpdate;
+    QDateTime lastFriendLibraryUpdate;
     QDateTime lastLibraryUpdate;
 };
 

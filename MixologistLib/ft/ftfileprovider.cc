@@ -27,11 +27,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <interface/peers.h>
+#include <time.h>
 
 #include <QFile>
 
-ftFileProvider::ftFileProvider(QString _path, uint64_t size, std::string hash)
-    : fullFileSize(size), hash(hash), path(_path), file(NULL), transferRate(0), transferredSinceLastCalc(0) {
+ftFileProvider::ftFileProvider(QString _path, uint64_t size, QString hash)
+    : fullFileSize(size), hash(hash), path(_path), file(NULL), internalMixologistFile(false), transferRate(0), transferredSinceLastCalc(0) {
     lastRequestTime = time(NULL);
     lastTransferRateCalc = lastRequestTime;
 }
@@ -43,37 +44,60 @@ ftFileProvider::~ftFileProvider() {
     }
 }
 
+bool ftFileProvider::checkFileValid() {
+    QFileInfo info(path);
+    if (!info.exists()) return false;
+    if (info.size() != (qlonglong)fullFileSize) return false;
+    return true;
+}
+
 void ftFileProvider::setLastRequestor(const std::string &id) {
-    MixStackMutex stack(ftcMutex);
+    QMutexLocker stack(&ftcMutex);
     lastRequestor = id ;
 }
 
-bool ftFileProvider::FileDetails(FileInfo &fileInfo) {
-    MixStackMutex stack(ftcMutex);
+bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
+    QMutexLocker stack(&ftcMutex);
     fileInfo.hash = hash;
     fileInfo.size = fullFileSize;
-    fileInfo.paths.append(path);
+    fileInfo.path = path;
     fileInfo.transfered = lastRequestedEnd;
-    fileInfo.lastTS = lastRequestTime;
-    fileInfo.status = FT_STATE_DOWNLOADING;
+    fileInfo.lastTransfer = lastRequestTime;
+    fileInfo.status = FT_STATE_TRANSFERRING;
 
     fileInfo.peers.clear();
 
     TransferInfo tInfo;
-    tInfo.cert_id = lastRequestor;
     tInfo.librarymixer_id = peers->findLibraryMixerByCertId(lastRequestor);
-    tInfo.status = FT_STATE_DOWNLOADING;
-    tInfo.tfRate = transferRate/1024.0;
+    tInfo.status = FT_STATE_TRANSFERRING;
+    tInfo.transferRate = transferRate/1024.0;
 
-    fileInfo.tfRate = transferRate/1024.0;
+    fileInfo.totalTransferRate = transferRate/1024.0;
     fileInfo.peers.push_back(tInfo);
 
     return true;
 }
 
+void ftFileProvider::closeFile() {
+    QMutexLocker stack(&ftcMutex);
+    if (file) file->close();
+}
+
+QString ftFileProvider::getPath() const {
+    return path;
+}
+
+QString ftFileProvider::getHash() const {
+    return hash;
+}
+
+uint64_t ftFileProvider::getFileSize() const {
+    return fullFileSize;
+}
+
 bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *data) {
 
-    MixStackMutex stack(ftcMutex);
+    QMutexLocker stack(&ftcMutex);
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return false;
@@ -122,7 +146,7 @@ bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *da
 
 bool ftFileProvider::moveFile(QString newPath) {
     bool ok;
-    MixStackMutex stack(ftcMutex);
+    QMutexLocker stack(&ftcMutex);
     file->close();
     ok = DirUtil::moveFile(path, newPath);
     if (ok) {

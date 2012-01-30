@@ -21,8 +21,11 @@
 
 #include <services/mixologyservice.h>
 #include <serialiser/mixologyitems.h>
-#include <interface/librarymixer-library.h>
+#include <server/librarymixer-library.h>
+#include <ft/ftofflmlist.h>
+#include <ft/ftcontroller.h>
 #include <ft/ftserver.h>
+#include <ft/ftborrower.h>
 #include <interface/peers.h>
 #include <interface/files.h>
 #include <interface/types.h>
@@ -40,6 +43,7 @@
  ****/
 
 #define REQUEST_RETRY_DELAY 20 //20 seconds between retries
+#define REQUEST_LENT_RETRY_DELAY 3600 //1 hour between retries of items that are lent out
 
 MixologyService::MixologyService()
     :p3Service(SERVICE_TYPE_MIX) {
@@ -61,180 +65,185 @@ int MixologyService::tick() {
     }
     NetItem *item ;
     if ((item=recvItem()) != NULL) {
-        MixologyRequest *request;
-        MixologyResponse *response;
-        MixologySuggestion *suggest;
-        MixologyLending *lending;
+        unsigned int friend_id = peers->findLibraryMixerByCertId(item->PeerId());
 
-        request = dynamic_cast<MixologyRequest *>(item) ;
+        MixologyRequest *request = dynamic_cast<MixologyRequest *>(item);
         if (request != NULL) {
             log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a request for " + QString::number(request->item_id));
             MixologyResponse *response = new MixologyResponse();
+            LibraryMixerItem* libraryItem;
             response->PeerId(request->PeerId());
             response->item_id = request->item_id;
-            /*This is a hack, but it will have to do until we properly merge librarymixer-library and ftitemlist
-              If the status is < 0 on searching the LibraryMixerLibraryManager, also search the ftitemlist to see
-              if it's a temporary item that LibraryMixerLibraryManager wouldn't know about.
-              Note that the call to LibraryMixerLibraryManager will update the item list from the server if it
-              doesn't find anything and check again.*/
-            int status = LibraryMixerLibraryManager::getLibraryMixerItemStatus(response->item_id, true);
-            if (status < 0) status = ftserver->getItemStatus(response->item_id);
 
-            if (status < 0) {
-                response->itemStatus = MixologyResponse::ITEM_STATUS_NO_SUCH_ITEM;
-                notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_NO_SUCH_ITEM, peers->findLibraryMixerByCertId(request->PeerId()));
-            } else if (status == ITEM_UNMATCHED) {
-                response->itemStatus = MixologyResponse::ITEM_STATUS_UNMATCHED;
-                notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_UNMATCHED, peers->findLibraryMixerByCertId(request->PeerId()), request->item_id);
-            } else if (status == ITEM_MATCHED_TO_CHAT) {
-                response->itemStatus = MixologyResponse::ITEM_STATUS_CHAT;
-                notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_CHAT, peers->findLibraryMixerByCertId(request->PeerId()), request->item_id);
-            } else if (status == ITEM_MATCH_NOT_FOUND) {
-                response->itemStatus = MixologyResponse::ITEM_STATUS_BROKEN_MATCH;
-                notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_BROKEN_MATCH, peers->findLibraryMixerByCertId(request->PeerId()), request->item_id);
-            } else if (status == ITEM_MATCHED_TO_MESSAGE) {
-                response->itemStatus = MixologyResponse::ITEM_STATUS_MATCHED_TO_MESSAGE;
-                LibraryMixerItem item = LibraryMixerLibraryManager::getLibraryMixerItem(request->item_id);
-                notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_MESSAGE, peers->findLibraryMixerByCertId(request->PeerId()), request->item_id);
-                response->subject = item.message;
-            } else if (status == ITEM_MATCHED_TO_FILE) {
-                LibraryMixerItem item = LibraryMixerLibraryManager::getLibraryMixerItem(request->item_id);
-                if (item.empty()) item = ftserver->getItem(request->item_id);
-                notifyBase->notifyUserOptional(peers->findLibraryMixerByCertId(request->PeerId()), NOTIFY_USER_FILE_REQUEST, item.name());
-                prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_FILE, response);
-            } else if (status == ITEM_MATCHED_TO_LEND) {
-                LibraryMixerItem item = LibraryMixerLibraryManager::getLibraryMixerItem(request->item_id);
-                notifyBase->notifyUserOptional(peers->findLibraryMixerByCertId(request->PeerId()), NOTIFY_USER_LEND_OFFERED, item.name());
-                prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_LEND, response);
-            } else if (status == ITEM_MATCHED_TO_LENT) {
-                response->itemStatus = MixologyResponse::ITEM_STATUS_MATCHED_TO_LENT;
-                notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_LENT, peers->findLibraryMixerByCertId(request->PeerId()), request->item_id);
+            switch(files->getLibraryMixerItemStatus(response->item_id, true)){
+                case LibraryMixerItem::UNMATCHED:
+                    response->itemStatus = MixologyResponse::ITEM_STATUS_UNMATCHED;
+                    notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_UNMATCHED, friend_id, request->item_id);
+                    sendItem(response);
+                    break;
+                case LibraryMixerItem::MATCHED_TO_CHAT:
+                    response->itemStatus = MixologyResponse::ITEM_STATUS_CHAT;
+                    notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_CHAT, friend_id, request->item_id);
+                    sendItem(response);
+                    break;
+                case LibraryMixerItem::MATCH_NOT_FOUND:
+                    response->itemStatus = MixologyResponse::ITEM_STATUS_BROKEN_MATCH;
+                    notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_BROKEN_MATCH, friend_id, request->item_id);
+                    sendItem(response);
+                    break;
+                case LibraryMixerItem::MATCHED_TO_MESSAGE:
+                    response->itemStatus = MixologyResponse::ITEM_STATUS_MATCHED_TO_MESSAGE;
+                    libraryItem = files->getLibraryMixerItem(request->item_id);
+                    notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_MESSAGE, friend_id, request->item_id);
+                    response->message(libraryItem->message());
+                    sendItem(response);
+                    break;
+                case LibraryMixerItem::MATCHED_TO_FILE:
+                    libraryItem = files->getLibraryMixerItem(request->item_id);
+                    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_FILE_REQUEST, libraryItem->title());
+                    if (prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_FILE, response)) sendItem(response);
+                    break;
+                case LibraryMixerItem::MATCHED_TO_LEND:
+                    libraryItem = files->getLibraryMixerItem(request->item_id);
+                    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_LEND_OFFERED, libraryItem->title());
+                    if (prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_LEND, response)) sendItem(response);
+                    break;
+                case LibraryMixerItem::MATCHED_TO_LENT:
+                    response->itemStatus = MixologyResponse::ITEM_STATUS_MATCHED_TO_LENT;
+                    notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_LENT, friend_id, request->item_id);
+                    sendItem(response);
+                    break;
+                default:
+                    response->itemStatus = MixologyResponse::ITEM_STATUS_NO_SUCH_ITEM;
+                    notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_NO_SUCH_ITEM, friend_id);
+                    sendItem(response);
             }
-            sendItem(response);
-            goto donereceiving;
         }
-        response = dynamic_cast<MixologyResponse *>(item) ;
+
+        MixologyResponse *response = dynamic_cast<MixologyResponse *>(item);
         if (response != NULL) {
             std::list<pendingRequest>::iterator it;
-            MixStackMutex stack(mMixologyServiceMutex);
+            QMutexLocker stack(&mMixologyServiceMutex);
             for(it = mPending.begin(); it != mPending.end(); it++) {
-                //I'm sure I'm missing something stupid, but I can't figure out why it->item_id is becoming an unsigned int causing comparison between signed and unsigned warnings.
-                if (response->item_id == it->item_id &&
-                        peers->findLibraryMixerByCertId(response->PeerId()) == it->librarymixer_id) {
-                    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a response from " + QString::number(it->librarymixer_id));
+                if (response->item_id == it->item_id && friend_id == it->friend_id) {
+                    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a response from " + QString::number(it->friend_id));
                     if (response->itemStatus == MixologyResponse::ITEM_STATUS_MATCHED_TO_FILE) {
-                        QList<int> sourceIds;
-                        sourceIds.push_back(it->librarymixer_id);
-                        QStringList filenames = response->subject.split("\n");
-                        QStringList hashes = QString(response->hashes.c_str()).split("\n");
-                        QStringList filesizes = QString(response->filesizes.c_str()).split("\n");
-                        for(int i = 0; i < filenames.count(); i++) {
-                            if(!filenames[i].isEmpty() && !hashes[i].isEmpty() && !filesizes[i].isEmpty())
-                                files->requestFile(it->name, it->item_id, filenames[i], hashes[i].toStdString(),
-                                                   filesizes[i].toULong(), 0, sourceIds);
-                        }
-                        notifyBase->notifyUserOptional( it->librarymixer_id, NOTIFY_USER_FILE_RESPONSE, it->name);
+                        if (!response->checkWellFormed())
+                            log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Response from " + QString::number(it->friend_id) + " wasn't well-formed");
+                        else files->downloadFiles(it->friend_id, it->name, response->files(), response->hashes(), response->filesizes());
+                        notifyBase->notifyUserOptional(it->friend_id, NOTIFY_USER_FILE_RESPONSE, it->name);
                         remove_from_mPending(it);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_MATCHED_TO_LEND) {
-                        ftserver->addPendingBorrow(it->item_id, it->name, it->librarymixer_id, response->subject.split("\n"),
-                                                   QString(response->hashes.c_str()).split("\n"), QString(response->filesizes.c_str()).split("\n"));
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_LEND, it->librarymixer_id, it->name, QString::number(response->item_id));
+                        emit responseLendOfferReceived(it->friend_id, it->item_id, it->name, response->files(), response->hashes(), response->filesizes());
                         remove_from_mPending(it);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_MATCHED_TO_LENT) {
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_LENT, it->librarymixer_id, it->name);
-                        remove_from_mPending(it);
+                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_LENT, it->friend_id, it->name);
+                        it->status = pendingRequest::REPLY_LENT_OUT;
+                        //Do not remove from mPending so that next time we restart the Mixologist, it will try again
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_MATCHED_TO_MESSAGE) {
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_MESSAGE, it->librarymixer_id, it->name, response->subject);
-                        remove_from_mPending(it);
+                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_MESSAGE, it->friend_id, it->name, response->message());
+                        it->status = pendingRequest::REPLY_MESSAGE;
+                        remove_from_mPending(it, false);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_INTERNAL_ERROR) {
                         it->status = pendingRequest::REPLY_INTERNAL_ERROR;
-                        //Do not remove from mPending here, so that the error message is displayed in the transfers window
                         remove_from_mPending(it, false);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_NO_SUCH_ITEM) {
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_NO_SUCH_ITEM, it->librarymixer_id, it->name);
-                        remove_from_mPending(it);
+                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_NO_SUCH_ITEM, it->friend_id, it->name);
+                        it->status = pendingRequest::REPLY_NO_SUCH_ITEM;
+                        remove_from_mPending(it, false);
                         break;
                     }  else if (response->itemStatus == MixologyResponse::ITEM_STATUS_CHAT) {
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_CHAT, it->librarymixer_id, it->name);
-                        remove_from_mPending(it);
+                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_CHAT, it->friend_id, it->name);
+                        it->status = pendingRequest::REPLY_CHAT;
+                        remove_from_mPending(it, false);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_UNMATCHED) {
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_UNMATCHED, it->librarymixer_id, it->name);
-                        remove_from_mPending(it);
+                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_UNMATCHED, it->friend_id, it->name);
+                        it->status = pendingRequest::REPLY_UNMATCHED;
+                        remove_from_mPending(it, false);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_BROKEN_MATCH) {
-                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_BROKEN_MATCH, it->librarymixer_id, it->name);
-                        remove_from_mPending(it);
+                        notifyBase->notifyTransferEvent(NOTIFY_TRANSFER_BROKEN_MATCH, it->friend_id, it->name);
+                        it->status = pendingRequest::REPLY_BROKEN_MATCH;
+                        remove_from_mPending(it, false);
                         break;
                     }
                 }
             }
-            goto donereceiving;
-        }
-        suggest = dynamic_cast<MixologySuggestion *>(item) ;
-        if (suggest != NULL) {
-            /*Note that we don't have to worry about negative item_ids from temp items causing collisions here
-              because the LibraryMixerLibraryManager queries only the xml and not temp items. */
-            LibraryMixerItem item = LibraryMixerLibraryManager::getLibraryMixerItem(suggest->item_id);
-            int librarymixer_id = peers->findLibraryMixerByCertId(suggest->PeerId());
-            if (!item.empty()) {
-                if (item.itemState == ITEM_MATCHED_TO_LENT && item.lentTo == librarymixer_id) {
-                    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a return offer from " + QString::number(librarymixer_id));
-                    LibraryMixerRequest(librarymixer_id, suggest->item_id, suggest->title);
-                }
-            } else {
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a suggestion from " + QString::number(librarymixer_id));
-                notifyBase->notifySuggestion(librarymixer_id, suggest->item_id, suggest->title);
-            }
-            goto donereceiving;
         }
 
-        lending = dynamic_cast<MixologyLending *>(item) ;
+        MixologySuggestion *suggest = dynamic_cast<MixologySuggestion *>(item);
+        if (suggest != NULL) {
+            log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a suggestion from " + QString::number(friend_id));
+            notifyBase->notifySuggestion(friend_id, suggest->title, suggest->files(), suggest->hashes(), suggest->filesizes());
+        }
+
+        MixologyReturn *mixReturn = dynamic_cast<MixologyReturn *>(item);
+        if (mixReturn != NULL) {
+            log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a return offer from " + QString::number(friend_id));
+            fileDownloadController->downloadBorrowedFiles(friend_id, mixReturn->source_type, mixReturn->source_id, mixReturn->files(), mixReturn->hashes(), mixReturn->filesizes());
+        }
+
+        MixologyLending *lending = dynamic_cast<MixologyLending *>(item);
         if (lending != NULL) {
             if (lending->flags & TRANSFER_COMPLETE_BORROWED) {
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished lending " + QString::number(lending->item_id));
-                LibraryMixerLibraryManager::setLent(peers->findLibraryMixerByCertId(lending->PeerId()), lending->item_id);
-                notifyBase->notifyLibraryUpdated();
+                unsigned int friend_id = peers->findLibraryMixerByCertId(lending->PeerId());
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Lent " + QString::number(lending->source_type) + ", " + lending->source_id + " to " + QString::number(friend_id));
+                if (lending->source_type & FILE_HINTS_ITEM) {
+                    librarymixermanager->setLent(friend_id, lending->source_id);
+                } else if (lending->source_type & FILE_HINTS_OFF_LM) {
+                    if (offLMList) offLMList->setLent(friend_id, lending->source_id);
+                }
             } else if (lending->flags & TRANSFER_COMPLETE_RETURNED) {
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back " + QString::number(lending->item_id));
-                ftserver->returnedBorrowed(lending->item_id);
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back " + lending->source_id);
+                borrowManager->returnedBorrowed(friend_id, lending->source_type, lending->source_id);
             }
-            goto donereceiving;
         }
-        donereceiving:
+
+        if (request == NULL && response == NULL && suggest == NULL && mixReturn == NULL && lending == NULL) {
+            std::cerr << "Received a malformed packet.\n";
+        }
+
         delete item;
     }
 
     /*check if any stale requests should be resent now.  We send whether or not peer is online, and it will be discarded
       if he is offline by the transfer modules */
     std::list<pendingRequest>::iterator it;
-    MixStackMutex stack(mMixologyServiceMutex);
+    QMutexLocker stack(&mMixologyServiceMutex);
     for(it = mPending.begin(); it != mPending.end(); it++) {
-        if((time(NULL) - it->timeOfLastTry > REQUEST_RETRY_DELAY) && it->status == pendingRequest::REPLY_NONE) {
-            sendRequest(peers->findCertByLibraryMixerId(it->librarymixer_id), it->item_id, &*it);
+        if(it->status == pendingRequest::REPLY_NONE && (time(NULL) - it->timeOfLastTry > REQUEST_RETRY_DELAY)) {
+            sendRequest(peers->findCertByLibraryMixerId(it->friend_id), it->item_id, &*it);
+        }
+        if(it->status == pendingRequest::REPLY_LENT_OUT && (time(NULL) - it->timeOfLastTry > REQUEST_LENT_RETRY_DELAY)) {
+            sendRequest(peers->findCertByLibraryMixerId(it->friend_id), it->item_id, &*it);
         }
     }
 
     return 0;
 }
 
-bool  MixologyService::LibraryMixerRequest(int librarymixer_id, int item_id, QString name) {
-    notifyBase->notifyUserOptional(librarymixer_id, NOTIFY_USER_REQUEST, name);
-    MixStackMutex stack(mMixologyServiceMutex);
-    //check if we already have this one, if we do no need to add, but either way send a new request
+bool  MixologyService::LibraryMixerRequest(unsigned int friend_id, unsigned int item_id, const QString &name) {
+    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_REQUEST, name);
+    QMutexLocker stack(&mMixologyServiceMutex);
+
+    //Remove any pre-existing requests for this one, so we start from a clean slate
     std::list<pendingRequest>::iterator pending;
     for(pending = mPending.begin(); pending != mPending.end(); pending++) {
-        if (pending->librarymixer_id == librarymixer_id &&
-                pending->item_id == item_id) break;
+        if (pending->friend_id == friend_id &&
+            pending->item_id == item_id) {
+            remove_from_mPending(pending, true);
+            pending = mPending.end();
+        }
     }
     if (pending == mPending.end()) {
         pendingRequest newPendingRequest;
-        newPendingRequest.librarymixer_id = librarymixer_id;
+        newPendingRequest.friend_id = friend_id;
         newPendingRequest.item_id = item_id;
         newPendingRequest.name = name;
         newPendingRequest.timeOfLastTry = 0;
@@ -242,7 +251,7 @@ bool  MixologyService::LibraryMixerRequest(int librarymixer_id, int item_id, QSt
         QSettings saved(*savedTransfers, QSettings::IniFormat);
         saved.beginGroup("Pending");
         saved.beginGroup(QString::number(item_id));
-        saved.setValue("friend_id", librarymixer_id);
+        saved.setValue("friend_id", friend_id);
         saved.setValue("name", name);
     }
     {
@@ -253,8 +262,8 @@ bool  MixologyService::LibraryMixerRequest(int librarymixer_id, int item_id, QSt
     return true;
 }
 
-bool  MixologyService::LibraryMixerRequestCancel(int item_id) {
-    MixStackMutex stack(mMixologyServiceMutex);
+bool  MixologyService::LibraryMixerRequestCancel(unsigned int item_id) {
+    QMutexLocker stack(&mMixologyServiceMutex);
     std::list<pendingRequest>::iterator pending;
     for(pending = mPending.begin(); pending != mPending.end(); pending++) {
         if (pending->item_id == item_id) {
@@ -265,40 +274,58 @@ bool  MixologyService::LibraryMixerRequestCancel(int item_id) {
     return false;
 }
 
-void MixologyService::sendMixologySuggestion(unsigned int librarymixer_id, int item_id, QString name) {
+void MixologyService::sendSuggestion(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes) {
     MixologySuggestion *suggest = new MixologySuggestion();
-    suggest->title = name;
-    suggest->PeerId(peers->findCertByLibraryMixerId(librarymixer_id));
-    suggest->item_id = item_id;
-    notifyBase->notifyUserOptional(librarymixer_id, NOTIFY_USER_SUGGEST_SENT, name);
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(librarymixer_id) + ".");
+    suggest->title = title;
+    suggest->PeerId(peers->findCertByLibraryMixerId(friend_id));
+    suggest->files(files);
+    suggest->hashes(hashes);
+    suggest->filesizes(filesizes);
+    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_SUGGEST_SENT, title);
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(friend_id) + ".");
     sendItem(suggest);
 }
 
-void MixologyService::LibraryMixerBorrowed(unsigned int librarymixer_id, int item_id) {
-    MixologyLending *lend= new MixologyLending();
-    lend->PeerId(peers->findCertByLibraryMixerId(librarymixer_id));
-    lend->item_id = item_id;
+void MixologyService::sendReturn(unsigned int friend_id, int source_type, const QString &source_id,
+                                 const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes) {
+    MixologyReturn *returnItem = new MixologyReturn();
+    returnItem->PeerId(peers->findCertByLibraryMixerId(friend_id));
+    returnItem->source_type = source_type;
+    returnItem->source_id = source_id;
+    returnItem->files(files);
+    returnItem->hashes(hashes);
+    returnItem->filesizes(filesizes);
+    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_SUGGEST_SENT, title);
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Returning " + QString::number(returnItem->source_type) + ", " + returnItem->source_id + " to " + QString::number(friend_id) + ".");
+    sendItem(returnItem);
+}
+
+void MixologyService::sendBorrowed(unsigned int friend_id, int source_type, const QString &source_id) {
+    MixologyLending *lend = new MixologyLending();
+    lend->PeerId(peers->findCertByLibraryMixerId(friend_id));
     lend->flags = TRANSFER_COMPLETE_BORROWED;
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Letting " + QString::number(librarymixer_id) + " know borrow received.");
+    lend->source_type = source_type;
+    lend->source_id = source_id;
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Letting " + QString::number(friend_id) + " know borrow of " + QString::number(lend->source_type) + ", " + lend->source_id + " fully received.");
     sendItem(lend);
 }
 
-void MixologyService::LibraryMixerBorrowReturned(unsigned int librarymixer_id, int item_id) {
+void MixologyService::sendBorrowedReturned(unsigned int friend_id, int source_type, const QString &source_id) {
     MixologyLending *lend= new MixologyLending();
-    lend->PeerId(peers->findCertByLibraryMixerId(librarymixer_id));
-    lend->item_id = item_id;
+    lend->PeerId(peers->findCertByLibraryMixerId(friend_id));
     lend->flags = TRANSFER_COMPLETE_RETURNED;
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Letting " + QString::number(librarymixer_id) + " know return received.");
+    lend->source_type = source_type;
+    lend->source_id = source_id;
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Letting " + QString::number(friend_id) + " know return of " + QString::number(source_type) + ", " + source_id + " received.");
     sendItem(lend);
 }
 
 void MixologyService::getPendingRequests(std::list<pendingRequest> &requests) {
     std::list<pendingRequest>::iterator it;
-    MixStackMutex stack(mMixologyServiceMutex);
+    QMutexLocker stack(&mMixologyServiceMutex);
     for (it = mPending.begin(); it != mPending.end(); it++) {
         pendingRequest request;
-        request.librarymixer_id = it->librarymixer_id;
+        request.friend_id = it->friend_id;
         request.item_id = it->item_id;
         request.name = it->name;
         request.timeOfLastTry = it->timeOfLastTry;
@@ -308,10 +335,11 @@ void MixologyService::getPendingRequests(std::list<pendingRequest> &requests) {
 }
 
 void MixologyService::clearCompleted() {
-    MixStackMutex stack(mMixologyServiceMutex);
+    QMutexLocker stack(&mMixologyServiceMutex);
     std::list<pendingRequest>::iterator pending;
     for(pending = mPending.begin(); pending != mPending.end(); pending++) {
-        if (pending->status != pendingRequest::REPLY_NONE) {
+        if (pending->status != pendingRequest::REPLY_NONE &&
+            pending->status != pendingRequest::REPLY_LENT_OUT) {
             std::list<pendingRequest>::iterator temp = pending;
             pending++;
             mPending.erase(temp);
@@ -319,41 +347,25 @@ void MixologyService::clearCompleted() {
     }
 }
 
-void MixologyService::prepFileResponse(int item_id, int status, MixologyResponse *response) {
-    LibraryMixerItem *item = LibraryMixerLibraryManager::recheckItemNode(item_id);
-    if (item == NULL) response->itemStatus = MixologyResponse::ITEM_STATUS_INTERNAL_ERROR;
-    else if (item->itemState == ITEM_MATCH_NOT_FOUND) response->itemStatus = MixologyResponse::ITEM_STATUS_BROKEN_MATCH;
-    else {
-        response->itemStatus = status;
-        /*First we find the common root so that we can remove that and send over the subdirectory structure*/
-        bool trimmingDone = false;
-        int toTrim = 0;
-
-        while(!trimmingDone) {
-            int currentSubDirEnd = item->paths[0].indexOf(QDir::separator(), toTrim);
-            if (currentSubDirEnd == -1) {
-                trimmingDone = true;
-            } else {
-                QString currentSubDir = item->paths[0].left(currentSubDirEnd + 1);
-                for (int i = 0; i < item->paths.count(); i++) {
-                    if (!item->paths[i].startsWith(currentSubDir)) {
-                        trimmingDone = true;
-                        break;
-                    }
-                }
-                if (!trimmingDone) toTrim = currentSubDir.length();
+bool MixologyService::prepFileResponse(unsigned int item_id, int status, MixologyResponse *response) {
+    LibraryMixerItem* item = NULL;
+    int result = librarymixermanager->getLibraryMixerItemWithCheck(item_id, item);
+    if (result == -1) response->itemStatus = MixologyResponse::ITEM_STATUS_INTERNAL_ERROR;
+    else if (result == 0) return false; //Not ready at the moment, so try again next time friend asks for it and ignore for now.
+    else if (result == 1){
+        if (item->itemState() == LibraryMixerItem::MATCH_NOT_FOUND) response->itemStatus = MixologyResponse::ITEM_STATUS_BROKEN_MATCH;
+        else {
+            response->itemStatus = status;
+            response->files(DirUtil::getRelativePaths(item->paths()));
+            response->hashes(item->hashes());
+            response->filesizes(item->filesizes());
+            if (!response->checkWellFormed()) {
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Error preparing a response for " + item->title());
+                response->itemStatus = MixologyResponse::ITEM_STATUS_INTERNAL_ERROR;
             }
         }
-
-        for(int i = 0; i < item->paths.count(); i++) {
-            response->subject.append(item->paths[i].mid(toTrim));
-            response->subject.append("\n");
-            response->hashes.append(item->hashes[i].toStdString());
-            response->hashes.append("\n");
-            response->filesizes.append(QString::number(item->filesizes[i]).toStdString());
-            response->filesizes.append("\n");
-        }
     }
+    return true;
 }
 
 void MixologyService::sendRequest(std::string cert_id, uint32_t item_id, pendingRequest *pending) {

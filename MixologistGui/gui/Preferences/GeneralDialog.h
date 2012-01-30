@@ -50,6 +50,8 @@ private:
         void toggleShowOnStartup(bool checked);
         /** Enables/disables the clearLogin button and sets its tooltip */
         void enableClearLogin(bool enable);
+        /** Enables/disables off-LibraryMixer sharing. */
+        void enableOffLibraryMixer(bool enable);
         /** Enables/disables the associateLinks button and sets its tooltip */
         void enableAssociateLinks(bool enable);
         /** Qt Designer generated object */

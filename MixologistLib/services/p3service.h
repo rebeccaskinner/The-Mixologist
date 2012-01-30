@@ -25,16 +25,13 @@
 
 #include "pqi/pqi.h"
 #include "pqi/pqiservice.h"
-#include "util/threads.h"
+#include <QThread>
 
 /* This provides easy to use extensions to the pqiservice class provided in src/pqi.
  *
  *    Basic service with serialisation handled by a Serialiser.
  *
  */
-
-std::string generateRandomServiceId();
-
 
 class p3Service: public pqiService {
 protected:
@@ -78,7 +75,7 @@ protected:
 
 private:
 
-    MixMutex srvMtx;
+    mutable QMutex srvMtx;
     /* below locked by Mutex */
 
     Serialiser *serialiser;

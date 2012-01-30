@@ -51,28 +51,6 @@ int OpenSSLVerifyCB(X509_STORE_CTX *store, void *unused) {
     return 0;
 }
 
-#ifdef false
-#define MUTEX_TYPE pthread_mutex_t
-#define MUTEX_SETUP(x) pthread_mutex_init(&(x), NULL)
-#define MUTEX_CLEANUP(x) pthread_mutex_destroy(&(x))
-#define MUTEX_LOCK(x) pthread_mutex_lock(&(x))
-#define MUTEX_UNLOCK(x) pthread_mutex_unlock(&(x))
-#define THREAD_ID pthread_self()
-
-/* This array will store all of the mutexes available to OpenSSL. */
-static MUTEX_TYPE *mutex_buf = NULL;
-
-static void locking_function(int mode, int n, const char *file, int line) {
-    if (mode & CRYPTO_LOCK)
-        MUTEX_LOCK(mutex_buf[n]);
-    else
-        MUTEX_UNLOCK(mutex_buf[n]);
-}
-static unsigned long id_function(void) {
-    return (reinterpret_cast<unsigned long>(THREAD_ID.p));
-}
-#endif
-
 /********AuthMgr*************/
 
 void AuthMgr::initSSL() {
@@ -91,8 +69,8 @@ void AuthMgr::initSSL() {
 }
 
 // args: server cert, server private key, trusted certificates.
-int AuthMgr::InitAuth(int librarymixer_id, QString &cert) {
-    authMtx.lock();   /***** LOCK *****/
+int AuthMgr::InitAuth(unsigned int librarymixer_id, QString &cert) {
+    authMtx.lock();
 
     if (init == 1) {
         return 1;
@@ -153,18 +131,18 @@ int AuthMgr::InitAuth(int librarymixer_id, QString &cert) {
     X509_free(x509);
     init = 1;
 
-    authMtx.unlock(); /**** UNLOCK ****/
+    authMtx.unlock();
 
     return true;
 }
 
 bool    AuthMgr::CloseAuth() {
-    authMtx.lock();   /***** LOCK *****/
+    authMtx.lock();
     SSL_CTX_free(sslctx);
     // clean up private key....
     // remove certificates etc -> opposite of initssl.
     init = 0;
-    authMtx.unlock(); /**** UNLOCK ****/
+    authMtx.unlock();
 
     //OpenSSL thread shutdown
     /*        int i;
@@ -183,38 +161,40 @@ bool AuthMgr::getCertId(X509 *cert, unsigned char message_digest[]) {
     return X509_digest(cert,EVP_sha1(),message_digest,&length);
 }
 
-std::string AuthMgr::findCertByLibraryMixerId(int librarymixer_id) {
-    std::map<int, X509 *>::iterator it;
-    authMtx.lock();   /***** LOCK *****/
+std::string AuthMgr::findCertByLibraryMixerId(unsigned int librarymixer_id) {
+    std::map<uint, X509 *>::iterator it;
+    authMtx.lock();
     it = mCerts.find(librarymixer_id);
 
     if (it == mCerts.end()) {
-        authMtx.unlock(); /**** UNLOCK ****/
+        authMtx.unlock();
         return "";
     }
     std::string result = std::string(reinterpret_cast<char *>(it->second->sha1_hash), sizeof(it->second->sha1_hash));
-    authMtx.unlock(); /**** UNLOCK ****/
+    authMtx.unlock();
     return result;
 }
 
-int AuthMgr::findLibraryMixerByCertId(std::string cert_id) {
-    std::map<int, X509 *>::iterator it;
-    authMtx.lock();   /***** LOCK *****/
+unsigned int AuthMgr::findLibraryMixerByCertId(std::string cert_id) {
+    std::map<unsigned int, X509 *>::iterator it;
+    authMtx.lock();
 
-    if(cert_id.empty()) log(LOG_ERROR, AUTHMGRZONE, "findLibraryMixerByCertId called with empty string!\n");
+    if(cert_id.empty()) {
+        log(LOG_ERROR, AUTHMGRZONE, "findLibraryMixerByCertId called with empty string!\n");
+    }
 
     for(it = mCerts.begin(); it != mCerts.end(); it++) {
         if (cert_id == std::string(reinterpret_cast<char *>(it->second->sha1_hash), sizeof(it->second->sha1_hash))) {
-            int librarymixer_id = it->first;
-            authMtx.unlock(); /**** UNLOCK ****/
+            unsigned int librarymixer_id = it->first;
+            authMtx.unlock();
             return librarymixer_id;
         }
     }
-    authMtx.unlock(); /**** UNLOCK ****/
-    return -1;
+    authMtx.unlock();
+    return 0;
 }
 
-int AuthMgr::addUpdateCertificate(QString cert, int librarymixer_id) {
+int AuthMgr::addUpdateCertificate(QString cert, unsigned int librarymixer_id) {
     int retint = 0;
     unsigned char *name = NULL;
     X509_NAME *x509_name = NULL;
@@ -222,7 +202,7 @@ int AuthMgr::addUpdateCertificate(QString cert, int librarymixer_id) {
     X509_NAME_ENTRY *entry = NULL;
     ASN1_STRING *entry_str;
     if (cert == "") return retint;
-    std::map<int, X509 *>::iterator it;
+    std::map<unsigned int, X509 *>::iterator it;
 
     //Use OpenSSL to create an X509 certificate object
     int cert_size = cert.length() + 1;
@@ -254,7 +234,7 @@ int AuthMgr::addUpdateCertificate(QString cert, int librarymixer_id) {
         goto end;
     }
     ASN1_STRING_to_UTF8(&name, entry_str);
-    if (QString((char *)name).toInt() != librarymixer_id) {
+    if (QString((char *)name).toUInt() != librarymixer_id) {
         retint = -1;
         goto end;
     }
@@ -277,7 +257,7 @@ int AuthMgr::addUpdateCertificate(QString cert, int librarymixer_id) {
         goto end;
     }
     ASN1_STRING_to_UTF8(&name, entry_str);
-    if (QString((char *)name).toInt() != librarymixer_id) {
+    if (QString((char *)name).toUInt() != librarymixer_id) {
         retint = -1;
         goto end;
     }
@@ -288,7 +268,7 @@ int AuthMgr::addUpdateCertificate(QString cert, int librarymixer_id) {
         goto end;
     }
     //Check if we are updating or adding a new entry or doing nothing
-    authMtx.lock();   /***** LOCK *****/
+    authMtx.lock();
     //If this is a new user
     it = mCerts.find(librarymixer_id);
     if (it == mCerts.end()) {
@@ -305,7 +285,7 @@ int AuthMgr::addUpdateCertificate(QString cert, int librarymixer_id) {
 
     //Actually add the new x509 certificate
     mCerts[librarymixer_id] = x509;
-    authMtx.unlock(); /**** UNLOCK ****/
+    authMtx.unlock();
 
 end:
     if (certificate != NULL) free(certificate);
@@ -313,10 +293,10 @@ end:
     return retint;
 }
 
-bool AuthMgr::RemoveCertificate(int librarymixer_id) {
-    authMtx.lock();   /***** LOCK *****/
+bool AuthMgr::RemoveCertificate(unsigned int librarymixer_id) {
+    authMtx.lock();
     mCerts.erase(librarymixer_id);
-    authMtx.unlock(); /**** UNLOCK ****/
+    authMtx.unlock();
     return true;
 }
 

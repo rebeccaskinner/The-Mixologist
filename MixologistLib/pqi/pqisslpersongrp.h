@@ -42,7 +42,7 @@ protected:
     virtual pqilistener *createListener(struct sockaddr_in laddr);
     //Creates a new pqiperson while calling its addChildInterface method
     //with both pqissl and pqissludp
-    virtual pqiperson   *createPerson(std::string id, int librarymixer_id, pqilistener *listener);
+    virtual pqiperson   *createPerson(std::string id, unsigned int librarymixer_id, pqilistener *listener);
 };
 
 

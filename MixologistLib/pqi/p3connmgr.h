@@ -27,7 +27,7 @@
 #include "pqi/authmgr.h"
 #include "pqi/pqiassist.h"
 
-#include "util/threads.h"
+#include <QMutex>
 
 /* This is the master connection manager for the entire program.
    Sets up own connection such as ports and UPNP mappings.
@@ -177,7 +177,7 @@ public:
 
     QString name; //Display name of friend
     std::string id; //cert_id
-    int librarymixer_id;
+    unsigned int librarymixer_id;
 
     uint32_t netMode; /* EXT / UPNP / UDP / INVALID */
     uint32_t visState; /* STD, GRAY, DARK */
@@ -249,7 +249,7 @@ public:
     bool    shutdown(); /* blocking shutdown call */
 
     //Retries both TCP and UDP
-    void    retryConnect(int librarymixer_id);
+    void    retryConnect(unsigned int librarymixer_id);
     void    retryConnectAll();
 
     bool    getUPnPState() {
@@ -286,15 +286,15 @@ public:
 
     //Sets own netMode with try flags, and sets visState
     void    setOwnNetConfig(uint32_t netMode, uint32_t visState);
-    bool    setLocalAddress(int librarymixer_id, struct sockaddr_in addr);
-    bool    setExtAddress(int librarymixer_id, struct sockaddr_in addr);
+    bool    setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
+    bool    setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
 
-    bool    setNetworkMode(int librarymixer_id, uint32_t netMode);
-    bool    setVisState(int librarymixer_id, uint32_t visState);
+    bool    setNetworkMode(unsigned int librarymixer_id, uint32_t netMode);
+    bool    setVisState(unsigned int librarymixer_id, uint32_t visState);
 
     /* add/remove friends */
     //Either adds a new friend, or updates the existing friend
-    bool    addUpdateFriend(int librarymixer_id, QString cert, QString name);
+    bool    addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name);
     //bool  removeFriend(std::string);
 
     /*************** External Control ****************/
@@ -302,14 +302,14 @@ public:
     /* access to network details (called through Monitor) */
     const std::string getOwnCertId();
 
-    bool    isFriend(int librarymixer_id);
-    bool    isOnline(int librarymixer_id);
+    bool    isFriend(unsigned int librarymixer_id);
+    bool    isOnline(unsigned int librarymixer_id);
     /*Fills in state for user with librarymixer_id
       Can be used for friends or self.
       Returns true, or false if unable to find user with librarymixer_id*/
-    bool    getPeerConnectState(int librarymixer_id, peerConnectState &state);
+    bool    getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state);
     //Returns either friend's name or a blank string if no such friend
-    QString getFriendName(int librarymixer_id);
+    QString getFriendName(unsigned int librarymixer_id);
     QString getFriendName(std::string cert_id);
 
     QString getOwnName();
@@ -335,17 +335,17 @@ public:
     /****************** Connections *******************/
     /* Called by pqipersongrp with a cert_id to get that member of mFriendsList
     and pop off the next member of connAddrs, which is used to populate the references.*/
-    bool    connectAttempt(int librarymixer_id, struct sockaddr_in &addr,
+    bool    connectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr,
                            uint32_t &delay, uint32_t &period, uint32_t &type);
     /* Called by pqipersongrp when one of its persons has reported the results
     of it connection. Sets the person's peerConnectState in mFriendsList appropriately.
     If the report was not of success, if there are more connAddrs to try in
     peerConnecctState, sets its action to PEER_CONNECT_REQ.
     If doubleTried is false, then sets it to true and schedules a retry.*/
-    bool    connectResult(int librarymixer_id, bool success, uint32_t flags);
+    bool    connectResult(unsigned int librarymixer_id, bool success, uint32_t flags);
     /* Called by pqistreamer whenever we received a packet from a friend, updates
        their peerConnectState so we know not to time them out. */
-    void    heardFrom(int librarymixer_id);
+    void    heardFrom(unsigned int librarymixer_id);
 
 
 private:
@@ -359,11 +359,21 @@ private:
     //Starts up own net connection
     void    netStartup();
 
+    /* Called from within netTick when mNetStatus is NET_UPNP_INIT to start UPNP. */
     void    netUpnpInit();
+    /* Called from within netTick when mNetStatus is NET_UPNP_SETUP.
+       Will be called multiple times until either UPNP returns successfully or fails to succeed before time out. */
     void    netUpnpCheck();
 
     void    netUdpCheck();
     void    netUnreachableCheck();
+
+    /* Checks and makes sure UPNP is still properly functioning periodically.
+       Called from netTick.
+       Does not perform any action if called within the past minute.
+       Tick happens 1/second or more, seems excessive to be testing the connection health that frequently.
+       Should either later mtest this assumption, or compare against established software to see common practice. */
+    void    netUpnpMaintenance();
 
     /* Udp / Stun functions */
     bool    udpInternalAddress(struct sockaddr_in iaddr);
@@ -377,9 +387,9 @@ private:
     /* connect attempts */
     //Retries the TCP connection.
     //Called by the generic retryConnect as well as by statustick and peerConnectRequest.
-    bool    retryConnectTCP(int librarymixer_id);
+    bool    retryConnectTCP(unsigned int librarymixer_id);
     //Retries the UDP connection
-    bool    retryConnectNotify(int librarymixer_id);
+    bool    retryConnectNotify(unsigned int librarymixer_id);
 
     //Utility function for usedIps to convert a sockaddr_in into a string
     //representation of form ###.###.###.###:##.
@@ -388,7 +398,7 @@ private:
     pqiNetAssistFirewall *mUpnpMgr;
     pqiNetAssistConnect *mDhtMgr;
 
-    MixMutex connMtx; /* protects below */
+    mutable QMutex connMtx; /* protects below */
 
     time_t   mNetInitTS;
     /* Indicates the status of setting up the network.  Will be one of
@@ -424,7 +434,7 @@ private:
 
     std::list<std::string> mStunList;
 
-    /* This is the master friends for the Mixologist */
+    /* This is the master friends list for the Mixologist */
     std::map<int, peerConnectState> mFriendList; //librarymixer_ids and peerConnectStates
 
     /* A map of IP+port combo's already in use, and their state.  The first element is a string

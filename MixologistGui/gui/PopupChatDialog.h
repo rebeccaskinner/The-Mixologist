@@ -50,7 +50,7 @@ public:
         //Adds message text to the display of the PopupChatDialog with formatting for a system message.
         void addSysMsg(const QString& text);
         //Handles an incoming request event
-        void insertRequestEvent(int event, int item_id);
+        void insertRequestEvent(int event, unsigned int item_id);
         //Handles a response to an outgoing request
         void insertTransferEvent(int event, const QString& transfer_name, const QString& extra_info);
         /*Handles notifications of messages about the friend.
@@ -67,7 +67,7 @@ protected:
         bool eventFilter(QObject *obj, QEvent *event);
 
 signals:
-        void closeChat(int librarymixer_id) const;
+        void closeChat(unsigned int librarymixer_id) const;
 
 public slots:
         //Resets the statusbar to default.
@@ -119,7 +119,7 @@ private:
         void addText(QString &text);
 
         //Information on friend that user is chatting with
-        int librarymixer_id;
+        unsigned int librarymixer_id;
         QString friendName;
 
         /*If there is a particular item that was requested by a friend, it shows up here

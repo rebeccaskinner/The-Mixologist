@@ -24,7 +24,7 @@
 #include <interface/iface.h>
 #include <interface/peers.h>
 #include <gui/Util/Helpers.h> //for rot13
-#include <gui/Util/SettingsUtil.h>
+#include <gui/Util/GuiSettingsUtil.h>
 #include <gui/Util/OSHelpers.h>
 #include <gui/StartDialog.h>
 #include <version.h>
@@ -53,13 +53,7 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     ui.setupUi(this);
 
     startupSettings = new QString(Init::getBaseDirectory(true).append("startup.ini"));
-#if defined(Q_WS_WIN)
-    QFile file(*startupSettings);
-    if (!file.exists()) {
-        QMessageBox::information(this, "The Mixologist", "<p>It looks like this is the first time you've started the Mixologist!</p><p>A box is probably going to popup after you login telling you Windows Firewall has blocked the Mixologist.</p><p><b>On the box that pops up, be absolutely sure to allow the Mixologist to connect through Windows Firewall, or else it will not work.</b></p>");
-    }
-#endif
-    SettingsUtil::loadWidgetInformation(this, *startupSettings);
+    GuiSettingsUtil::loadWidgetInformation(this, *startupSettings);
 
     ui.loadEmail->setFocus();
 
@@ -70,13 +64,15 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     connect(ui.loadEmail, SIGNAL(textChanged(QString)), this, SLOT(edited()));
     connect(ui.loadPassword, SIGNAL(textChanged(QString)), this, SLOT(edited()));
 
+    connect(ui.autoBox, SIGNAL(stateChanged(int)), this, SLOT(autoLogonChecked(int)));
+
     librarymixerconnect = new LibraryMixerConnect();
-    connect(librarymixerconnect, SIGNAL(downloadedVersion(qlonglong,QString, QString)), this, SLOT(downloadedVersion(qlonglong,QString,QString)));
-    connect(librarymixerconnect, SIGNAL(downloadedInfo(QString,int,QString,QString,QString,QString,QString,QString,QString,QString,QString)),
-            this, SLOT(downloadedInfo(QString,int,QString,QString,QString,QString,QString,QString,QString,QString,QString)));
-    connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(downloadLibrary()));
-    connect(librarymixerconnect, SIGNAL(downloadedLibrary()), this, SLOT(downloadFriends()));
-    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(finishLoading()));
+    connect(librarymixerconnect, SIGNAL(downloadedVersion(qulonglong,QString, QString)), this, SLOT(downloadedVersion(qulonglong,QString,QString)));
+    connect(librarymixerconnect, SIGNAL(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)),
+            this, SLOT(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)));
+    connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(downloadFriends()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(downloadLibrary()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(finishLoading()));
     connect(librarymixerconnect, SIGNAL(dataReadProgress(int,int)), this, SLOT(updateDataReadProgress(int,int)));
     connect(librarymixerconnect, SIGNAL(errorReceived(int)), this, SLOT(errorReceived(int)));
 
@@ -89,6 +85,12 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     QString email(rot13(settings.value("DefaultEmail", "").toString()));
     QString password(rot13(settings.value("DefaultPassword", "").toString()));
     skip_to_version = settings.value("SkipToVersion", VERSION).toLongLong();
+    latest_known_version = skip_to_version;
+    if (skip_to_version <= VERSION) {
+        skip_to_version = VERSION;
+        latest_known_version = VERSION;
+        settings.remove("SkipToVersion");
+   }
 
     if (!email.isEmpty()) {
         ui.loadEmail->setText(email);
@@ -101,7 +103,7 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     * Auto-logon has 3 states, which we track with the DefaultPassword setting:
     * No DefaultPassword: Default to auto-login box checked, but obviously we can't login without a password
     * Saved DefaultPassword: Auto-login checked
-    * Blank DefaultPassword: Auto-login unchecekd
+    * Blank DefaultPassword: Auto-login unchecked
     */
 
     if (!settings.contains("DefaultPassword") || !settings.value("DefaultPassword").toString().isEmpty()){
@@ -148,6 +150,13 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     }
 }
 
+void StartDialog::autoLogonChecked(int state) {
+    if (state == Qt::Unchecked) {
+        QSettings settings(*startupSettings, QSettings::IniFormat, this);
+        settings.setValue("DefaultPassword", rot13(""));
+    }
+}
+
 void StartDialog::edited() {
     if (ui.loadEmail->text() != "" && ui.loadPassword->text() != "") {
         ui.loadButton->setEnabled(true);
@@ -165,8 +174,10 @@ void StartDialog::checkVersion() {
     librarymixerconnect->downloadVersion(skip_to_version);
 }
 
-void StartDialog::downloadedVersion(qlonglong _version, QString description, QString importance) {
+void StartDialog::downloadedVersion(qulonglong _version, QString description, QString importance) {
     if (skip_to_version < _version) {
+        latest_known_version = _version;
+
         QMessageBox msgBox;
         msgBox.setWindowTitle("The Mixologist - Good news!");
         msgBox.setIcon(QMessageBox::Information);
@@ -191,7 +202,6 @@ void StartDialog::downloadedVersion(qlonglong _version, QString description, QSt
         } else if (Never != NULL && msgBox.clickedButton() == Never) {
             QSettings settings(*startupSettings, QSettings::IniFormat, this);
             settings.setValue("SkipToVersion", _version);
-            SettingsUtil::saveWidgetInformation(this, *startupSettings);
         }
 
     }
@@ -200,12 +210,12 @@ void StartDialog::downloadedVersion(qlonglong _version, QString description, QSt
     QString password = ui.loadPassword->text();
     librarymixerconnect->setLogin(email, password);
 
-    ui.loadStatus->setText("Downloading user info");
+    ui.loadStatus->setText("Downloading User Info");
     ui.progressBar->setValue(20);
     librarymixerconnect->downloadInfo();
 }
 
-void StartDialog::downloadedInfo(QString name, int librarymixer_id,
+void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
                                  QString checkout_link1, QString contact_link1, QString link_title1,
                                  QString checkout_link2, QString contact_link2, QString link_title2,
                                  QString checkout_link3, QString contact_link3, QString link_title3) {
@@ -262,7 +272,7 @@ void StartDialog::downloadedInfo(QString name, int librarymixer_id,
         }
     }
 
-    ui.loadStatus->setText("Initializing encryption");
+    ui.loadStatus->setText("Initializing Encryption");
     ui.progressBar->setValue(30);
 
     QString public_key = Init::InitEncryption(librarymixer_id);
@@ -276,27 +286,27 @@ void StartDialog::downloadedInfo(QString name, int librarymixer_id,
 
     //Must start server now so that we can get the IP address to upload in the next step
     Init::createControl(name);
-    ui.loadStatus->setText("Updating info on server");
+    ui.loadStatus->setText("Updating Info");
     ui.progressBar->setValue(50);
     librarymixerconnect->uploadInfo(link_to_set, public_key);
 }
 
-void StartDialog::downloadLibrary() {
-    ui.loadStatus->setText("Downloading your library");
-    ui.progressBar->setValue(60);
-
-    librarymixerconnect->downloadLibrary();
-}
-
 void StartDialog::downloadFriends() {
-    ui.loadStatus->setText("Downloading friend list");
-    ui.progressBar->setValue(80);
+    ui.loadStatus->setText("Downloading Friend List");
+    ui.progressBar->setValue(60);
 
     librarymixerconnect->downloadFriends();
 }
 
+void StartDialog::downloadLibrary() {
+    ui.loadStatus->setText("Downloading Mixed Library");
+    ui.progressBar->setValue(80);
+
+    librarymixerconnect->downloadFriendsLibrary();
+}
 
 void StartDialog::finishLoading() {
+    control->setVersion("Mixologist", VERSION, latest_known_version);
     control->StartupMixologist();
     loadedOk = true;
     close();
@@ -330,7 +340,7 @@ void StartDialog::errorReceived(int errorCode) {
     } else {
         QMessageBox::warning (this,
                               "The Mixologist",
-                              "Ran into a problem while starting up, give it another try.",
+                              "Ran into a problem while starting up, give it another try (" + QString::number(errorCode) + ").",
                               QMessageBox::Ok);
         exit(1);
     }
@@ -348,7 +358,7 @@ void StartDialog::closeEvent (QCloseEvent *event) {
     {
         QSettings settings(*startupSettings, QSettings::IniFormat, this);
         settings.setValue("Version", VERSION);
-        SettingsUtil::saveWidgetInformation(this, *startupSettings);
+        GuiSettingsUtil::saveWidgetInformation(this, *startupSettings);
     }//flush the QSettings object so it saves
 
     if (loadedOk) {

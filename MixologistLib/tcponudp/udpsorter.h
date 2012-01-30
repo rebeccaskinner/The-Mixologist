@@ -112,7 +112,7 @@ private:
 
     UdpLayer *udpLayer;
 
-    MixMutex sortMtx; /* for all class data (below) */
+    mutable QMutex sortMtx; /* for all class data (below) */
 
     struct sockaddr_in laddr; /* local addr */
 

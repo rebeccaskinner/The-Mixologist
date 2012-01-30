@@ -50,7 +50,8 @@ bool Server::StartupMixologist() {
     ftserver->StartupThreads();
     ftserver->ResumeTransfers();
     mDhtMgr->start();
-    createThread(*this);
+
+    this->start();
 
     return true;
 }
@@ -61,12 +62,22 @@ bool Server::ShutdownMixologist() {
     return true;
 }
 
-void    Server::ReloadTransferRates() {
+void Server::ReloadTransferRates() {
     pqih->load_transfer_rates();
 }
 
+void Server::setVersion(const QString &clientName, qulonglong clientVersion, qulonglong latestKnownVersion) {
+    storedClientName = clientName;
+    storedClientVersion = clientVersion;
+    storedLatestKnownVersion = latestKnownVersion;
+}
+
+QString Server::clientName() {return storedClientName;}
+qulonglong Server::clientVersion() {return storedClientVersion;}
+qulonglong Server::latestKnownVersion() {return storedLatestKnownVersion;}
+
 /* Thread Fn: Run the Core */
-void    Server::run() {
+void Server::run() {
     double timeDelta = 0.25;
     double minTimeDelta = 0.1; // 25;
     double maxTimeDelta = 0.5;
@@ -78,8 +89,6 @@ void    Server::run() {
     lastts = ts = getCurrentTS();
 
     long   lastSec = 0; /* for the slower ticked stuff */
-
-    int loop = 0;
 
     while (true) {
 #ifndef WINDOWS_SYS
@@ -96,11 +105,12 @@ void    Server::run() {
             lastts = ts;
 
             /******************************** RUN SERVER *****************/
-            lockCore();
+            int moreToTick;
 
-            int moreToTick = ftserver -> tick();
-
-            unlockCore();
+            {
+                QMutexLocker stack(&coreMutex);
+                moreToTick = ftserver -> tick();
+            }
 
             /* tick the connection Manager */
             connMgr->tick();

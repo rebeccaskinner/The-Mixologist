@@ -22,38 +22,16 @@
 #ifndef UPNP_IFACE_H
 #define UPNP_IFACE_H
 
-#include <string.h>
-
-#include <string>
-#include <map>
-
 /* platform independent networking... */
 #include "pqi/pqinetwork.h"
 #include "pqi/pqiassist.h"
+#include "upnp/upnputil.h"
 
-#include "util/threads.h"
+#include <QObject>
+#include <QMutex>
 
-class upnpentry {
-public:
-    std::string name;
-    std::string id;
-    struct sockaddr_in addr;
-    unsigned int flags;
-    int status;
-    int lastTs;
-};
-
-class upnpforward {
-public:
-    std::string name;
-    unsigned int flags;
-    struct sockaddr_in iaddr;
-    struct sockaddr_in eaddr;
-    int status;
-    int lastTs;
-};
-
-
+/* These indicate the possible states of the UPNP.
+   They are ordered in that unready states are <2 while final states are >2 */
 #define UPNP_S_UNINITIALISED  0
 #define UPNP_S_UNAVAILABLE    1
 #define UPNP_S_READY          2
@@ -61,63 +39,104 @@ public:
 #define UPNP_S_UDP_FAILED     4
 #define UPNP_S_ACTIVE         5
 
-class uPnPConfigData;
+class UPnPConfigData;
+class UPnPAsynchronizer;
 
 class upnphandler: public pqiNetAssistFirewall {
 public:
 
     upnphandler();
-    virtual ~upnphandler();
+    virtual ~upnphandler(){};
 
-    /* External Interface (pqiNetAssistFirewall) */
-    virtual void    enable(bool active);
-    virtual void    shutdown();
-    virtual void    restart();
+    /* Asynchronous call to enable or disable UPNP. */
+    virtual void enable(bool on);
+    /* Blocking call to disable UPNP and remove all forwardings. */
+    virtual void shutdown();
+    /* Asynchronous call to disable UPNP, removing all forwardings, and restart it. */
+    virtual void restart();
 
-    virtual bool    getEnabled();
-    virtual bool    getActive();
+    /* True if UPNP has been set to enabled. */
+    virtual bool getEnabled();
+    /* True if UPNP has successfully started and is working properly. */
+    virtual bool getActive();
 
-    virtual void    setInternalPort(unsigned short iport_in);
-    virtual void    setExternalPort(unsigned short eport_in);
-    virtual bool    getInternalAddress(struct sockaddr_in &addr);
-    virtual bool    getExternalAddress(struct sockaddr_in &addr);
+    /* The address that the listening port is on. */
+    virtual void setInternalPort(unsigned short newPort);
+    virtual void setExternalPort(unsigned short newPort);
 
-    /* Public functions - for background thread operation,
-         * but effectively private from rest of program, as in derived class
-     */
-
-    bool    start_upnp();
-    bool    shutdown_upnp();
-
-    bool initUPnPState();
-    bool printUPnPState();
+    /* Addresses as determined by uPnP. */
+    virtual bool getInternalAddress(struct sockaddr_in &addr);
+    virtual bool getExternalAddress(struct sockaddr_in &addr);
 
 private:
 
-    bool background_setup_upnp(bool, bool);
-    bool checkUPnPActive();
+    /* Searches the network for an Internet Gateway Device and if found, initializes the upnpConfig and returns true.
+       Otherwise clears out the upnpConfig info and returns false. */
+    bool initUPnPState();
+    void printUPnPState();
+    /* Starts UPnP. Must be called after initUPnPState. */
+    bool start_upnp();
+    /* Removes any UPnP forwardings. */
+    bool shutdown_upnp();
 
     /* Mutex for data below */
-    MixMutex dataMtx;
+    mutable QMutex upnpMtx;
 
-    bool toEnable;   /* overall on/off switch */
-    bool toStart;  /* if set start forwarding */
-    bool toStop;   /* if set stop  forwarding */
+    /* Whether we have been called to enable UPnP. */
+    bool enabled;
 
-    unsigned short iport;
-    unsigned short eport;       /* config            */
-    unsigned short eport_curr;  /* current forwarded */
-
-    /* info from upnp */
+    /* Possible values for state are defined by constants above. */
     unsigned int upnpState;
-    uPnPConfigData *upnpConfig;
+    /* UPnP configuration data created by initUPnPState. */
+    UPnPConfigData *upnpConfig;
 
-    struct sockaddr_in upnp_iaddr;
-    struct sockaddr_in upnp_eaddr;
+    unsigned short internalPort;
+    unsigned short desiredExternalPort;
+    unsigned short currentExternalPort;
 
-    /* active port forwarding */
-    std::list<upnpforward> activeForwards;
+    struct sockaddr_in upnp_internalAddress;
+    struct sockaddr_in upnp_externalAddress;
 
+    friend class UPnPAsynchronizer;
+};
+
+/* This class can be moved into a QThread, such that calls to its request functions will execute the tasks asynchronously.
+   All of the underlying code remains in the upnphandler, with calls made via UPnPAsynchronizer's friend status. */
+class UPnPAsynchronizer: public QObject {
+Q_OBJECT
+
+public:
+    UPnPAsynchronizer(upnphandler* handler);
+
+    /* Returns a QThread that contains a new UPnPAsynchronizer.
+       There is no need to handle memory management of this QThread, it is all handled internally and will free itself upon completion of its task. */
+    static UPnPAsynchronizer* createWorker(upnphandler* handler);
+
+    /* These functions are asynchronous.
+       Upon completion they will emit the workCompleted signal and then schedule the UPnPAsynchronizer for deletion. */
+    void requestStart();
+    void requestStop();
+    void requestRestart();
+
+private slots:
+    void startUPnP(bool emitCompletion = true);
+    void stopUPnP(bool emitCompletion = true);
+
+signals:
+    void startRequested(bool emitCompletion);
+    void stopRequested(bool emitCompletion);
+    void workCompleted();
+
+private:
+    upnphandler* handler;
+};
+
+class UPnPConfigData {
+public:
+    struct UPNPDev *devlist;
+    struct UPNPUrls urls;
+    struct IGDdatas data;
+    char lanaddr[16]; /* Own ip address on the LAN. */
 };
 
 #endif /* UPNP_IFACE_H */

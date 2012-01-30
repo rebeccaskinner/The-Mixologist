@@ -88,7 +88,7 @@ dhtPeerEntry::dhtPeerEntry()
 p3DhtMgr::p3DhtMgr(std::string id, pqiConnectCb *cb)
     :pqiNetAssistConnect(id, cb), mStunRequired(true) {
     /* setup own entry */
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     ownEntry.id = id;
     ownEntry.state = DHT_PEER_INIT;
@@ -108,7 +108,7 @@ p3DhtMgr::p3DhtMgr(std::string id, pqiConnectCb *cb)
     mBootstrapAllowed = true;
     mLastBootstrapListTS = 0;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return;
 }
@@ -126,48 +126,48 @@ void    p3DhtMgr::restart() {
 }
 
 void    p3DhtMgr::enable(bool on) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     mDhtModifications = true;
     mDhtOn = on;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 }
 
 bool    p3DhtMgr::getEnabled() {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     bool on = mDhtOn;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return on;
 }
 
 bool    p3DhtMgr::getActive() {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     bool act = dhtActive();
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return act;
 }
 
 void    p3DhtMgr::setBootstrapAllowed(bool on) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     mBootstrapAllowed = on;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 }
 
 bool    p3DhtMgr::getBootstrapAllowed() {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     bool on = mBootstrapAllowed;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return on;
 }
@@ -180,7 +180,7 @@ bool p3DhtMgr::setExternalInterface(
     struct sockaddr_in laddr,
     struct sockaddr_in raddr,
     uint32_t type) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     mDhtModifications = true;
     ownEntry.laddr = laddr;
@@ -212,7 +212,7 @@ bool p3DhtMgr::setExternalInterface(
 
     log(LOG_DEBUG_ALERT, p3dhtzone, out.str().c_str());
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     checkOwnDHTKeys();
     return true;
@@ -221,7 +221,7 @@ bool p3DhtMgr::setExternalInterface(
 
 /* add / remove peers */
 bool p3DhtMgr::findPeer(std::string id) {
-    MixStackMutex stack(dhtMtx); /***** LOCK MUTEX *****/
+    QMutexLocker stack(&dhtMtx);
 
     mDhtModifications = true;
 
@@ -263,7 +263,7 @@ bool p3DhtMgr::findPeer(std::string id) {
 }
 
 bool p3DhtMgr::dropPeer(std::string id) {
-    MixStackMutex stack(dhtMtx); /***** LOCK MUTEX *****/
+    QMutexLocker stack(&dhtMtx);
 
     mDhtModifications = true;
 
@@ -282,7 +282,7 @@ bool p3DhtMgr::dropPeer(std::string id) {
 
 /* post DHT key saying we should connect */
 bool p3DhtMgr::notifyPeer(std::string id) {
-    MixStackMutex stack(dhtMtx); /***** LOCK MUTEX *****/
+    QMutexLocker stack(&dhtMtx);
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::notifyPeer() " << id << std::endl;
 #endif
@@ -343,7 +343,7 @@ bool p3DhtMgr::getPeerStatus(std::string id,
                              struct sockaddr_in &laddr,
                              struct sockaddr_in &raddr,
                              uint32_t &type, uint32_t &state) {
-    MixStackMutex stack(dhtMtx); /* LOCK MUTEX */
+    QMutexLocker stack(&dhtMtx);
 
     std::map<std::string, dhtPeerEntry>::iterator it;
     it = peers.find(id);
@@ -368,25 +368,25 @@ bool p3DhtMgr::getPeerStatus(std::string id,
 
 /* stun */
 bool p3DhtMgr::addStun(std::string id) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     mDhtModifications = true;
 
     std::list<std::string>::iterator it;
     it = std::find(stunIds.begin(), stunIds.end(), id);
     if (it != stunIds.end()) {
-        dhtMtx.unlock(); /* UNLOCK MUTEX */
+        dhtMtx.unlock();
         return false;
     }
     stunIds.push_back(id);
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return true;
 }
 
 bool p3DhtMgr::enableStun(bool on) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     mDhtModifications = true;
 
@@ -397,7 +397,7 @@ bool p3DhtMgr::enableStun(bool on) {
 
     mStunRequired = on;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return true;
 }
@@ -409,18 +409,18 @@ void p3DhtMgr::run() {
      */
 
     while (1) {
-        checkDHTStatus();
+        //checkDHTStatus();
 
 
 #ifdef DHT_DEBUG
         status(std::cerr);
 #endif
 
-        dhtMtx.lock(); /* LOCK MUTEX */
+        dhtMtx.lock();
 
         uint32_t dhtState = mDhtState;
 
-        dhtMtx.unlock(); /* UNLOCK MUTEX */
+        dhtMtx.unlock();
 
         int period = 60; /* default wait */
         switch (dhtState) {
@@ -503,14 +503,14 @@ void p3DhtMgr::run() {
                 waittime = period-i;
             }
 
-            dhtMtx.lock(); /* LOCK MUTEX */
+            dhtMtx.lock();
 
             if (mDhtModifications) {
                 mDhtModifications = false;
                 toBreak = true;
             }
 
-            dhtMtx.unlock(); /* UNLOCK MUTEX */
+            dhtMtx.unlock();
 
             if (toBreak) {
 #ifdef DHT_DEBUG
@@ -547,11 +547,11 @@ int p3DhtMgr::checkOwnDHTKeys() {
     std::cerr << "p3DhtMgr::checkOwnDHTKeys()" << std::endl;
 #endif
 
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     dhtPeerEntry peer = ownEntry;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     /* publish ourselves if necessary */
     if (peer.state >= DHT_PEER_ADDR_KNOWN) {
@@ -591,21 +591,21 @@ int p3DhtMgr::checkOwnDHTKeys() {
 
             /* publish own key */
             if (dhtPublish(peer.hash1, peer.laddr, peer.raddr, peer.type, "")) {
-                dhtMtx.lock(); /* LOCK MUTEX */
+                dhtMtx.lock();
 
                 ownEntry.lastTS = now;
                 ownEntry.state = DHT_PEER_PUBLISHED;
 
-                dhtMtx.unlock(); /* UNLOCK MUTEX */
+                dhtMtx.unlock();
             }
 
             /* dhtBootstrap -> if allowed and EXT port */
             if (peer.type & NET_CONN_TCP_EXTERNAL) {
-                dhtMtx.lock(); /* LOCK MUTEX */
+                dhtMtx.lock();
 
                 bool doBootstrapPub = mBootstrapAllowed;
 
-                dhtMtx.unlock(); /* UNLOCK MUTEX */
+                dhtMtx.unlock();
 
                 if (doBootstrapPub) {
                     dhtBootstrap(randomBootstrapId(), peer.hash1, "");
@@ -646,11 +646,11 @@ int p3DhtMgr::checkOwnDHTKeys() {
                 }
 
                 if (dhtSearch(peer.hash1, DHT_MODE_NOTIFY)) {
-                    dhtMtx.lock(); /* LOCK MUTEX */
+                    dhtMtx.lock();
 
                     ownEntry.notifyTS = now;
 
-                    dhtMtx.unlock(); /* UNLOCK MUTEX */
+                    dhtMtx.unlock();
                 }
 
                 /* restart immediately */
@@ -703,7 +703,7 @@ int p3DhtMgr::checkPeerDHTKeys() {
     std::cerr << "p3DhtMgr::checkPeerDHTKeys()" << std::endl;
 #endif
 
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     /* iterate through and find min time and suitable candidate */
     std::map<std::string, dhtPeerEntry>::iterator it,pit;
@@ -748,7 +748,7 @@ int p3DhtMgr::checkPeerDHTKeys() {
     /* now have - peer to handle, and period to next call */
 
     if (pit == peers.end()) {
-        dhtMtx.unlock(); /* UNLOCK MUTEX */
+        dhtMtx.unlock();
         return repeatPeriod;
     }
 
@@ -761,7 +761,7 @@ int p3DhtMgr::checkPeerDHTKeys() {
 
     dhtPeerEntry peer = (pit->second);
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     /* now search for the peer */
     dhtSearch(peer.hash1, DHT_MODE_SEARCH);
@@ -781,7 +781,7 @@ int p3DhtMgr::checkNotifyDHT() {
     dhtPeerEntry  own;
 
     {
-        MixStackMutex stack(dhtMtx); /***** LOCK MUTEX *****/
+        QMutexLocker stack(&dhtMtx);
 
         /* iterate through and find min time and suitable candidate */
         std::map<std::string, dhtPeerEntry>::iterator it;
@@ -876,11 +876,11 @@ int p3DhtMgr::doStun() {
         return 0;
     }
 
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     bool stunRequired = mStunRequired;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     /* now loop through the peers */
     if (!stunRequired) {
@@ -912,7 +912,7 @@ int p3DhtMgr::checkStunState() {
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::checkStunState()" << std::endl;
 #endif
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     /* now loop through the peers */
     if (!mStunRequired) {
@@ -939,16 +939,16 @@ int p3DhtMgr::checkStunState() {
             std::cerr << "WARNING: out of Stun Peers - switching to Active Now" << std::endl;
 #endif
             mDhtState = DHT_STATE_ACTIVE;
-            dhtMtx.unlock(); /* UNLOCK MUTEX */
+            dhtMtx.unlock();
 
             /* this is a locked function */
             getDhtBootstrapList();
 
-            dhtMtx.lock(); /* LOCK MUTEX */
+            dhtMtx.lock();
         }
     }
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
     return 1;
 }
 
@@ -956,12 +956,12 @@ int p3DhtMgr::checkStunState_Active() {
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::checkStunState_Active()" << std::endl;
 #endif
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     bool stunReq = mStunRequired;
     bool moreIds  = ((mStunRequired) && (stunIds.size() < 1));
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     if (moreIds)
         /* if we run out of stun peers -> get some more */
@@ -979,7 +979,7 @@ bool p3DhtMgr::getDhtBootstrapList() {
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::getDHTBootstrapList()" << std::endl;
 #endif
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     time_t now = time(NULL);
     if (now - mLastBootstrapListTS < DHT_MIN_BOOTSTRAP_REQ_PERIOD) {
@@ -988,7 +988,7 @@ bool p3DhtMgr::getDhtBootstrapList() {
         std::cerr << DHT_MIN_BOOTSTRAP_REQ_PERIOD-(now-mLastBootstrapListTS);
         std::cerr << " secs" << std::endl;
 #endif
-        dhtMtx.unlock(); /* UNLOCK MUTEX */
+        dhtMtx.unlock();
 
         return false;
     }
@@ -997,7 +997,7 @@ bool p3DhtMgr::getDhtBootstrapList() {
     std::string bootId = randomBootstrapId();
 
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::getDHTBootstrapList() bootId: 0x";
@@ -1047,7 +1047,7 @@ std::string p3DhtMgr::randomBootstrapId() {
 
 
 void p3DhtMgr::checkDHTStatus() {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     bool isActive   = (mDhtState != DHT_STATE_OFF);
 
@@ -1102,7 +1102,7 @@ void p3DhtMgr::checkDHTStatus() {
         }
     }
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     if (toShutdown) {
 #ifdef DHT_DEBUG
@@ -1111,14 +1111,14 @@ void p3DhtMgr::checkDHTStatus() {
         if (dhtShutdown()) {
             clearDhtData();
 
-            dhtMtx.lock(); /* LOCK MUTEX */
+            dhtMtx.lock();
 
             mDhtState  = DHT_STATE_OFF;
 #ifdef DHT_DEBUG
             std::cerr << "p3DhtMgr::checkDhtStatus() mDhtState -> OFF" << std::endl;
 #endif
 
-            dhtMtx.unlock(); /* UNLOCK MUTEX */
+            dhtMtx.unlock();
         }
     }
 
@@ -1128,7 +1128,7 @@ void p3DhtMgr::checkDHTStatus() {
 #endif
         if (dhtInit()) {
 
-            dhtMtx.lock(); /* LOCK MUTEX */
+            dhtMtx.lock();
 
             mDhtState  = DHT_STATE_INIT;
             mDhtActiveTS = time(NULL);
@@ -1138,7 +1138,7 @@ void p3DhtMgr::checkDHTStatus() {
 #endif
 
 
-            dhtMtx.unlock(); /* UNLOCK MUTEX */
+            dhtMtx.unlock();
         }
     }
 }
@@ -1155,7 +1155,7 @@ void    p3DhtMgr::clearDhtData() {
  */
 
 int  p3DhtMgr::status(std::ostream &out) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
     out << "p3DhtMgr::status() ************************************" << std::endl;
     out << "mDhtState: " << mDhtState << std::endl;
@@ -1183,7 +1183,7 @@ int  p3DhtMgr::status(std::ostream &out) {
 
     out << "p3DhtMgr::status() END ********************************" << std::endl;
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     return 0;
 }
@@ -1354,9 +1354,9 @@ bool p3DhtMgr::resultDHT(std::string key, std::string value) {
     }
 
 
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
     std::string ownhash = ownEntry.hash1;
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     switch (reqType) {
         case DHT_MODE_NOTIFY: {
@@ -1458,7 +1458,7 @@ bool p3DhtMgr::resultDHT(std::string key, std::string value) {
 
 
 bool p3DhtMgr::dhtResultBootstrap(std::string idhash) {
-    MixStackMutex stack(dhtMtx); /***** LOCK MUTEX *****/
+    QMutexLocker stack(&dhtMtx);
 
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::dhtResultBootstrap() from idhash: ";
@@ -1487,7 +1487,7 @@ bool p3DhtMgr::dhtResultBootstrap(std::string idhash) {
 
 
 bool p3DhtMgr::dhtResultNotify(std::string idhash) {
-    MixStackMutex stack(dhtMtx); /***** LOCK MUTEX *****/
+    QMutexLocker stack(&dhtMtx);
 
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::dhtResultNotify() from idhash: ";
@@ -1537,7 +1537,7 @@ bool p3DhtMgr::dhtResultNotify(std::string idhash) {
 bool p3DhtMgr::dhtResultSearch(std::string idhash,
                                struct sockaddr_in &laddr, struct sockaddr_in &raddr,
                                uint32_t type, std::string) {
-    dhtMtx.lock(); /* LOCK MUTEX */
+    dhtMtx.lock();
 
 #ifdef DHT_DEBUG
     std::cerr << "p3DhtMgr::dhtResultSearch() for idhash: ";
@@ -1603,7 +1603,7 @@ bool p3DhtMgr::dhtResultSearch(std::string idhash,
         stunFlags = STUN_ONLINE;
     }
 
-    dhtMtx.unlock(); /* UNLOCK MUTEX */
+    dhtMtx.unlock();
 
     if (doCb) {
         mConnCb->peerStatus(ent.id, ent.laddr, ent.raddr,

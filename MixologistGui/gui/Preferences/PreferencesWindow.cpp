@@ -63,8 +63,7 @@ PreferencesWindow::PreferencesWindow(QWidget *parent, Qt::WFlags flags)
     connect(grp, SIGNAL(triggered(QAction *)), this, SLOT(showPage(QAction *)));
     ui.stackPages->setCurrentWidget(generalDialog);
 
-    //ui.versionLabel->setText("Version: " + QString::number(VERSION).insert(1, "."));
-    ui.versionLabel->setText("Version: 0." + QString::number(VERSION));
+    ui.versionLabel->setText("Version " + VersionUtil::display_version());
 
     connect(ui.okButton, SIGNAL(clicked()), this, SLOT(saveChanges()));
     connect(ui.cancelprefButton, SIGNAL(clicked()), this, SLOT(cancelpreferences()));

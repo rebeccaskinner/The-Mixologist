@@ -35,23 +35,20 @@
             //Checks for or creates the basic config dir, which in Unix reside at ~/.mixologist
             static void	loadBaseDir() ;
             //Sets up the user directory and all subdirectories
-            static void loadUserDir(int librarymixer_id);
+            static void loadUserDir(unsigned int librarymixer_id);
             //Initializes SSL for the entire application
-            static QString InitEncryption(int librarymixer_id);
+            static QString InitEncryption(unsigned int librarymixer_id);
             //Creates, initializes and returns a new Control object.
             static Control* createControl(QString name);
 
-            //Returns the basedir, without or without a separator
+            //Returns the basedir, without or without a separator, using native separators
             static QString getBaseDirectory(bool withDirSeperator);
-            //Returns the userdir
+            //Returns the userdir, using native separators
             static QString getUserDirectory(bool withDirSeperator);
 
             /* Key Parameters that must be set before the Mixologist will start up: */
 
-            /* Win/Unix Differences */
-            static char dirSeperator;
-
-            /* Directories */
+            /* Directories, with native separators */
             static QString basedir;
             static QString userdir;
 

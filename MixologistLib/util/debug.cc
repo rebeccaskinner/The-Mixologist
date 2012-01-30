@@ -23,10 +23,11 @@
 #include "interface/iface.h"
 
 #include "util/debug.h"
-#include "util/threads.h"
 
 #include <map>
 #include <stdio.h>
+
+#include <QMutex>
 
 /***
  * #define DEBUG_DEBUG
@@ -44,14 +45,14 @@ static FILE *ofd = stderr;
 
 static int debugMode = DEBUG_STDERR;
 
-static MixMutex logMtx;
+static QMutex logMtx;
 
 int locked_setDebugFile(const char *fname);
 int locked_getZoneLevel(int zone);
 
 #ifdef false
 int setDebugCrashMode(const char *cfile) {
-    MixStackMutex stack(logMtx); /******** LOCKED ****************/
+    QMutexLocker stack(&logMtx);
     crashfile = cfile;
     /* if the file exists - then we crashed, save it */
     FILE *tmpin = fopen(crashfile.c_str(), "r");
@@ -113,7 +114,7 @@ int setDebugCrashMode(const char *cfile) {
 
 /* this is called when we exit normally */
 int clearDebugCrashLog() {
-    MixStackMutex stack(logMtx); /******** LOCKED ****************/
+    QMutexLocker stack(&logMtx);
     /* check we are in crashLog Mode */
     if (debugMode != DEBUG_LOGCRASH) {
 #ifdef DEBUG_DEBUG
@@ -140,7 +141,7 @@ int clearDebugCrashLog() {
 
 
 int setDebugFile(const char *fname) {
-    MixStackMutex stack(logMtx); /******** LOCKED ****************/
+    QMutexLocker stack(&logMtx);
     return locked_setDebugFile(fname);
 }
 #endif
@@ -164,19 +165,19 @@ int locked_setDebugFile(const char *fname) {
 
 
 int setOutputLevel(int lvl) {
-    MixStackMutex stack(logMtx); /******** LOCKED ****************/
+    QMutexLocker stack(&logMtx);
     return defaultLevel = lvl;
 }
 
 int setZoneLevel(int lvl, int zone) {
-    MixStackMutex stack(logMtx); /******** LOCKED ****************/
+    QMutexLocker stack(&logMtx);
     zoneLevel[zone] = lvl;
     return zone;
 }
 
 
 int getZoneLevel(int zone) {
-    MixStackMutex stack(logMtx); /******** LOCKED ****************/
+    QMutexLocker stack(&logMtx);
     return locked_getZoneLevel(zone);
 }
 
@@ -191,7 +192,7 @@ int locked_getZoneLevel(int zone) {
 int log(unsigned int lvl, int zone, QString msg) {
     int zoneLevel;
     {
-        MixStackMutex stack(logMtx); /******** LOCKED ****************/
+        QMutexLocker stack(&logMtx);
         zoneLevel = locked_getZoneLevel(zone);
     }
     if ((signed) lvl <= zoneLevel) {

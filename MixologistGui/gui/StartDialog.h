@@ -46,22 +46,23 @@ public slots:
 	/** Overloaded QWidget.show */
 
 private slots:
-
+        //Clears out saved password when auto logon box is unchecked
+        void autoLogonChecked(int state);
         //Enables or disables the login button if we have all necessary login information
         void edited();
         //Begin 1st step after clicking Log In button to check client version
 	void checkVersion();
         //Begin 2nd step to query server for: id, name, communications links
-        void downloadedVersion(qlonglong version, QString description, QString importances);
+        void downloadedVersion(qulonglong version, QString description, QString importances);
         //Begin 3rd step to upload info to server
-        void downloadedInfo(QString name, int librarymixer_id,
+        void downloadedInfo(QString name, unsigned int librarymixer_id,
                             QString checkout_link1, QString contact_link1, QString link_title1,
                             QString checkout_link2, QString contact_link2, QString link_title2,
                             QString checkout_link3, QString contact_link3, QString link_title3);
-        //Begin 4th step to download library
-        void downloadLibrary();
-        //Begin 5th step to download friends
+        //Begin 4th step to download friends
         void downloadFriends();
+        //Begin 5th step to download library of friends items
+        void downloadLibrary();
         //Loading complete, start the Mioxlogist
 	void finishLoading();
         //Updates the progress bar from librarymixer-connect with information on data transfer progress
@@ -75,9 +76,12 @@ private:
 	/* Qt Designer generated object */
         Ui::StartDialog ui;
 
-        //This variable is populated from saved settings, and indicates that version numbers <= this we are not interested in
-        qlonglong skip_to_version;
+        /* This variable is populated from saved settings, and indicates that version numbers <= this we are not interested in. */
+        qulonglong skip_to_version;
 
+        /* This variable is populated from the server, and indicates the latest version of the Mixologist we know about.
+           If own version or skip_to_version is greater, will use that instead (can come up with test versions. */
+        qulonglong latest_known_version;
     };
 
 #endif

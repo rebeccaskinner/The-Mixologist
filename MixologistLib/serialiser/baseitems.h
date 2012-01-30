@@ -32,8 +32,6 @@ const uint8_t PKT_TYPE_FILE          = 0x01;
 
 const uint8_t PKT_SUBTYPE_FI_REQUEST  = 0x01;
 const uint8_t PKT_SUBTYPE_FI_DATA     = 0x02;
-const uint8_t PKT_SUBTYPE_FI_TRANSFER = 0x03;
-
 
 /**************************************************************************/
 

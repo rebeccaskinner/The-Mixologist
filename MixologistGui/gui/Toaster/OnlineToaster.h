@@ -54,7 +54,7 @@ private slots:
 	void close();
 
 private:
-        int librarymixer_id; //This stores the id of the friend associated with the notification.
+        unsigned int librarymixer_id; //This stores the id of the friend associated with the notification.
 	Ui::OnlineToaster * _ui;
 	QWidget * _onlineToasterWidget;
 	QtToaster * _toaster;

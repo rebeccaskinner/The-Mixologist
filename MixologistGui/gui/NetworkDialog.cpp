@@ -75,7 +75,7 @@ void NetworkDialog::insertConnect() {
     QTreeWidget *connectWidget = ui.connecttreeWidget;
     QTreeWidgetItem *oldSelect = getCurrentNeighbour();
     QTreeWidgetItem *newSelect = NULL;
-    int oldId = 0;
+    unsigned int oldId = 0;
     if (oldSelect) {
         oldId = (oldSelect -> text(5)).toInt();
     }

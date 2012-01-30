@@ -119,7 +119,7 @@ protected:
 private:
 
     std::string peerId;
-    int librarymixer_id;
+    unsigned int librarymixer_id;
     float   bw_in, bw_out, bwMax_in, bwMax_out;
 };
 
@@ -175,7 +175,7 @@ protected:
 private:
     PQInterface *p;
     std::string peerId;
-    int librarymixer_id;
+    unsigned int librarymixer_id;
 };
 
 /********************** Binary INTERFACE ****************************
@@ -219,8 +219,7 @@ public:
 
     /* used by pqistreamer to limit transfers */
     virtual bool    bandwidthLimited() {
-        //return true;
-        return false;
+        return true;
     }
 };
 
@@ -232,7 +231,7 @@ Implementations include pqissl and pqissludp.
 
 class NetBinInterface: public NetInterface, public BinInterface {
 public:
-    NetBinInterface(PQInterface *parent, std::string id, int librarymixer_id)
+    NetBinInterface(PQInterface *parent, std::string id, unsigned int librarymixer_id)
         :NetInterface(parent, id, librarymixer_id) {
         return;
     }

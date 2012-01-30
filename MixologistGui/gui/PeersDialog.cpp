@@ -43,7 +43,7 @@
 #define IMAGE_CHAT              ":/Images/Chat.png"
 #define IMAGE_SENDFILE          ":/Images/Send.png"
 #define IMAGE_CONNECT           ":/Images/ReconnectFriend.png"
-#define IMAGE_MSG               ":/Images/Message.png"
+
 /* Images for Status icons */
 #define IMAGE_CONNECTED         ":/Images/StatusConnected.png"
 #define IMAGE_CONNECTING        ":/Images/StatusConnecting.png"
@@ -52,6 +52,7 @@
 #define FRIEND_ICON_AND_SORT_COLUMN 0
 #define FRIEND_NAME_COLUMN 1
 #define FRIEND_STATUS_COLUMN 2
+#define FRIEND_LIBRARYMIXER_ID_COLUMN 3
 
 /** Constructor */
 PeersDialog::PeersDialog(QWidget *parent)
@@ -59,21 +60,21 @@ PeersDialog::PeersDialog(QWidget *parent)
     /* Invoke the Qt Designer generated object setup routine */
     ui.setupUi(this);
 
-    connect( ui.friendsList, SIGNAL( customContextMenuRequested( QPoint ) ), this, SLOT( friendsListContextMenu( QPoint ) ) );
-    connect( ui.friendsList, SIGNAL( itemDoubleClicked ( QTreeWidgetItem *, int)), this, SLOT(friendDoubleClicked()));
-    connect( ui.updateFriendsButton, SIGNAL( clicked()), this, SLOT(updateFriends()));
-    connect( librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(updatedFriends()));
+    connect(ui.friendsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(friendsListContextMenu(QPoint)));
+    connect(ui.friendsList, SIGNAL(itemDoubleClicked (QTreeWidgetItem *, int)), this, SLOT(friendDoubleClicked()));
+    connect(ui.addFriendsButton, SIGNAL(clicked()), this, SLOT(addFriendClicked()));
+    connect(ui.updateFriendsButton, SIGNAL(clicked()), this, SLOT(updateFriends()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(updatedFriends()));
 
     /* Set header resize modes and initial section sizes */
-    QHeaderView *_header = ui.friendsList->header () ;
-    _header->setResizeMode (0, QHeaderView::Fixed);
-    _header->setResizeMode (1, QHeaderView::Interactive);
-    _header->setResizeMode (2, QHeaderView::Interactive);
+    QHeaderView *_header = ui.friendsList->header();
+    _header->resizeSection (FRIEND_ICON_AND_SORT_COLUMN, 28);
+    _header->resizeSection (FRIEND_STATUS_COLUMN, 150);
+    _header->setResizeMode (FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Fixed);
+    _header->setResizeMode (FRIEND_NAME_COLUMN, QHeaderView::Stretch);
+    _header->setResizeMode (FRIEND_STATUS_COLUMN, QHeaderView::Fixed);
 
-    _header->resizeSection ( 0, 28 );
-    _header->resizeSection ( 1, 250 );
-    _header->resizeSection ( 2, 150 );
-    _header->hideSection(3);
+    _header->hideSection(FRIEND_LIBRARYMIXER_ID_COLUMN);
 
     /*Can't figure out why, but when actually running the program (not visible in QT Creator preview)
       a number appears in the header of this column as the text. This gets rid of it.*/
@@ -93,7 +94,7 @@ PeersDialog::PeersDialog(QWidget *parent)
     resetUpdateTimer();
 }
 
-void PeersDialog::friendsListContextMenu( QPoint point ) {
+void PeersDialog::friendsListContextMenu(QPoint point) {
     QMenu contextMenu(this);
 
     QTreeWidgetItem *selection = ui.friendsList->itemAt(point);
@@ -103,16 +104,20 @@ void PeersDialog::friendsListContextMenu( QPoint point ) {
 
     PeerDetails detail;
     if (!peers->getPeerDetails(id, detail)) return;
-    if (detail.state == PEER_STATE_NO_CERT) return;
 
-    if (detail.state == PEER_STATE_CONNECTED) {
-        chatAct = new QAction(QIcon(IMAGE_CHAT), tr( "Chat" ), this );
-        connect( chatAct , SIGNAL( triggered() ), this, SLOT( chatFriend() ) );
-        contextMenu.addAction( chatAct);
-        sendAct = new QAction(QIcon(IMAGE_SENDFILE), tr( "Send File" ), this );
-        connect( sendAct , SIGNAL( triggered() ), this, SLOT( sendFileFriend() ) );
-        contextMenu.addAction( sendAct);
-    } else return;
+    chatAct = new QAction(QIcon(IMAGE_CHAT), tr("Chat"), this);
+    connect(chatAct , SIGNAL(triggered()), this, SLOT(chatFriend()));
+    contextMenu.addAction(chatAct);
+    sendAct = new QAction(QIcon(IMAGE_SENDFILE), tr("Send File"), this);
+    connect(sendAct , SIGNAL(triggered()), this, SLOT(sendFileFriend()));
+    contextMenu.addAction(sendAct);
+
+    if (!peers->isOnline(id)){
+        chatAct->setEnabled(false);
+        chatAct->setText(tr("Chat (friend offline)"));
+        sendAct->setEnabled(false);
+        sendAct->setText(tr("Send File (friend offline)"));
+    }
 
     contextMenu.exec(ui.friendsList->mapToGlobal(point));
 }
@@ -134,7 +139,7 @@ void  PeersDialog::insertPeers() {
     QTreeWidgetItem *selected = getCurrentPeer();
     QTreeWidgetItem *newSelect = NULL;
 
-    int selected_librarymixer_id = 0;
+    unsigned int selected_librarymixer_id = 0;
     if (selected) selected_librarymixer_id = getFriendLibraryMixerId(selected);
 
     /* remove old items */
@@ -156,7 +161,7 @@ void  PeersDialog::insertPeers() {
 
         /* Hidden column: LibraryMixer ID */
         {
-            item -> setText(3, QString::number(detail.librarymixer_id));
+            item -> setText(FRIEND_LIBRARYMIXER_ID_COLUMN, QString::number(detail.librarymixer_id));
             if ((selected) && (selected_librarymixer_id == detail.librarymixer_id)) {
                 newSelect = item;
             }
@@ -167,29 +172,34 @@ void  PeersDialog::insertPeers() {
         if (detail.state == PEER_STATE_CONNECTED) {
             for (i = 1; i <= 2; i++) {
                 item -> setTextColor(i,(Qt::darkCyan));
-                QFont font ;
+                QFont font;
                 font.setBold(true);
                 item -> setFont(i,font);
                 item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTED)));
-                item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("1").append(detail.name.toLower()) );
+                item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("1").append(detail.name.toLower()));
                 item -> setText(FRIEND_STATUS_COLUMN, QString("Connected"));
             }
         } else if (detail.state == PEER_STATE_TRYING) {
             item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()) );
+            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
             item -> setText(FRIEND_STATUS_COLUMN, QString("Trying"));
         } else if (detail.state == PEER_STATE_WAITING_FOR_RETRY) {
             item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()) );
-            item -> setText(FRIEND_STATUS_COLUMN, QString("Continuing"));
+            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
+            QSettings settings(*mainSettings, QSettings::IniFormat, this);
+            if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
+                item -> setText(FRIEND_STATUS_COLUMN, QString("Continuing"));
+            } else {
+                item -> setText(FRIEND_STATUS_COLUMN, QString("Trying"));
+            }
         } else if (detail.state == PEER_STATE_NO_CERT) {
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("4").append(detail.name.toLower()) );
+            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("4").append(detail.name.toLower()));
             item -> setText(FRIEND_STATUS_COLUMN, QString("Not signed up for the Mixologist"));
             item -> setTextColor(FRIEND_NAME_COLUMN, Qt::lightGray);
             item -> setTextColor(FRIEND_STATUS_COLUMN, Qt::lightGray);
         } else {
             item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_OFFLINE)));
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("3").append(detail.name.toLower()) );
+            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("3").append(detail.name.toLower()));
             item -> setText(FRIEND_STATUS_COLUMN, QString("Offline"));
         }
 
@@ -221,20 +231,14 @@ void  PeersDialog::insertPeers() {
 }
 
 void PeersDialog::updateFriends() {
-    QMovie *movie = new QMovie(":/Images/AnimatedLoading.gif");
-    ui.updateFriendsLabel->setMovie(movie);
-    movie->start();
-    movie->setSpeed(100); // 2x speed
-    ui.updateFriendsLabel->setToolTip("Downloading friends list") ;
     ui.updateFriendsButton->setEnabled(false);
     if (librarymixerconnect->downloadFriends() < 0) updatedFriends();
-    peers->connectAll();
     resetUpdateTimer();
 }
 
 void PeersDialog::updatedFriends() {
-    ui.updateFriendsLabel->clear();
     ui.updateFriendsButton->setEnabled(true);
+    peers->connectAll();
 }
 
 void PeersDialog::chatFriend() {
@@ -242,7 +246,7 @@ void PeersDialog::chatFriend() {
 
     if (!selection) return;
 
-    int librarymixer_id = getFriendLibraryMixerId(selection);
+    unsigned int librarymixer_id = getFriendLibraryMixerId(selection);
 
     PeerDetails detail;
     if (!peers->getPeerDetails(librarymixer_id, detail)) return;
@@ -256,7 +260,7 @@ void PeersDialog::sendFileFriend() {
 
     if (!selection) return;
 
-    int librarymixer_id = getFriendLibraryMixerId(selection);
+    unsigned int librarymixer_id = getFriendLibraryMixerId(selection);
 
     PeerDetails detail;
     if (!peers->getPeerDetails(librarymixer_id, detail)) return;
@@ -265,9 +269,32 @@ void PeersDialog::sendFileFriend() {
     return;
 }
 
-void PeersDialog::updatePeerStatusString(int friend_librarymixer_id, const QString &status_string) {
+void PeersDialog::updatePeerStatusString(unsigned int friend_librarymixer_id, const QString &status_string) {
     PopupChatDialog *pcd = getChat(friend_librarymixer_id, false);
     if (pcd != NULL) pcd->updateStatusString(status_string);
+}
+
+void PeersDialog::addFriendClicked() {
+    QSettings settings(*startupSettings, QSettings::IniFormat);
+    QString host = settings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString();
+
+    if (host.compare(DEFAULT_MIXOLOGY_SERVER, Qt::CaseInsensitive) == 0){
+        host = DEFAULT_MIXOLOGY_SERVER_VALUE;
+    }
+
+    QDesktopServices::openUrl(QUrl(host + "/friends"));
+
+    QTimer::singleShot(2000, this, SLOT(addFriendClickedComplete()));
+}
+
+void PeersDialog::addFriendClickedComplete() {
+    /* We don't just use the static QMessageBox::information box because, at least on Windows, it makes the annoying system beep when it pops up. */
+    QMessageBox msgBox;
+    msgBox.setWindowTitle("The Mixologist");
+    msgBox.setText("<p>Hit ok when you are done making changes to your friends list to update the Mixologist.</p><p>(Or you can always hit Update Friends List in the upper-right later.)</p>");
+    msgBox.exec();
+
+    updateFriends();
 }
 
 void PeersDialog::friendDoubleClicked() {
@@ -310,7 +337,7 @@ void PeersDialog::insertChat() {
     }
 }
 
-PopupChatDialog *PeersDialog::getChat(int librarymixer_id, bool top){
+PopupChatDialog *PeersDialog::getChat(unsigned int librarymixer_id, bool top){
     std::map<int, PopupChatDialog *>::iterator it;
     if (chatDialogs.end() != (it = chatDialogs.find(librarymixer_id))) {
         if (top) {
@@ -322,9 +349,9 @@ PopupChatDialog *PeersDialog::getChat(int librarymixer_id, bool top){
     return NULL;
 }
 
-PopupChatDialog *PeersDialog::createChat(int librarymixer_id, bool top){
+PopupChatDialog *PeersDialog::createChat(unsigned int librarymixer_id, bool top){
     PopupChatDialog *popupchatdialog = new PopupChatDialog(librarymixer_id);
-    connect(popupchatdialog, SIGNAL(closeChat(int)), this, SLOT(removeChat(int)));
+    connect(popupchatdialog, SIGNAL(closeChat(unsigned int)), this, SLOT(removeChat(unsigned int)));
     chatDialogs[librarymixer_id] = popupchatdialog;
     if (top) {
         popupchatdialog->show();
@@ -333,7 +360,7 @@ PopupChatDialog *PeersDialog::createChat(int librarymixer_id, bool top){
     return popupchatdialog;
 }
 
-PopupChatDialog *PeersDialog::getOrCreateChat(int librarymixer_id, bool top, bool *newChat){
+PopupChatDialog *PeersDialog::getOrCreateChat(unsigned int librarymixer_id, bool top, bool *newChat){
     PopupChatDialog *popupchatdialog = NULL;
     popupchatdialog = getChat(librarymixer_id, top);
     if (popupchatdialog != NULL){
@@ -345,15 +372,15 @@ PopupChatDialog *PeersDialog::getOrCreateChat(int librarymixer_id, bool top, boo
     return popupchatdialog;
 }
 
-void PeersDialog::insertRequestEvent(int event, int librarymixer_id, int item_id) {
+void PeersDialog::insertRequestEvent(int event, unsigned int librarymixer_id, unsigned int item_id) {
     getOrCreateChat(librarymixer_id, true)->insertRequestEvent(event, item_id);
 }
 
-void PeersDialog::insertTransferEvent(int event, int librarymixer_id, const QString &transfer_name, const QString &extra_info) {
+void PeersDialog::insertTransferEvent(int event, unsigned int librarymixer_id, const QString &transfer_name, const QString &extra_info) {
     getOrCreateChat(librarymixer_id, true)->insertTransferEvent(event, transfer_name, extra_info);
 }
 
-void PeersDialog::insertUserOptional(int librarymixer_id, int code, QString message) {
+void PeersDialog::insertUserOptional(unsigned int librarymixer_id, int code, QString message) {
     PopupChatDialog* chat = getChat(librarymixer_id, false);
     if (chat != NULL) chat->insertUserOptional(code, message);
 }
@@ -364,7 +391,7 @@ QString PeersDialog::getPeerName(QTreeWidgetItem *selection) {
 }
 
 int PeersDialog::getFriendLibraryMixerId(QTreeWidgetItem *selection) {
-    return (selection -> text(3)).toInt();
+    return (selection -> text(FRIEND_LIBRARYMIXER_ID_COLUMN)).toInt();
 }
 
 QTreeWidgetItem *PeersDialog::getCurrentPeer() {
@@ -381,6 +408,6 @@ void PeersDialog::resetUpdateTimer(){
     updateTimer->start(seconds * 1000);
 }
 
-void PeersDialog::removeChat(int librarymixer_id) {
+void PeersDialog::removeChat(unsigned int librarymixer_id) {
     chatDialogs.erase(librarymixer_id);
 }

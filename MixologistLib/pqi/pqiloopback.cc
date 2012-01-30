@@ -27,7 +27,7 @@
 #define LOOPBACK_DEBUG 1
 ***/
 
-pqiloopback::pqiloopback(std::string id, int librarymixer_id)
+pqiloopback::pqiloopback(std::string id, unsigned int librarymixer_id)
     :PQInterface(id, librarymixer_id) {
     setMaxRate(true, 0);
     setMaxRate(false, 0);

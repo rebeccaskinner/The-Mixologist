@@ -42,7 +42,7 @@ std::string p3Peers::getOwnCertId() {
     return authMgr->OwnCertId();
 }
 
-int p3Peers::getOwnLibraryMixerId() {
+unsigned int p3Peers::getOwnLibraryMixerId() {
     return authMgr->OwnLibraryMixerId();
 }
 
@@ -66,15 +66,15 @@ bool    p3Peers::getFriendList(std::list<int> &ids) {
     return true;
 }
 
-bool    p3Peers::isOnline(int librarymixer_id) {
+bool    p3Peers::isOnline(unsigned int librarymixer_id) {
     return connMgr->isOnline(librarymixer_id);
 }
 
-bool p3Peers::isFriend(int librarymixer_id) {
+bool p3Peers::isFriend(unsigned int librarymixer_id) {
     return connMgr->isFriend(librarymixer_id);
 }
 
-bool    p3Peers::getPeerDetails(int librarymixer_id, PeerDetails &d) {
+bool    p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
     peerConnectState pcs;
     if (!connMgr->getPeerConnectState(librarymixer_id, pcs)) return false;
     d.id = pcs.id;
@@ -139,26 +139,26 @@ bool    p3Peers::getPeerDetails(int librarymixer_id, PeerDetails &d) {
     return true;
 }
 
-std::string p3Peers::findCertByLibraryMixerId(int librarymixer_id) {
+std::string p3Peers::findCertByLibraryMixerId(unsigned int librarymixer_id) {
     return authMgr->findCertByLibraryMixerId(librarymixer_id);
 }
 
-int     p3Peers::findLibraryMixerByCertId(std::string cert_id) {
+unsigned int p3Peers::findLibraryMixerByCertId(std::string cert_id) {
     return authMgr->findLibraryMixerByCertId(cert_id);
 }
 
-QString p3Peers::getPeerName(int librarymixer_id) {
+QString p3Peers::getPeerName(unsigned int librarymixer_id) {
     /* get from authMgr as it should have more peers? */
     return connMgr->getFriendName(librarymixer_id);
 }
 
 /* Add/Remove Friends */
-bool p3Peers::addUpdateFriend(int librarymixer_id, QString cert, QString name) {
+bool p3Peers::addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name) {
     return connMgr->addUpdateFriend(librarymixer_id, cert, name);
 }
 
 /* Network Stuff */
-void    p3Peers::connectAttempt(int librarymixer_id) {
+void    p3Peers::connectAttempt(unsigned int librarymixer_id) {
     connMgr->retryConnect(librarymixer_id);
 }
 
@@ -166,7 +166,7 @@ void    p3Peers::connectAll() {
     connMgr->retryConnectAll();
 }
 
-bool    p3Peers::setLocalAddress(int librarymixer_id, std::string addr_str, uint16_t port) {
+bool    p3Peers::setLocalAddress(unsigned int librarymixer_id, std::string addr_str, uint16_t port) {
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -186,7 +186,7 @@ bool    p3Peers::setLocalAddress(int librarymixer_id, std::string addr_str, uint
     return false;
 }
 
-bool    p3Peers::setExtAddress(int librarymixer_id, std::string addr_str, uint16_t port) {
+bool    p3Peers::setExtAddress(unsigned int librarymixer_id, std::string addr_str, uint16_t port) {
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
@@ -207,7 +207,7 @@ bool    p3Peers::setExtAddress(int librarymixer_id, std::string addr_str, uint16
 }
 
 
-bool    p3Peers::setNetworkMode(int librarymixer_id, uint32_t extNetMode) {
+bool    p3Peers::setNetworkMode(unsigned int librarymixer_id, uint32_t extNetMode) {
     /* translate */
     uint32_t netMode = 0;
     switch (extNetMode) {
@@ -232,7 +232,7 @@ bool    p3Peers::setNetworkMode(int librarymixer_id, uint32_t extNetMode) {
 
 
 bool
-p3Peers::setVisState(int librarymixer_id, uint32_t extVisState) {
+p3Peers::setVisState(unsigned int librarymixer_id, uint32_t extVisState) {
     uint32_t visState = 0;
     if (!(extVisState & VS_DHT_ON))
         visState |= VIS_STATE_NODHT;

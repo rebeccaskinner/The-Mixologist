@@ -80,11 +80,12 @@ bool OpenDHTClient::checkServerFile(QString filename) {
 #endif
 
     /* store current timestamp */
-    struct tm result;
-    time_t now = time(NULL);
+    //struct tm result;
+    //time_t now = time(NULL);
     char   nowstr[1023];
 
-    asctime_r(gmtime_r(&now, &result), nowstr);
+    //This relied on definitions for these functions in pthreads, which were removed when we changed to QThreads
+    //asctime_r(gmtime_r(&now, &result), nowstr);
 
     if (3 != sscanf(nowstr, "%15s %15s %d", day2, month2, &date2)) {
 #ifdef  OPENDHT_DEBUG
@@ -143,9 +144,9 @@ bool OpenDHTClient::loadServers(std::istream &instr) {
     char ipaddr[1024];
     char dnsname[1024];
 
-    dhtMutex.lock();   /****  LOCK  ****/
+    dhtMutex.lock();
     mServers.clear();
-    dhtMutex.unlock(); /**** UNLOCK ****/
+    dhtMutex.unlock();
 
     /* chew first line */
     instr.ignore(1024, '\n');
@@ -167,9 +168,9 @@ bool OpenDHTClient::loadServers(std::istream &instr) {
             std::cerr << "Read Server: " << dnsname << std::endl;
 #endif
 
-            dhtMutex.lock();   /****  LOCK  ****/
+            dhtMutex.lock();
             mServers[dnsname] = srv;
-            dhtMutex.unlock(); /**** UNLOCK ****/
+            dhtMutex.unlock();
 
         } else {
 
@@ -178,14 +179,14 @@ bool OpenDHTClient::loadServers(std::istream &instr) {
 #endif
         }
 
-        dhtMutex.lock();   /****  LOCK  ****/
+        dhtMutex.lock();
         mDHTFailCount = 0;
-        dhtMutex.unlock(); /**** UNLOCK ****/
+        dhtMutex.unlock();
     }
 
-    dhtMutex.lock();   /****  LOCK  ****/
+    dhtMutex.lock();
     uint32_t count = mServers.size();
-    dhtMutex.unlock(); /**** UNLOCK ****/
+    dhtMutex.unlock();
 
     return (count >= MIN_DHT_SERVERS);
 }
@@ -247,7 +248,7 @@ bool OpenDHTClient::loadServersFromWeb(QString storename) {
 
 bool OpenDHTClient::getServer(std::string &host, uint16_t &port, struct sockaddr_in &addr) {
     /* randomly choose one */
-    dhtMutex.lock();   /****  LOCK  ****/
+    dhtMutex.lock();
 
 #ifndef WINDOWS_SYS
 #else
@@ -266,7 +267,7 @@ bool OpenDHTClient::getServer(std::string &host, uint16_t &port, struct sockaddr
 #ifdef  OPENDHT_DEBUG
         std::cerr << "OpenDHTClient::getServer() No Servers available!" << std::endl;
 #endif
-        dhtMutex.unlock(); /**** UNLOCK ****/
+        dhtMutex.unlock();
         return false;
     }
 
@@ -278,7 +279,7 @@ bool OpenDHTClient::getServer(std::string &host, uint16_t &port, struct sockaddr
 #ifdef  OPENDHT_DEBUG
         std::cerr << "OpenDHTClient::getServer() Error getting Server!" << std::endl;
 #endif
-        dhtMutex.unlock(); /**** UNLOCK ****/
+        dhtMutex.unlock();
         return false;
     }
 
@@ -293,19 +294,19 @@ bool OpenDHTClient::getServer(std::string &host, uint16_t &port, struct sockaddr
         addr.sin_addr.s_addr = 0;
     }
 
-    dhtMutex.unlock(); /**** UNLOCK ****/
+    dhtMutex.unlock();
 
     return true;
 }
 
 
 bool OpenDHTClient::setServerIp(std::string host, struct sockaddr_in addr) {
-    dhtMutex.lock();   /****  LOCK  ****/
+    dhtMutex.lock();
 
     std::map<std::string, dhtServer>::iterator it;
     it = mServers.find(host);
     if (it == mServers.end()) {
-        dhtMutex.unlock(); /**** UNLOCK ****/
+        dhtMutex.unlock();
 #ifdef  OPENDHT_DEBUG
         std::cerr << "OpenDHTClient::setServerIp() Error finding Server!" << std::endl;
 #endif
@@ -318,14 +319,14 @@ bool OpenDHTClient::setServerIp(std::string host, struct sockaddr_in addr) {
 
     mDHTFailCount = 0;
 
-    dhtMutex.unlock(); /**** UNLOCK ****/
+    dhtMutex.unlock();
 
     return true;
 }
 
 
 void OpenDHTClient::setServerFailed(std::string host) {
-    dhtMutex.lock();   /****  LOCK  ****/
+    dhtMutex.lock();
 
     std::map<std::string, dhtServer>::iterator it;
     it = mServers.find(host);
@@ -333,7 +334,7 @@ void OpenDHTClient::setServerFailed(std::string host) {
 #ifdef  OPENDHT_DEBUG
         std::cerr << "OpenDHTClient::setServerFailed() Error finding Server!" << std::endl;
 #endif
-        dhtMutex.unlock(); /**** UNLOCK ****/
+        dhtMutex.unlock();
         return;
     }
 
@@ -342,7 +343,7 @@ void OpenDHTClient::setServerFailed(std::string host) {
 #ifdef  OPENDHT_DEBUG
         std::cerr << "OpenDHTClient::setServerFailed() Probably not connected!" << std::endl;
 #endif
-        dhtMutex.unlock(); /**** UNLOCK ****/
+        dhtMutex.unlock();
         return;
     }
 
@@ -358,17 +359,17 @@ void OpenDHTClient::setServerFailed(std::string host) {
         mServers.erase(it);
     }
 
-    dhtMutex.unlock(); /**** UNLOCK ****/
+    dhtMutex.unlock();
     return;
 }
 
 bool OpenDHTClient::dhtActive() {
-    dhtMutex.lock();   /****  LOCK  ****/
+    dhtMutex.lock();
 
     bool ok = (mDHTFailCount <= MAX_DHT_TOTAL_FAILS) &&
               (mServers.size() > MIN_DHT_SERVERS);
 
-    dhtMutex.unlock(); /**** UNLOCK ****/
+    dhtMutex.unlock();
 
     return ok;
 }

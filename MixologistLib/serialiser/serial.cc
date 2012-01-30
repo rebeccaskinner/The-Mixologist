@@ -48,6 +48,12 @@ NetItem::~NetItem() {
     return;
 }
 
+std::string NetItem::PeerId() {
+    return peerId;
+}
+void NetItem::PeerId(std::string id) {
+    peerId = id;
+}
 
 uint32_t    NetItem::PacketId() {
     return type;

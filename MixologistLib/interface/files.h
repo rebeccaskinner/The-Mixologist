@@ -23,55 +23,47 @@
 #ifndef FILES_GUI_INTERFACE_H
 #define FILES_GUI_INTERFACE_H
 
-#include <list>
-#include <iostream>
-#include <string>
+#include "interface/types.h"
+
 #include <QString>
 
-#include "interface/types.h"
-#include "interface/librarymixer-library.h"
-
 class Files;
+
 extern Files *files;
 
-/* These are used mainly by ftController at the moment */
-const uint32_t FILE_CTRL_PAUSE   = 0x00000100;
-const uint32_t FILE_CTRL_START   = 0x00000200;
+/**********************************************************************************
+ * These are used mainly by ftController at the moment
+ **********************************************************************************/
 
-const uint32_t FILE_RATE_TRICKLE     = 0x00000001;
-const uint32_t FILE_RATE_SLOW    = 0x00000002;
-const uint32_t FILE_RATE_STANDARD    = 0x00000003;
-const uint32_t FILE_RATE_FAST    = 0x00000004;
+const uint32_t FILE_CTRL_PAUSE = 0x00000100;
+const uint32_t FILE_CTRL_START = 0x00000200;
+
+const uint32_t FILE_RATE_TRICKLE = 0x00000001;
+const uint32_t FILE_RATE_SLOW = 0x00000002;
+const uint32_t FILE_RATE_STANDARD = 0x00000003;
+const uint32_t FILE_RATE_FAST = 0x00000004;
 const uint32_t FILE_RATE_STREAM_AUDIO = 0x00000005;
 const uint32_t FILE_RATE_STREAM_VIDEO = 0x00000006;
 
-const uint32_t FILE_PEER_ONLINE      = 0x00001000;
-const uint32_t FILE_PEER_OFFLINE     = 0x00002000;
+const uint32_t FILE_PEER_ONLINE = 0x00001000;
+const uint32_t FILE_PEER_OFFLINE = 0x00002000;
 
-/************************************
- * Used To indicate where to search.
- *
- * The Order of these is very important,
- * it specifies the search order too.
- *
- */
+/**********************************************************************************
+ * Used to refer to the various file sources.
+ * Used both by file methods and also in borrowing.
+ **********************************************************************************/
 
-const uint32_t FILE_HINTS_ITEM   = 0x00000002;
-const uint32_t FILE_HINTS_DOWNLOAD   = 0x00000010;
-const uint32_t FILE_HINTS_UPLOAD     = 0x00000020;
-/* Means to only search the specific hints, otherwise they're just hints on priority.  I think. */
-const uint32_t FILE_HINTS_SPEC_ONLY  = 0x01000000;
-//const uint32_t FILE_HINTS_BACKGROUND   = 0x00002000; // To download slowly.
-
-enum borrowStatuses {
-    BORROW_STATUS_NOT, //When something is not in the borrow database (this is not ever set as an actual status)
-    BORROW_STATUS_PENDING, //When we have been informed by a MixologyResponse on what hashes to request to borrow something
-    BORROW_STATUS_GETTING, //When we are in the process of downloading
-    BORROW_STATUS_BORROWED //When we have something borrowed from a friend
-};
+/* Indicates the temporary item list. */
+const uint32_t FILE_HINTS_TEMP = 0x00000001;
+/* Indicates the LibraryMixer item list */
+const uint32_t FILE_HINTS_ITEM = 0x00000002;
+/* Indicates the off-LibraryMixer share list */
+const uint32_t FILE_HINTS_OFF_LM = 0x00000004;
 
 /* The interface by which MixologistGui can control file transfers */
-class  Files {
+class Files: public QObject {
+    Q_OBJECT
+
 public:
 
     Files() {
@@ -81,92 +73,199 @@ public:
         return;
     }
 
-    /****************************************/
-    /* download */
-
-
-    /***
-     *  Control of Transfers.
-     ***/
-    /*Adds a request to request list for an item identified by item_id from friend with librarymixer_id
-      labeling the request name */
-    virtual bool LibraryMixerRequest(int librarymixer_id, int item_id, QString name) = 0;
-    /*Removes a request from the pending request list.*/
-    virtual bool LibraryMixerRequestCancel(int item_id) = 0;
-    /*Sends a download invitation to a friend for the given item.
-      If the item is not yet ready, then adds them to the waiting list. */
-    virtual void MixologySuggest(unsigned int librarymixer_id, int item_id) = 0;
-    /*Downloads a file*/
-    virtual bool requestFile(QString librarymixer_name, int orig_item_id, QString fname, std::string hash, uint64_t size,
-                             uint32_t flags, QList<int> sourceIds) = 0;
-    virtual bool cancelFile(int orig_item_id, QString filename, std::string hash) = 0;
-    //Pauses or resumes a transfer
-    virtual bool controlFile(int orig_item_id, std::string hash, uint32_t flags) = 0;
-    //Removes all completed transfers and all errored pending requests.
-    virtual void clearCompletedFiles() = 0;
-    //Removes all items from the uploads list. (This is a visual only change)
-    virtual void clearUploads() = 0;
-
-    /***
+    /**********************************************************************************
      * Download / Upload Details.
-     ***/
-    virtual void getPendingRequests(std::list<pendingRequest> &requests) = 0;
-    virtual bool FileDownloads(QList<FileInfo> &downloads) = 0;
-    virtual bool FileUploads(QList<FileInfo> &uploads) = 0;
+     **********************************************************************************/
 
-    /***
+    virtual void getPendingRequests(std::list<pendingRequest> &requests) = 0;
+    virtual void FileDownloads(QList<downloadGroupInfo> &downloads) = 0;
+    virtual void FileUploads(QList<uploadFileInfo> &uploads) = 0;
+
+    /**********************************************************************************
      * Directory Control
-     ***/
+     **********************************************************************************/
+
     /* Set the directories as specified, saving changes to settings file. */
     virtual void setDownloadDirectory(QString path) = 0;
     virtual void setPartialsDirectory(QString path) = 0;
-    /* Return the directories currently being used */
+
+    /* Return the directories currently being used. */
     virtual QString getDownloadDirectory() = 0;
     virtual QString getPartialsDirectory() = 0;
 
-    /***
-     * Item Database Control
-     ***/
-    /*Note that there are another set of similarly named functions in librarymixer-library
-      Someday, librarymixer-library and the ftserver ftextrralist should be merged, but for now
-      these functions search only items that have files associated.*/
-    /*Finds the LibraryMixerItem that corresponds to the item id, and returns it.
-      Returns a blank LibraryMixerItem on failure.*/
-    virtual LibraryMixerItem getItem(int id) = 0;
-    /*Finds the LibraryMixerItem that contains the same paths, and returns it.
-      Returns a blank LibraryMixerItem on failure.*/
-    virtual LibraryMixerItem getItem(QStringList paths) = 0;
-    //Finds the LibraryMixerItem that corresponds to id in either mToHash or mFiles and returns its status.  Returns -1 on not found.
-    virtual int getItemStatus(int id)  = 0;
+    /**********************************************************************************
+     *  Control of File Transfers and Requests for LibraryMixer Items
+     **********************************************************************************/
 
-    /*Finds the unmatched item with item_id, and sets it to ITEM_MATCHED_TO_FILE with paths.
-      Arranges for an invitation to be sent to recipient as soon as hashing is complete.
-      Returns true on success.
-      Returns false if the match is already matched, or item_id is not in the database.*/
-    virtual bool matchAndSend(int item_id, QStringList paths, int recipient) = 0;
-    /*Creates a new temporary LibraryMixerItem with a negative id to hold the item that is not in the library on the website.
-      Arranges for an invitation to be sent to recipient as soon as hashing is complete.*/
-    virtual void sendTemporary(QString title, QStringList paths, int recipient) = 0;
+    /* Creates a new download of a batch of files. */
+    virtual bool downloadFiles(unsigned int friend_id, const QString &title, const QStringList &paths,
+                               const QStringList &hashes, const QList<qlonglong> &filesizes) = 0;
 
-    /***
+    /* Creates a new download to borrow a batch of files.
+       source_type is one of the file_hint constants defined above to indicate the type of share we are borrowing from.
+       source_id's meaning changes depending on the source_type, but always uniquely identifies the item. */
+    virtual bool borrowFiles(unsigned int friend_id, const QString &title, const QStringList &paths,
+                             const QStringList &hashes, const QList<qlonglong> &filesizes,
+                             uint32_t source_type, QString source_id) = 0;
+
+    /* Cancels an entire downloadGroup. */
+    virtual void cancelDownloadGroup(int groupId) = 0;
+
+    /* Cancels an existing file transfer from a single downloadGroup. */
+    virtual void cancelFile(int groupId, const QString &hash) = 0;
+
+    /* Pauses or resumes a transfer. */
+    virtual bool controlFile(int orig_item_id, QString hash, uint32_t flags) = 0;
+
+    /* Removes all completed transfers and all errored pending requests. */
+    virtual void clearCompletedFiles() = 0;
+
+    /* Removes all items from the uploads list. (This is a visual only change). */
+    virtual void clearUploads() = 0;
+
+    /* Adds a request to request list for an item identified by item_id from friend with librarymixer_id
+       labeling the request name. */
+    virtual bool LibraryMixerRequest(unsigned int librarymixer_id, unsigned int item_id, QString name) = 0;
+
+    /* Removes a request from the pending request list. */
+    virtual bool LibraryMixerRequestCancel(unsigned int item_id) = 0;
+
+    /**********************************************************************************
+     * LibraryMixer Item Control
+     **********************************************************************************/
+
+    /* Returns a map of all LibraryMixerItems. The map is by LibraryMixer item IDs. */
+    virtual QMap<unsigned int, LibraryMixerItem*>* getLibrary() = 0;
+
+    /* Finds the LibraryMixerItem that corresponds to the item id, and returns it.
+       Returns a blank LibraryMixerItem on failure. */
+    virtual LibraryMixerItem* getLibraryMixerItem(unsigned int item_id) = 0;
+
+    /* Finds the LibraryMixerItem that contains the same paths, and returns it.
+       Returns a blank LibraryMixerItem on failure. */
+    virtual LibraryMixerItem* getLibraryMixerItem(QStringList paths) = 0;
+
+    /* Finds the LibraryMixerItem that corresponds to the item id, and returns its status.  Returns -2 on error, -1 on not found.
+       Retry if true will update the item if the item is not immediately found and try again once. */
+    virtual int getLibraryMixerItemStatus(unsigned int item_id, bool retry=true) = 0;
+
+    /* Sets the given item to MATCHED_TO_CHAT. */
+    virtual bool setMatchChat(unsigned int item_id) = 0;
+
+    /* Sets the the given item to be matched for file, either for send or lend.
+       If paths is not empty, clears out all pre-existing path info and requests that they be hashed by Files.
+       If paths is empty, then this can be used to toggle the ItemState.
+       Sets ItemState MATCHED_TO_FILE or MATCHED_TO_LEND based on ItemState.
+       If recipient is added with librarymixer id, on completion of hash, a download invitation will be sent. */
+    virtual bool setMatchFile(unsigned int item_id, QStringList paths, LibraryMixerItem::ItemState itemState, unsigned int recipient = 0) = 0;
+
+    /* Sets the given item with the autorespond message and to MATCHED_TO_MESSAGE. */
+    virtual bool setMatchMessage(unsigned int item_id, QString message) = 0;
+
+    /* Sends a download invitation to a friend for the given item.
+       If the item is not yet ready, then adds them to the waiting list. */
+    virtual void MixologySuggest(unsigned int librarymixer_id, unsigned int item_id) = 0;
+
+signals:
+    /* Signals for responses received from requests for LibraryMixerItems. */
+    /* When a response is received from a request, and it is an offer to lend a set of files. */
+    void responseLendOfferReceived(unsigned int friend_id, unsigned int item_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
+
+    /* Signals for the LibraryMixer library. */
+    void libraryItemAboutToBeInserted(int row);
+    void libraryItemInserted();
+    void libraryItemAboutToBeRemoved(int row);
+    void libraryItemRemoved();
+    void libraryStateChanged(int row);
+
+    /**********************************************************************************
+     * Friend LibraryMixer Item Control
+     **********************************************************************************/
+
+public:
+    /* Returns a map of all FriendLibraryMixerItems. The map is by LibraryMixer item IDs. */
+    virtual QMap<unsigned int, FriendLibraryMixerItem*>* getFriendLibrary() = 0;
+
+signals:
+    /* Signals for the LibraryMixer friends' library. */
+    void friendLibraryItemAboutToBeInserted(int row);
+    void friendLibraryItemInserted();
+    void friendLibraryItemAboutToBeRemoved(int row);
+    void friendLibraryItemRemoved();
+    void friendLibraryStateChanged(int row);
+
+    /**********************************************************************************
+     * Off LibraryMixer Sharing Control
+     **********************************************************************************/
+public:
+    /* Adds a new share to the list of base root paths shared off-LibraryMixer.
+       The supplied path should be in QT format with respect to directory separators.
+       Returns false if duplicative and ignored. */
+    virtual void addOffLMShare(QString path) = 0;
+
+    /* Removes a share identified by its root OffLMShareItem from the list of base root paths shared off-LibraryMixer.
+       Does nothing if given a non-root item.
+       Returns true on success, false if toRemove was not removed. */
+    virtual bool removeOffLMShare(OffLMShareItem* toRemove) = 0;
+
+    /* Sets the shareMethod to the specified value. Returns true on success. */
+    virtual bool setOffLMShareMethod(OffLMShareItem* toModify, OffLMShareItem::shareMethodState state) = 0;
+
+    /* Sets the label to the specified value. Returns true on success. */
+    virtual void setOffLMShareLabel(OffLMShareItem* toModify, QString newLabel) = 0;
+
+    /* Returns the root item of the OffLMShareItem tree */
+    virtual OffLMShareItem* getOwnOffLMRoot() const = 0;
+
+    /* Queues an asynchronous recheck of all files in ftOffLMList. */
+    virtual void recheckOffLMFiles() const = 0;
+
+    /* Returns the root item of a friend's OffLMShareItem tree, as determined by index, or NULL if not present.
+       The friends are stored in an arbitrary order, so there is no way to know which friend will be returned by index.
+       However, the items are guaranteed to be stored in a consistent order, so by stepping through index until
+       a NULL is returned, all friends with OffLMShares are guaranteed to be returned once and only once. */
+    virtual OffLMShareItem* getFriendOffLMShares(int index) const = 0;
+
+    /* Returns the number of friends we have off LibraryMixer share information for. */
+    virtual int getOffLMShareFriendCount() const = 0;
+
+signals:
+    /* Signals for the Off-LibraryMixer sharing. */
+    void offLMFriendAboutToBeAdded(int row);
+    void offLMFriendAdded();
+    void offLMFriendAboutToBeRemoved(int row);
+    void offLMFriendRemoved();
+    void offLMOwnItemAboutToBeAdded(OffLMShareItem* item);
+    void offLMOwnItemAdded();
+    void offLMOwnItemChanged(OffLMShareItem* item);
+    void offLMOwnItemAboutToBeRemoved(OffLMShareItem* item);
+    void offLMOwnItemRemoved();
+
+    /**********************************************************************************
+     * Temporary Share Control
+     **********************************************************************************/
+
+public:
+    /* Creates a new temporary item.
+       A download suggestion will be sent to recipient as soon as hashing is complete. */
+    virtual void sendTemporary(QString title, QStringList paths, unsigned int friend_id) = 0;
+
+    /* Creates a new temporary item to return a batch of files, with a return suggestion sent as soon as hashing is complete.
+       itemKey is the identifier of the borrowed item that is used by the borrow database. */
+    virtual void returnFiles(const QString &title, const QStringList &paths, unsigned int friend_id, const QString &itemKey) = 0;
+
+    /**********************************************************************************
      * Borrowing Management
-     **/
+     **********************************************************************************/
 
-    /* Gets all borrowings associated with that librarymixer_id, and populates them into parallel lists for
-       titles and item_ids.
-       Returns false if there are none, or true if there is at least one.*/
-    virtual bool getBorrowings(int librarymixer_id, QStringList &titles, QList<int> &item_ids) = 0;
-    //Fills out parallel lists in item_ids and statuses on all borrowings
-    virtual void getBorrowingInfo(QList<int> &item_ids, QList<borrowStatuses> &statuses, QStringList &names) = 0;
+    /* Gets all items borrowed, and populates them into parallel lists for titles, itemKeys that identify them, and the friends they are borrowed from. */
+    virtual void getBorrowings(QStringList &titles, QStringList &itemKeys, QList<unsigned int> &friendIds) = 0;
 
-    //Called when a user declines to borrow an item or wants to remove something from the borrow database.
-    virtual void cancelBorrow(int item_id) = 0;
-    //Causes a pending BorrowItem to start downloading.
-    virtual void borrowPending(int item_id) = 0;
-    /*Marks a borrowed item as now in the process of being returned.
-      Adds it to the files database as a temporary item and sends a download invitation to the owner.*/
-    virtual void returnBorrowed(int librarymixer_id, int item_id, QString title, QStringList paths) = 0;
+    /* Get items borrowed from a specific friend. */
+    virtual void getBorrowings(QStringList &titles, QStringList &itemKeys, unsigned int friendId) = 0;
+
+    /* Called when a user declines to borrow an item or wants to remove something from the borrow database. */
+    virtual void deleteBorrowed(const QString &itemKey) = 0;
 };
-
 
 #endif

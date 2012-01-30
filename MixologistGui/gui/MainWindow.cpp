@@ -26,15 +26,17 @@
 #include "PeersDialog.h"
 #include "TransfersDialog.h"
 #include "LibraryDialog.h"
-#include "gui/Util/SettingsUtil.h"
+#include "FriendsLibraryDialog.h"
+#include "gui/Util/GuiSettingsUtil.h"
 #include "Statusbar/peerstatus.h"
 #include "Statusbar/ratesstatus.h"
 
 #include <interface/iface.h>
-#include "interface/notify.h"
+#include <interface/notify.h>
+#include <interface/settings.h>
 
 /* Images for toolbar icons */
-#define IMAGE_CLOSE             ":/images/close_normal.png"
+#define IMAGE_CLOSE ":/images/close_normal.png"
 
 /** Constructor */
 MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
@@ -42,31 +44,67 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
     /* Invoke the Qt Designer generated QObject setup routine */
     ui.setupUi(this);
 
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+
+    /* Tutorials */
+    if (!settings.value("Tutorial/Initial", DEFAULT_TUTORIAL_DONE_INITIAL).toBool()) {
+        settings.setValue("Tutorial/Initial", true);
+        QMessageBox helpBox(this);
+        helpBox.setText("Welcome to the Mixologist!");
+        QString info = "The Mixologist is a chat and file transfer program that works with LibraryMixer.";
+        info += "<p>The chat part is pretty simple, just like any instant messenger, you can type text or drag files directly into the chat box.</p>";
+        info += "<p>The Mixologist also integrates into LibraryMixer, and any items you list as in your library and available for friends to checkout will by synced with the Mixologist. ";
+        info += "When a friend clicks on a link in LibraryMixer to ask you for it, you can setup an automatic response such as lending or sending a file or message that the Mixologist will automatically use whenever any friend asks for it again.</p>";
+        info += "<p>Finally, the Mixologist also has an optional file transfer method, where you can drag and drop folders that your friends can copy or borrow. ";
+        info += "You can browse or search the list of files your friends have shared with you in this fashion whether they're on or offline.</p>";
+        info += "<p>If this seems really confusing to you, you can disable this additional file transfer method. ";
+        info += "If you disable it, you can basically just leave the Mixologist minimized all the time, and interact with your friends entirely through the LibraryMixer website.</p>";
+        info += "<p>Do you want to disable the optional Mixologist-based file transfer method now?</p>";
+        helpBox.addButton(QMessageBox::Yes);
+        QPushButton* No = helpBox.addButton(QMessageBox::No);
+        helpBox.setInformativeText(info);
+        helpBox.setTextFormat(Qt::RichText);
+        helpBox.exec();
+
+        if (helpBox.clickedButton() == No) {
+            settings.setValue("Gui/EnableOffLibraryMixer", true);
+        } else {
+            settings.setValue("Gui/EnableOffLibraryMixer", false);
+        }
+    }
+
+    tutorial_library_done = settings.value("Tutorial/Library", DEFAULT_TUTORIAL_DONE_LIBRARY).toBool();
+    tutorial_friends_library_done = settings.value("Tutorial/FriendsLibrary", DEFAULT_TUTORIAL_DONE_FRIENDS_LIBRARY).toBool();
+
     /* Toolbar and stack pages */
     //These toolbar buttons change the page in the stack page
     QActionGroup *grp = new QActionGroup(this);
 
     peersDialog = new PeersDialog(ui.stackPages);
-    _pages.insert(ui.actionFriends, peersDialog);
+    actionPages.insert(ui.actionFriends, peersDialog);
     grp->addAction(ui.actionFriends);
     ui.stackPages->insertWidget(ui.stackPages->count(), peersDialog);
 
     transfersDialog = new TransfersDialog(ui.stackPages);
-    _pages.insert(ui.actionRequests, transfersDialog);
+    actionPages.insert(ui.actionRequests, transfersDialog);
     ui.stackPages->insertWidget(ui.stackPages->count(), transfersDialog);
     grp->addAction(ui.actionRequests);
 
     libraryDialog = new LibraryDialog(ui.stackPages);
-    libraryDialog->insertLibrary();
-    _pages.insert(ui.actionLibrary, libraryDialog);
+    actionPages.insert(ui.actionLibrary, libraryDialog);
     grp->addAction(ui.actionLibrary);
     ui.stackPages->insertWidget(ui.stackPages->count(), libraryDialog);
 
-    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    friendsLibraryDialog = new FriendsLibraryDialog(ui.stackPages);
+    actionPages.insert(ui.actionFriendsLibrary, friendsLibraryDialog);
+    grp->addAction(ui.actionFriendsLibrary);
+    ui.stackPages->insertWidget(ui.stackPages->count(), friendsLibraryDialog);
+
+    /* Now add the conditional tabs */
     grp->addAction(ui.actionNetwork);
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
         networkDialog = new NetworkDialog(ui.stackPages);
-        _pages.insert(ui.actionNetwork, networkDialog);
+        actionPages.insert(ui.actionNetwork, networkDialog);
         ui.stackPages->insertWidget(ui.stackPages->count(), networkDialog);
         QObject::connect(notify, SIGNAL(logInfoChanged(QString)),
                          networkDialog, SLOT(setLogInfo(QString)));
@@ -75,16 +113,13 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
 
     connect(grp, SIGNAL(triggered(QAction *)), this, SLOT(showPage(QAction *)));
 
-    if (settings.value("Gui/LastView", "peersDialog").toString() == "libraryDialog") {
-        ui.stackPages->setCurrentWidget(libraryDialog);
-    } else if (settings.value("Gui/LastView", "peersDialog").toString() == "transfersDialog") {
-        ui.stackPages->setCurrentWidget(transfersDialog);
-    } else {
-        ui.stackPages->setCurrentWidget(peersDialog);
-    }
+    if (settings.value("Gui/LastView", "peersDialog").toString() == "libraryDialog") switchToDialog(libraryDialog);
+    else if (settings.value("Gui/LastView", "peersDialog").toString() == "transfersDialog") switchToDialog(transfersDialog);
+    else if (settings.value("Gui/LastView", "peersDialog").toString() == "friendsLibraryDialog") switchToDialog(friendsLibraryDialog);
+    else switchToDialog(peersDialog);
 
     //These toolbar buttons are popups
-    connect(ui.actionOptions, SIGNAL(triggered()), this, SLOT( showPreferencesWindow()) );
+    connect(ui.actionOptions, SIGNAL(triggered()), this, SLOT(showPreferencesWindow()));
     connect(ui.actionQuit, SIGNAL(triggered()), this, SLOT(QuitAction()));
 
     preferencesWindow = NULL;
@@ -137,7 +172,14 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
     trayIcon->show();
 
     //Load backed up window settings
-    SettingsUtil::loadWidgetInformation(this);
+    GuiSettingsUtil::loadWidgetInformation(this);
+}
+
+void MainWindow::switchToDialog(QWidget *dialog) {
+    if (actionPages.key(dialog) != NULL) {
+        ui.stackPages->setCurrentWidget(dialog);
+        actionPages.key(dialog)->setChecked(true);
+    }
 }
 
 void MainWindow::updateHashingInfo(const QString &s) {
@@ -188,12 +230,14 @@ void MainWindow::doQuit() {
     //Increase responsiveness by immediately hiding
     hide();
     trayIcon->hide();
-    SettingsUtil::saveWidgetInformation(this);
+    GuiSettingsUtil::saveWidgetInformation(this);
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     if (ui.stackPages->currentWidget() == libraryDialog) {
         settings.setValue("Gui/LastView", "libraryDialog");
     } else if (ui.stackPages->currentWidget() == transfersDialog) {
         settings.setValue("Gui/LastView", "transfersDialog");
+    } else if (ui.stackPages->currentWidget() == friendsLibraryDialog) {
+        settings.setValue("Gui/LastView", "friendsLibraryDialog");
     } else {
         settings.setValue("Gui/LastView", "peersDialog");
     }
@@ -203,7 +247,38 @@ void MainWindow::doQuit() {
 
 /** Shows the Main page associated with the activated action. */
 void MainWindow::showPage(QAction *pageAction) {
-    ui.stackPages->setCurrentWidget(_pages.value(pageAction));
+    ui.stackPages->setCurrentWidget(actionPages.value(pageAction));
+
+    /* If this is our first time displaying one of the two library dialogs, and they've enabled the complex
+       double libraries, pop-up a box explaining what they're seeing. */
+    if (ui.stackPages->currentWidget() == libraryDialog && !tutorial_library_done && friendsLibraryDialog) {
+        QSettings settings(*mainSettings, QSettings::IniFormat, this);
+        settings.setValue("Tutorial/Library", true);
+        tutorial_library_done = true;
+        QMessageBox helpBox(this);
+        QString info("You should now be looking at the My Library tab of the Mixologist for the first time.");
+        info += "<p>The <b>upper box</b> syncs with LibraryMixer to display the things you've listed as in your library and available for your friends to check out on the website.</p>";
+        info += "<p>You can setup automatic responses for when your friends ask you for things you've listed here, but most people find it easier just to set it in the chat window the first time a friend requests something.</p>";
+        info += "<p>The <b>lower box</b> lists files and folders you're sharing with your friends only in the Mixologist and not on the LibraryMixer website.</p>";
+        info += "<p>This is the optional second method of file transfers you enabled on startup.</p>";
+        info += "<p>If you drag and drop files or folders here, the list of what you're sharing will be automatically synced with your friends' Mixologists.</p>";
+        helpBox.setText(info);
+        helpBox.setTextFormat(Qt::RichText);
+        helpBox.exec();
+    } else if (ui.stackPages->currentWidget() == friendsLibraryDialog && !tutorial_friends_library_done && friendsLibraryDialog) {
+        QSettings settings(*mainSettings, QSettings::IniFormat, this);
+        settings.setValue("Tutorial/FriendsLibrary", true);
+        tutorial_friends_library_done = true;
+        QMessageBox helpBox(this);
+        QString info("This is the Friends' Library tab of the Mixologist.");
+        info += "<p>The <b>upper box</b> syncs with LibraryMixer to display the things your friends have listed on LibraryMixer as available for you to check out.</p>";
+        info += "<p>The <b>lower box</b> lists files and folders your friends have shared with you only in the Mixologist and not on the LibraryMixer website.</p>";
+        info += "<p>This is the optional second method of file transfers you enabled on startup.</p>";
+        info += "<p>The <b>search bar</b> up top lets you just type to search both of these at the same time.</p>";
+        helpBox.setText(info);
+        helpBox.setTextFormat(Qt::RichText);
+        helpBox.exec();
+    }
 }
 
 void MainWindow::updateMenu() {
@@ -243,8 +318,8 @@ void MainWindow::trayMsgClicked() {
 
 /*
 void MainWindow::setTrayIcon(float downKb, float upKb){
-    if ( upKb > 0 && downKb <= 0  ) trayIcon->setIcon(QIcon(":/Images/Up1Down0.png"));
-    else if ( upKb <= 0 && downKb > 0 ) trayIcon->setIcon(QIcon(":/Images/Up0Down1.png"));
-    else if ( upKb > 0 && downKb > 0 ) trayIcon->setIcon(QIcon(":/Images/Up1Down1.png"));
+    if (upKb > 0 && downKb <= 0) trayIcon->setIcon(QIcon(":/Images/Up1Down0.png"));
+    else if (upKb <= 0 && downKb > 0) trayIcon->setIcon(QIcon(":/Images/Up0Down1.png"));
+    else if (upKb > 0 && downKb > 0) trayIcon->setIcon(QIcon(":/Images/Up1Down1.png"));
     else trayIcon->setIcon(QIcon(":/Images/Up0Down0.png"));
 }*/

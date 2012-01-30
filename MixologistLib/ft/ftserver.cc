@@ -24,17 +24,17 @@
 const int ftserverzone = 29539;
 
 #include "ft/ftserver.h"
-#include "ft/ftitemlist.h"
-#include "ft/ftfilesearch.h"
+#include "ft/fttemplist.h"
+#include "ft/ftofflmlist.h"
+#include "ft/ftfilewatcher.h"
 #include "ft/ftcontroller.h"
 #include "ft/ftfileprovider.h"
 #include "ft/ftdatademultiplex.h"
-#include "ft/mixologyborrower.h"
+#include "ft/ftborrower.h"
 
 #include "services/mixologyservice.h"
-#include "interface/librarymixer-library.h"
-
-// Includes CacheStrapper / FiMonitor / FiStore for us.
+#include "server/librarymixer-library.h"
+#include "server/librarymixer-friendlibrary.h"
 
 #include "pqi/pqi.h"
 #include "pqi/p3connmgr.h"
@@ -44,70 +44,72 @@ const int ftserverzone = 29539;
 #include <iostream>
 #include <sstream>
 
+#include <QSettings>
+#include <interface/settings.h>
+
 /* Setup */
-ftServer::ftServer()
-    : mP3iface(NULL),
-      mFtController(NULL), mFtItems(NULL),
-      mFtDataplex(NULL), mFtSearch(NULL) {
-}
+ftServer::ftServer() : mP3iface(NULL), mFtDataplex(NULL) {}
 
-void    ftServer::setP3Interface(P3Interface *pqi) {
-    mP3iface = pqi;
-}
+void ftServer::setP3Interface(P3Interface *pqi) {mP3iface = pqi;}
 
-/* Control Interface */
-
-std::string ftServer::OwnId() {
-    std::string ownId;
-    if (connMgr)
-        ownId = connMgr->getOwnCertId();
-    return ownId;
+void ftServer::setupMixologyService() {
+    connect(mixologyService, SIGNAL(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)),
+            this, SIGNAL(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)));
 }
 
 /* Final Setup (once everything is assigned) */
 void ftServer::SetupFtServer() {
+    fileDownloadController = new ftController();
+    mFtDataplex = new ftDataDemultiplex(fileDownloadController);
 
-    /* needed to setup FiStore/Monitor */
-    std::string ownId = connMgr->getOwnCertId();
+    tempList = new ftTempList();
+    mFtDataplex->addFileMethod(tempList);
+    connect(tempList, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
 
-    /* search/items List */
-    mFtItems = new ftItemList();
-    mFtSearch = new ftFileSearch();
+    /* librarymixermanager was already instantiated in init. */
+    mFtDataplex->addFileMethod(librarymixermanager);
+    connect(librarymixermanager, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
+    connect(librarymixermanager, SIGNAL(libraryItemAboutToBeInserted(int)), this, SIGNAL(libraryItemAboutToBeInserted(int)), Qt::DirectConnection);
+    connect(librarymixermanager, SIGNAL(libraryItemAboutToBeRemoved(int)), this, SIGNAL(libraryItemAboutToBeRemoved(int)), Qt::DirectConnection);
+    connect(librarymixermanager, SIGNAL(libraryItemInserted()), this, SIGNAL(libraryItemInserted()));
+    connect(librarymixermanager, SIGNAL(libraryItemRemoved()), this, SIGNAL(libraryItemRemoved()));
+    connect(librarymixermanager, SIGNAL(libraryStateChanged(int)), this, SIGNAL(libraryStateChanged(int)));
 
-    /* Transport */
-    mFtDataplex = new ftDataDemultiplex(ownId, mFtSearch);
+    connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemAboutToBeInserted(int)), this, SIGNAL(friendLibraryItemAboutToBeInserted(int)), Qt::DirectConnection);
+    connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemAboutToBeRemoved(int)), this, SIGNAL(friendLibraryItemAboutToBeRemoved(int)), Qt::DirectConnection);
+    connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemInserted()), this, SIGNAL(friendLibraryItemInserted()));
+    connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemRemoved()), this, SIGNAL(friendLibraryItemRemoved()));
+    connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryStateChanged(int)), this, SIGNAL(friendLibraryStateChanged(int)));
 
-    /* make Controller */
-    mFtController = new ftController(mFtDataplex, mFtSearch, mFtItems);
+    QSettings settings(*mainSettings, QSettings::IniFormat);
+    if (settings.value("Gui/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
+        offLMList = new ftOffLMList();
+        mFtDataplex->addFileMethod(offLMList);
+        connect(offLMList, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
+        connect(offLMList, SIGNAL(offLMFriendAboutToBeAdded(int)), this, SIGNAL(offLMFriendAboutToBeAdded(int)), Qt::DirectConnection);
+        connect(offLMList, SIGNAL(offLMFriendAboutToBeRemoved(int)), this, SIGNAL(offLMFriendAboutToBeRemoved(int)), Qt::DirectConnection);
+        connect(offLMList, SIGNAL(offLMFriendAdded()), this, SIGNAL(offLMFriendAdded()));
+        connect(offLMList, SIGNAL(offLMFriendRemoved()), this, SIGNAL(offLMFriendRemoved()));
+        connect(offLMList, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), Qt::DirectConnection);
+        connect(offLMList, SIGNAL(offLMOwnItemAdded()), this, SIGNAL(offLMOwnItemAdded()));
+        connect(offLMList, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)), this, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)));
+        connect(offLMList, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), Qt::DirectConnection);
+        connect(offLMList, SIGNAL(offLMOwnItemRemoved()), this, SIGNAL(offLMOwnItemRemoved()));
+    }
 
-    /* Create borrowing manager */
-    mixologyborrower = new MixologyBorrower();
-
-    /* complete search setup, add each searchable object to mFtSearch */
-    mFtSearch->addSearchMode(mFtItems, FILE_HINTS_ITEM);
-
-    connMgr->addMonitor(mFtController);
+    connMgr->addMonitor(fileDownloadController);
 
     return;
 }
 
+void ftServer::StartupThreads() {
+    fileDownloadController->start();
 
-void    ftServer::StartupThreads() {
-    /* start up order - important for dependencies */
-
-    /* self contained threads */
-    /* startup ItemList Thread */
-    mFtItems->start();
-
-    /* Controller thread */
-    mFtController->start();
-
-    /* Dataplex */
     mFtDataplex->start();
 }
 
 /***************************************************************/
-/********************** Files Interface **********************/
+/********************** Files Interface ************************/
 /***************************************************************/
 
 
@@ -115,44 +117,43 @@ void    ftServer::StartupThreads() {
 /********************** Controller Access **********************/
 /***************************************************************/
 
-bool ftServer::LibraryMixerRequest(int librarymixer_id, int item_id, QString name) {
-    return mixologyservice->LibraryMixerRequest(librarymixer_id, item_id, name);
+bool ftServer::LibraryMixerRequest(unsigned int librarymixer_id, unsigned int item_id, QString name) {
+    return mixologyService->LibraryMixerRequest(librarymixer_id, item_id, name);
 }
 
-bool ftServer::LibraryMixerRequestCancel(int item_id) {
-    if (mixologyservice->LibraryMixerRequestCancel(item_id)) return true;
-    mixologyborrower->cancelBorrow(item_id); //In case this is a borrow, cancel. Even if it isn't, no harm.
-    return mFtController->LibraryMixerTransferCancel(item_id);
+bool ftServer::LibraryMixerRequestCancel(unsigned int item_id) {
+    return mixologyService->LibraryMixerRequestCancel(item_id);
 }
 
-void ftServer::MixologySuggest(unsigned int librarymixer_id, int item_id) {
-    mFtItems->MixologySuggest(librarymixer_id, item_id);
+void ftServer::MixologySuggest(unsigned int librarymixer_id, unsigned int item_id) {
+    librarymixermanager->MixologySuggest(librarymixer_id, item_id);
 }
 
-void ftServer::LibraryMixerBorrowed(unsigned int librarymixer_id, int item_id) {
-    mixologyservice->LibraryMixerBorrowed(librarymixer_id, item_id);
+bool ftServer::downloadFiles(unsigned int friend_id, const QString &title,
+                             const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes) {
+    return fileDownloadController->downloadFiles(friend_id, title, paths, hashes, filesizes);
 }
 
-void ftServer::LibraryMixerBorrowReturned(unsigned int librarymixer_id, int item_id) {
-    mixologyservice->LibraryMixerBorrowReturned(librarymixer_id, item_id);
+bool ftServer::borrowFiles(unsigned int friend_id, const QString &title, const QStringList &paths, const QStringList &hashes,
+                           const QList<qlonglong> &filesizes, uint32_t source_type, QString source_id) {
+    return fileDownloadController->borrowFiles(friend_id, title, paths, hashes, filesizes, source_type, source_id);
 }
 
-bool ftServer::requestFile(QString librarymixer_name, int orig_item_id, QString fname, std::string hash, uint64_t size,
-                           uint32_t flags, QList<int> sourceIds) {
-    return mFtController->requestFile(librarymixer_name, orig_item_id, fname, hash, size, flags, sourceIds);
+void ftServer::cancelDownloadGroup(int groupId) {
+    fileDownloadController->cancelDownloadGroup(groupId);
 }
 
-bool ftServer::cancelFile(int orig_item_id, QString filename, std::string hash) {
-    return mFtController->cancelFile(orig_item_id, filename, hash);
+void ftServer::cancelFile(int groupId, const QString &hash) {
+    fileDownloadController->cancelFile(groupId, hash);
 }
 
-bool ftServer::controlFile(int orig_item_id, std::string hash, uint32_t flags) {
-    return mFtController->controlFile(orig_item_id, hash, flags);
+bool ftServer::controlFile(int orig_item_id, QString hash, uint32_t flags) {
+    return fileDownloadController->controlFile(orig_item_id, hash, flags);
 }
 
 void ftServer::clearCompletedFiles() {
-    mFtController->clearCompletedFiles();
-    mixologyservice->clearCompleted();
+    fileDownloadController->clearCompletedFiles();
+    mixologyService->clearCompleted();
 }
 
 void ftServer::clearUploads() {
@@ -161,27 +162,19 @@ void ftServer::clearUploads() {
 
 /* Directory Handling */
 void ftServer::setDownloadDirectory(QString path) {
-    mFtController->setDownloadDirectory(path);
+    fileDownloadController->setDownloadDirectory(path);
 }
 
 void ftServer::setPartialsDirectory(QString path) {
-    mFtController->setPartialsDirectory(path);
-}
-
-void ftServer::loadOrSetDownloadDirectory(QString path) {
-    mFtController->loadOrSetDownloadDirectory(path);
-}
-
-void ftServer::loadOrSetPartialsDirectory(QString path) {
-    mFtController->loadOrSetPartialsDirectory(path);
+    fileDownloadController->setPartialsDirectory(path);
 }
 
 QString ftServer::getDownloadDirectory() {
-    return mFtController->getDownloadDirectory();
+    return fileDownloadController->getDownloadDirectory();
 }
 
 QString ftServer::getPartialsDirectory() {
-    return mFtController->getPartialsDirectory();
+    return fileDownloadController->getPartialsDirectory();
 }
 
 
@@ -190,110 +183,124 @@ QString ftServer::getPartialsDirectory() {
 /***************************************************************/
 
 void ftServer::getPendingRequests(std::list<pendingRequest> &requests) {
-    return mixologyservice->getPendingRequests(requests);
+    mixologyService->getPendingRequests(requests);
 }
 
 
-bool ftServer::FileDownloads(QList<FileInfo> &downloads) {
-    return mFtController->FileDownloads(downloads);
+void ftServer::FileDownloads(QList<downloadGroupInfo> &downloads) {
+    fileDownloadController->FileDownloads(downloads);
 }
 
-bool ftServer::FileUploads(QList<FileInfo> &uploads) {
-    return mFtDataplex->FileUploads(uploads);
+void ftServer::FileUploads(QList<uploadFileInfo> &uploads) {
+    mFtDataplex->FileUploads(uploads);
 }
 
-/***************************************************************/
-/******************* Item Management **************************/
-/***************************************************************/
-LibraryMixerItem ftServer::getItem(int id) {
-    return mFtItems->getItem(id);
+/**********************************************************************************
+ * LibraryMixer Item Control
+ **********************************************************************************/
+QMap<unsigned int, LibraryMixerItem*>* ftServer::getLibrary() {
+    return librarymixermanager->getLibrary();
 }
 
-LibraryMixerItem ftServer::getItem(QStringList paths) {
-    return mFtItems->getItem(paths);
+LibraryMixerItem* ftServer::getLibraryMixerItem(unsigned int item_id) {
+    return librarymixermanager->getLibraryMixerItem(item_id);
 }
 
-
-/***************************************************************/
-/******************* ItemList Access **********************/
-/***************************************************************/
-
-void ftServer::setItems() {
-    mFtItems->setItems();
+LibraryMixerItem* ftServer::getLibraryMixerItem(QStringList paths) {
+    return librarymixermanager->getLibraryMixerItem(paths);
 }
 
-void ftServer::addItem(LibraryMixerItem item) {
-    mFtItems->addItem(item);
+int ftServer::getLibraryMixerItemStatus(unsigned int item_id, bool retry) {
+    return librarymixermanager->getLibraryMixerItemStatus(item_id, retry);
 }
 
-void ftServer::removeItem(int id) {
-    mFtItems->removeItem(id);
+bool ftServer::setMatchChat(unsigned int item_id){
+    return librarymixermanager->setMatchChat(item_id);
 }
 
-void ftServer::deleteRemoveItem(int id) {
-    mFtItems->deleteRemoveItem(id);
+bool ftServer::setMatchFile(unsigned int item_id, QStringList paths, LibraryMixerItem::ItemState itemState, unsigned int recipient){
+    return librarymixermanager->setMatchFile(item_id, paths, itemState, recipient);
 }
 
-int ftServer::getItemStatus(int id) {
-    return mFtItems->getItemStatus(id);
+bool ftServer::setMatchMessage(unsigned int item_id, QString message){
+    return librarymixermanager->setMatchMessage(item_id, message);
 }
 
-LibraryMixerItem *ftServer::recheckItem(int id, bool *changed) {
-    return mFtItems->recheckItem(id, changed);
+/**********************************************************************************
+ * Friend LibraryMixer Item Control
+ **********************************************************************************/
+
+QMap<unsigned int, FriendLibraryMixerItem*>* ftServer::getFriendLibrary() {
+    return libraryMixerFriendLibrary->getFriendLibrary();
 }
 
-bool ftServer::matchAndSend(int item_id, QStringList paths, int recipient) {
-    LibraryMixerItem item = LibraryMixerLibraryManager::getLibraryMixerItem(item_id);
-    if (item.empty()) return false;
-    if (item.itemState != ITEM_UNMATCHED &&
-            item.itemState != ITEM_MATCH_NOT_FOUND) return false;
-    LibraryMixerLibraryManager::setMatchFile(item_id, paths, ITEM_MATCHED_TO_FILE, recipient);
-    return true;
+/**********************************************************************************
+ * Temporary Share Control
+ **********************************************************************************/
+
+void ftServer::sendTemporary(QString title, QStringList paths, unsigned int friend_id) {
+    tempList->addTempItem(title, paths, friend_id);
 }
 
-void ftServer::sendTemporary(QString title, QStringList paths, int recipient) {
-    mFtItems->addTempItem(title, paths, recipient);
+void ftServer::returnFiles(const QString &title, const QStringList &paths, unsigned int friend_id, const QString &itemKey) {
+    tempList->addTempItem("Return of '" + title + "'", paths, friend_id, itemKey);
 }
 
-/***************************************************************/
-/****************** End of Files Interface *******************/
-/***************************************************************/
+/**********************************************************************************
+ * Off LibraryMixer Sharing Control
+ **********************************************************************************/
+
+void ftServer::addOffLMShare(QString path){
+    if (offLMList) offLMList->addOffLMShare(path);
+}
+
+bool ftServer::removeOffLMShare(OffLMShareItem* toRemove){
+    if (offLMList) return offLMList->removeOffLMShare(toRemove);
+    return false;
+}
+
+bool ftServer::setOffLMShareMethod(OffLMShareItem *toModify, OffLMShareItem::shareMethodState state){
+    if (offLMList) return offLMList->setOffLMShareMethod(toModify, state);
+    return false;
+}
+
+void ftServer::setOffLMShareLabel(OffLMShareItem *toModify, QString newLabel) {
+    if (offLMList) offLMList->setOffLMShareLabel(toModify, newLabel);
+}
+
+OffLMShareItem* ftServer::getOwnOffLMRoot() const {
+    if (offLMList) return offLMList->getOwnOffLMRoot();
+    return NULL;
+}
+
+void ftServer::recheckOffLMFiles() const {
+    if (offLMList) offLMList->recheckFiles();
+}
+
+OffLMShareItem* ftServer::getFriendOffLMShares(int index) const {
+    if (offLMList) return offLMList->getFriendOffLMShares(index);
+    return NULL;
+}
+
+int ftServer::getOffLMShareFriendCount() const {
+    if (offLMList) return offLMList->getOffLMShareFriendCount();
+    return 0;
+}
 
 /***
  * Borrowing Management
  **/
 
-void ftServer::completedDownload(int item_id, QStringList paths, QStringList hashes, QList<unsigned long>filesizes, QString createdDirectory) {
-    mixologyborrower->completedDownloadBorrowCheck(item_id);
-    LibraryMixerLibraryManager::completedDownloadLendCheck(item_id, paths, hashes, filesizes, createdDirectory);
+void ftServer::getBorrowings(QStringList &titles, QStringList &itemKeys, QList<unsigned int> &friendIds) {
+    return borrowManager->getBorrowings(titles, itemKeys, friendIds);
 }
 
-bool ftServer::getBorrowings(int librarymixer_id, QStringList &titles, QList<int> &item_ids) {
-    return mixologyborrower->getBorrowings(librarymixer_id, titles, item_ids);
+void ftServer::getBorrowings(QStringList &titles, QStringList &itemKeys, unsigned int friendId) {
+    return borrowManager->getBorrowings(titles, itemKeys, friendId);
 }
 
-void ftServer::getBorrowingInfo(QList<int> &item_ids, QList<borrowStatuses> &statuses, QStringList &names) {
-    return mixologyborrower->getBorrowingInfo(item_ids, statuses, names);
-}
-
-void ftServer::addPendingBorrow(int item_id, QString librarymixer_name, int librarymixer_id, QStringList filenames, QStringList hashes, QStringList filesizes) {
-    mixologyborrower->addPendingBorrow(item_id, librarymixer_name, librarymixer_id, filenames, hashes, filesizes);
-}
-
-void ftServer::cancelBorrow(int item_id) {
-    mixologyborrower->cancelBorrow(item_id);
-}
-
-void ftServer::borrowPending(int item_id) {
-    mixologyborrower->borrowPending(item_id);
-}
-
-void ftServer::returnBorrowed(int librarymixer_id, int item_id, QString title, QStringList paths) {
-    mFtItems->addTempItem("Return of '" + title + "'", paths, librarymixer_id, item_id);
-}
-
-void ftServer::returnedBorrowed(int item_id) {
-    mixologyborrower->returnedBorrowed(item_id);
+void ftServer::deleteBorrowed(const QString &itemKey) {
+    borrowManager->deleteBorrowed(itemKey);
 }
 
 /***************************************************************/
@@ -301,7 +308,7 @@ void ftServer::returnedBorrowed(int item_id) {
 /***************************************************************/
 
 /* Client Send */
-bool    ftServer::sendDataRequest(std::string peerId, std::string hash,
+bool    ftServer::sendDataRequest(std::string peerId, QString hash,
                                   uint64_t size, uint64_t offset, uint32_t chunksize) {
     /* create a packet */
     /* push to networking part */
@@ -326,7 +333,7 @@ bool    ftServer::sendDataRequest(std::string peerId, std::string hash,
 const uint32_t MAX_FT_CHUNK  = 8 * 1024; /* 8K */
 
 /* Server Send */
-bool ftServer::sendData(std::string peerId, std::string hash, uint64_t size,
+bool ftServer::sendData(std::string peerId, QString hash, uint64_t size,
                            uint64_t baseOffset, uint32_t chunkSize, void *data) {
     uint32_t remainingToSend = chunkSize;
     uint64_t offset = 0;
@@ -334,7 +341,7 @@ bool ftServer::sendData(std::string peerId, std::string hash, uint64_t size,
 
     log(LOG_DEBUG_ALL, ftserverzone,
         QString("ftServer::sendData") +
-        " hash: " + hash.c_str() +
+        " hash: " + hash +
         " offset: " + QString::number(baseOffset) +
         " chunksize: " + QString::number(chunkSize));
 
@@ -375,10 +382,6 @@ bool ftServer::sendData(std::string peerId, std::string hash, uint64_t size,
     return true;
 }
 
-void ftServer::sendMixologySuggestion(unsigned int librarymixer_id, int item_id, QString name) {
-    mixologyservice->sendMixologySuggestion(librarymixer_id, item_id, name);
-}
-
 /* NB: The core lock must be activated before calling this.
  * This Lock should be moved lower into the system...
  * most likely destination is in ftServer.
@@ -400,7 +403,7 @@ int ftServer::tick() {
     return moreToTick;
 }
 
-bool    ftServer::handleFileData() {
+bool ftServer::handleFileData() {
     // now File Input.
     FileRequest *fr;
     FileData *fd;
@@ -415,7 +418,7 @@ bool    ftServer::handleFileData() {
                                      fr->file.hash,  fr->file.filesize,
                                      fr->fileoffset, fr->chunksize);
 
-        FileInfo(ffr);
+        uploadFileInfo(ffr);
         delete fr;
     }
 
@@ -451,7 +454,7 @@ bool    ftServer::handleFileData() {
 /***************************** CONFIG ****************************/
 
 bool    ftServer::ResumeTransfers() {
-    mFtController->activate();
+    fileDownloadController->activate();
 
     return true;
 }

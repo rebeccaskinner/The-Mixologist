@@ -26,7 +26,7 @@
 #include "util/debug.h"
 
 pqihandler::pqihandler() {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     // setup minimal total+individual rates.
     maxIndivOut = 0.01;
@@ -40,7 +40,7 @@ int pqihandler::tick() {
     int moreToTick = 0;
 
     {
-        MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+        QMutexLocker stack(&coreMtx);
 
         // tick all interfaces...
         std::map<std::string, PQInterface *>::iterator it;
@@ -62,7 +62,7 @@ int pqihandler::tick() {
 
 int pqihandler::status() {
     std::map<std::string, PQInterface *>::iterator it;
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     {
         // for output
@@ -90,7 +90,7 @@ int pqihandler::status() {
 
 
 bool    pqihandler::AddPQI(PQInterface *pqi) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     std::map<std::string, PQInterface *>::iterator it;
     if (pqi->PeerId() == "") {
@@ -116,7 +116,7 @@ bool    pqihandler::AddPQI(PQInterface *pqi) {
 }
 
 bool    pqihandler::RemovePQI(PQInterface *pqi) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
     std::map<std::string, PQInterface *>::iterator it;
     for (it = pqis.begin(); it != pqis.end(); it++) {
         if (pqi == it -> second) {
@@ -129,7 +129,7 @@ bool    pqihandler::RemovePQI(PQInterface *pqi) {
 
 // generalised output
 int pqihandler::HandleNetItem(NetItem *item) {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     std::map<std::string, PQInterface *>::iterator it;
     log(LOG_DEBUG_BASIC, PQIHANDLERZONE, "pqihandler::HandleNetItem()");
@@ -266,7 +266,7 @@ void pqihandler::locked_SortnStoreItem(NetItem *item) {
 }
 
 FileRequest *pqihandler::GetFileRequest() {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     if (in_request.size() != 0) {
         FileRequest *fi = dynamic_cast<FileRequest *>(in_request.front());
@@ -280,7 +280,7 @@ FileRequest *pqihandler::GetFileRequest() {
 }
 
 FileData *pqihandler::GetFileData() {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     if (in_data.size() != 0) {
         FileData *fi = dynamic_cast<FileData *>(in_data.front());
@@ -294,7 +294,7 @@ FileData *pqihandler::GetFileData() {
 }
 
 RawItem *pqihandler::GetRawItem() {
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     if (in_service.size() != 0) {
         RawItem *fi = dynamic_cast<RawItem *>(in_service.front());
@@ -340,7 +340,7 @@ void pqihandler::updateRateCaps() {
     int maxed_out = 0;
 
     /* Lock once rates have been retrieved */
-    MixStackMutex stack(coreMtx); /**************** LOCKED MUTEX ****************/
+    QMutexLocker stack(&coreMtx);
 
     for (it = pqis.begin(); it != pqis.end(); it++) {
         PQInterface *pqi = it -> second;

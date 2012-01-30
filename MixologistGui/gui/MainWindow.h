@@ -30,12 +30,13 @@
 #include <interface/settings.h>
 
 class MainWindow;
-extern MainWindow  *mainwindow;
+extern MainWindow *mainwindow;
 
 class NetworkDialog;
 class PeersDialog;
 class TransfersDialog;
 class LibraryDialog;
+class FriendsLibraryDialog;
 
 class PeerStatus;
 class RatesStatus;
@@ -63,6 +64,7 @@ public:
         TransfersDialog *transfersDialog;
         LibraryDialog *libraryDialog;
         NetworkDialog *networkDialog;
+        FriendsLibraryDialog *friendsLibraryDialog;
         PreferencesWindow *preferencesWindow;
 
         //Status bar
@@ -75,10 +77,14 @@ public:
         //Exposed so settings window can create and remove pages
         Ui::MainWindow ui;
         //List of actions and their associated pages, used to switch between pages.
-        QHash<QAction*, QWidget*> _pages;
+        QHash<QAction*, QWidget*> actionPages;
+
+        /* Called from other GUI classes to change which page is currently active.
+           dialog is a pointer to any of the dialog pages from above. */
+        void switchToDialog(QWidget* dialog);
 
 public slots:
-	void updateHashingInfo(const QString&) ;
+        void updateHashingInfo(const QString&) ;
 
 private slots:
 
@@ -103,9 +109,13 @@ private:
         void closeEvent(QCloseEvent *e);
         //Immediately quits the Mixologist
         void doQuit();
+
         QAction *toggleVisibilityAction;
         QMenu *trayIconMenu;
 	QLabel *_hashing_info_label ;
+
+        bool tutorial_library_done;
+        bool tutorial_friends_library_done;
 };
 
 #endif

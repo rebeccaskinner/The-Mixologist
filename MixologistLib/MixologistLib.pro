@@ -33,21 +33,20 @@ win32-x-g++ {
 	QMAKE_LIB = i586-mingw32msvc-ar
 	DEFINES *= STATICLIB WIN32
 
-	INCLUDEPATH *= /usr/i586-mingw32msvc/include ${HOME}/.wine/drive_c/pthreads/include/
+	INCLUDEPATH *= /usr/i586-mingw32msvc/include
 }
 ################################# Windows ##########################################
 
 win32 {
 	QMAKE_CC = g++
-  OBJECTS_DIR = temp/obj
+	OBJECTS_DIR = temp/obj
 	MOC_DIR = temp/moc
-  DEFINES = WINDOWS_SYS WIN32 STATICLIB MINGW PTW32_STATIC_LIB
+	DEFINES = WINDOWS_SYS WIN32 STATICLIB MINGW PTW32_STATIC_LIB
 	DESTDIR = lib
 	  
-	PTHREADS_DIR = ../ThirdParty/src/pthreads-w32-2-8-0-release
 	ZLIB_DIR = ../ThirdParty/src/zlib-1.2.3
         
-  INCLUDEPATH += . $${PTHREADS_DIR} $${ZLIB_DIR}
+	INCLUDEPATH += . $${ZLIB_DIR}
 }
 
 # #################################### MacOS ######################################
@@ -76,16 +75,17 @@ HEADERS += dht/b64.h \
            dht/opendhtmgr.h \
            dht/opendhtstr.h \
            ft/ftcontroller.h \
+           ft/fttransfermodule.h \
            ft/ftdata.h \
            ft/ftdatademultiplex.h \
-           ft/ftitemlist.h \
+           ft/fttemplist.h \
+           ft/ftofflmlist.h \
            ft/ftfilecreator.h \
            ft/ftfileprovider.h \
-           ft/ftfilesearch.h \
-           ft/ftsearch.h \
+           ft/ftfilewatcher.h \
+           ft/ftfilemethod.h \
            ft/ftserver.h \
-           ft/fttransfermodule.h \
-           ft/mixologyborrower.h \
+           ft/ftborrower.h \
            pqi/authmgr.h \
            pqi/p3connmgr.h \
            pqi/p3dhtmgr.h \
@@ -118,8 +118,9 @@ HEADERS += dht/b64.h \
            interface/types.h \
            interface/settings.h \
            interface/librarymixer-connect.h \
-           interface/librarymixer-library.h \
            server/server.h \
+           server/librarymixer-library.h \
+           server/librarymixer-friendlibrary.h \
            server/p3msgs.h \
            server/p3peers.h \
            server/pqistrings.h \
@@ -150,27 +151,29 @@ HEADERS += dht/b64.h \
            util/dir.h \
            util/net.h \
            util/print.h \
-           util/threads.h \
+           util/xml.h \
 
 SOURCES = \
 				dht/dht_check_peers.cc \
 				dht/dht_bootstrap.cc \
 	   			server/librarymixer-connect.cc \
 	   			server/librarymixer-library.cc \
-				server/types.cc \
+	   			server/librarymixer-friendlibrary.cc \
 				server/init.cc \
 				server/server.cc \
 				server/p3msgs.cc \
 				server/p3peers.cc \
+				server/types.cc \
 				ft/ftcontroller.cc \
-				ft/ftserver.cc \
 				ft/fttransfermodule.cc \
+				ft/ftserver.cc \
 				ft/ftdatademultiplex.cc \
-				ft/ftfilesearch.cc \
-				ft/ftitemlist.cc \
+				ft/fttemplist.cc \
+				ft/ftofflmlist.cc \
 				ft/ftfilecreator.cc \
 				ft/ftfileprovider.cc \
-				ft/mixologyborrower.cc \
+				ft/ftfilewatcher.cc \
+				ft/ftborrower.cc \
                                 upnp/upnputil.cc \
 				dht/opendhtmgr.cc \
 				upnp/upnphandler.cc \
@@ -216,5 +219,5 @@ SOURCES = \
 				util/dir.cc \
 				util/net.cc \
 				util/print.cc \
-				util/threads.cc 
+				util/xml.cc 
 

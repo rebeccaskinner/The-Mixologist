@@ -31,7 +31,7 @@ const int pqiservicezone = 60478;
  ****/
 
 p3ServiceServer::p3ServiceServer() {
-    MixStackMutex stack(srvMtx); /********* LOCKED *********/
+    QMutexLocker stack(&srvMtx);
 
 #ifdef  SERVICE_DEBUG
     pqioutput(PQL_DEBUG_BASIC, pqiservicezone,
@@ -43,7 +43,7 @@ p3ServiceServer::p3ServiceServer() {
 }
 
 int p3ServiceServer::addService(pqiService *ts) {
-    MixStackMutex stack(srvMtx); /********* LOCKED *********/
+    QMutexLocker stack(&srvMtx);
 
 #ifdef  SERVICE_DEBUG
     pqioutput(PQL_DEBUG_BASIC, pqiservicezone,
@@ -63,7 +63,7 @@ int p3ServiceServer::addService(pqiService *ts) {
 }
 
 int p3ServiceServer::incoming(RawItem *item) {
-    MixStackMutex stack(srvMtx); /********* LOCKED *********/
+    QMutexLocker stack(&srvMtx);
 
 #ifdef  SERVICE_DEBUG
     pqioutput(PQL_DEBUG_BASIC, pqiservicezone,
@@ -116,7 +116,7 @@ int p3ServiceServer::incoming(RawItem *item) {
 
 
 RawItem *p3ServiceServer::outgoing() {
-    MixStackMutex stack(srvMtx); /********* LOCKED *********/
+    QMutexLocker stack(&srvMtx);
 
 #ifdef  SERVICE_DEBUG
     pqioutput(PQL_DEBUG_ALL, pqiservicezone,
@@ -175,7 +175,7 @@ RawItem *p3ServiceServer::outgoing() {
 
 int p3ServiceServer::tick() {
 
-    MixStackMutex stack(srvMtx); /********* LOCKED *********/
+    QMutexLocker stack(&srvMtx);
 
 #ifdef  SERVICE_DEBUG
     pqioutput(PQL_DEBUG_ALL, pqiservicezone,

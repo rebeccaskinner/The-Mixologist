@@ -37,22 +37,26 @@
 #include <QInputDialog>
 #include <QTreeWidgetItem>
 #include <QDesktopServices>
+#include <QFileDialog>
 
 /* Images for context menu icons */
 #define IMAGE_CANCEL               ":/Images/Cancel.png"
+#define IMAGE_SENDFILE             ":/Images/Send.png"
 #define IMAGE_CLEARCOMPLETED       ":/Images/ClearCompleted.png"
 #define IMAGE_CHAT                 ":/Images/Chat.png"
 #define IMAGE_OPEN                 ":/Images/Play.png"
 #define IMAGE_OPENCONTAINING       ":/Images/Folder.png"
+#define IMAGE_DOWNLOAD             ":/Images/Download.png"
 
+/* Upload column names */
 #define UPLOAD_FILE_COLUMN         0
 #define UPLOAD_FRIEND_COLUMN       1
 #define UPLOAD_SPEED_COLUMN        2
-#define UPLOAD_TRANSFERRED_COLUMN  3
-#define UPLOAD_TOTAL_SIZE_COLUMN   4
-#define UPLOAD_STATUS_COLUMN       5
-#define UPLOAD_LIBRARYMIXER_ID     6
+#define UPLOAD_TOTAL_SIZE_COLUMN   3
+#define UPLOAD_STATUS_COLUMN       4
+#define UPLOAD_LIBRARYMIXER_ID     5
 
+/* Download column names */
 #define DOWNLOAD_NAME_COLUMN       0
 #define DOWNLOAD_FRIEND_COLUMN     1
 #define DOWNLOAD_SPEED_COLUMN      2
@@ -61,9 +65,16 @@
 #define DOWNLOAD_PERCENT_COLUMN    5
 #define DOWNLOAD_STATUS_COLUMN     6
 //Hidden information columns
-#define DOWNLOAD_HASH_COLUMN 7
-#define DOWNLOAD_LIBRARYMIXER_ID  8
-#define DOWNLOAD_ITEM_ID     9
+#define DOWNLOAD_FRIEND_ID         7
+#define DOWNLOAD_ITEM_TYPE         8
+#define DOWNLOAD_ITEM_ID           9
+#define DOWNLOAD_FINAL_LOCATION    10
+
+/* DOWNLOAD_ITEM_TYPEs */
+#define DOWNLOAD_GROUP_TYPE        "Group"
+#define DOWNLOAD_FILE_TYPE         "File"
+#define DOWNLOAD_PENDING_TYPE      "Pending"
+#define DOWNLOAD_BORROW_TYPE       "Borrow"
 
 /** Constructor */
 TransfersDialog::TransfersDialog(QWidget *parent)
@@ -76,9 +87,10 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     connect(ui.uploadsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(uploadsListContextMenu(QPoint)));
 
     QHeaderView *header = ui.downloadsList->header() ;
-    header->hideSection(DOWNLOAD_HASH_COLUMN);
-    header->hideSection(DOWNLOAD_LIBRARYMIXER_ID);
+    header->hideSection(DOWNLOAD_FRIEND_ID);
+    header->hideSection(DOWNLOAD_ITEM_TYPE);
     header->hideSection(DOWNLOAD_ITEM_ID);
+    header->hideSection(DOWNLOAD_FINAL_LOCATION);
 
     header = ui.uploadsList->header() ;
     header->hideSection(UPLOAD_LIBRARYMIXER_ID);
@@ -94,20 +106,22 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     ui.uploadsList->resizeColumnToContents(UPLOAD_FILE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_FRIEND_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_SPEED_COLUMN);
-    ui.uploadsList->resizeColumnToContents(UPLOAD_TRANSFERRED_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_TOTAL_SIZE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_STATUS_COLUMN);
 
     ui.downloadsList->sortItems(0, Qt::AscendingOrder);
     ui.uploadsList->sortItems(0, Qt::AscendingOrder);
+
+    connect(files, SIGNAL(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)),
+            this, SLOT(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)));
 }
 
 void TransfersDialog::download(const QString &link) {
-    //Some args have default values of 0 to suppress spurious compiler warnings that they might be used uninitialized.
     bool ok;
     QString error;
-    int librarymixer_id = 0;
-    int item_id = 0;
+    //Default value of 0 to suppress spurious compiler warnings that might be used uninitialized.
+    unsigned int librarymixer_id = 0;
+    unsigned int item_id = 0;
     QString rawname;
     QString name;
     QStringList argList;
@@ -119,10 +133,8 @@ void TransfersDialog::download(const QString &link) {
     //Pop up a dialog box to allow the user to enter a link. If a link was provided in arguments, starts from there.
     //Some browsers percent encode urls, so undo this before processing the link from the argument.
     QString text = QInputDialog::getText(this, tr("Enter link"), tr("Enter a mixology link:"), QLineEdit::Normal, QUrl::fromPercentEncoding(link.toUtf8()), &ok);
-    if (!ok) {
-        error = "Unable to read the entered text";
-        goto parseError;
-    }
+    //ok will be false when the user hits cancel
+    if (!ok) return;
 
     //In case the user pasted in a percent encoded url, undo it again.
     text = QUrl::fromPercentEncoding(text.toUtf8());
@@ -189,8 +201,7 @@ void TransfersDialog::download(const QString &link) {
         files->LibraryMixerRequest(librarymixer_id, item_id, name);
         //We must construct our own QMessageBox rather than use a static function in order to avoid making a system sound on window popup
         QMessageBox confirmBox(this);
-        //confirmBox.setIcon(QMessageBox::NoIcon);
-        confirmBox.setIconPixmap(QPixmap(":/Images/Download.png"));
+        confirmBox.setIconPixmap(QPixmap(IMAGE_DOWNLOAD));
         confirmBox.setWindowTitle(name);
         confirmBox.setText("A request will be sent to " + peers->getPeerName(librarymixer_id));
         confirmBox.addButton("OK", QMessageBox::RejectRole);
@@ -204,159 +215,187 @@ parseError:
     return;
 }
 
-void TransfersDialog::suggestionReceived(int librarymixer_id, int item_id, const QString &name) {
+void TransfersDialog::suggestionReceived(unsigned int librarymixer_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes) {
     QString friend_name = peers->getPeerName(librarymixer_id);
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     if (settings.value("Transfers/IncomingAsk", DEFAULT_INCOMING_ASK).toBool()){
         mainwindow->trayOpenTo = mainwindow->transfersDialog;
         mainwindow->trayIcon->showMessage("Incoming File",
-                                          "Received an invitation to download '" + name + "' from " + friend_name + ".",
+                                          "Received an invitation to download '" + title + "' from " + friend_name + ".",
                                           QSystemTrayIcon::Information);
         mainwindow->show();
         mainwindow->raise();
         mainwindow->activateWindow();
         if (QMessageBox::question(this, "Incoming File",
-                                  "Received an invitation to download '" + name +
+                                  "Received an invitation to download '" + title +
                                   "' from " + friend_name +
                                   ".  Download?", QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)
                     == QMessageBox::Yes) {
-            files->LibraryMixerRequest(librarymixer_id, item_id, name);
+            files->downloadFiles(librarymixer_id, title, paths, hashes, filesizes);
         }
     } else {
-        files->LibraryMixerRequest(librarymixer_id, item_id, name);
-        mainwindow->trayOpenTo = mainwindow->transfersDialog;
-        mainwindow->trayIcon->showMessage("Incoming File",
-                                          "Receiving '" + name + "' from " + friend_name + ".",
-                                          QSystemTrayIcon::Information);
+        if (files->downloadFiles(librarymixer_id, title, paths, hashes, filesizes)) {
+            mainwindow->trayOpenTo = mainwindow->transfersDialog;
+            mainwindow->trayIcon->showMessage("Incoming File",
+                                              "Receiving '" + title + "' from " + friend_name + ".",
+                                              QSystemTrayIcon::Information);
+        }
     }
 }
 
 void TransfersDialog::insertTransfers() {
+    float downTotalRate = insertDownloads();
+    float upTotalRate = insertUploads();
 
-    /* get the download and upload lists */
+    //Set the status bar
+    mainwindow->ratesstatus->setRatesStatus(downTotalRate, upTotalRate);
 
+    //Set the system tray icon
+    //mainwindow->setTrayIcon(downTotalRate, upTotalRate);
+}
+
+float TransfersDialog::insertDownloads() {
     ui.downloadsList->clear();
-    ui.uploadsList->clear();
 
     QList<QTreeWidgetItem *> transfers;
 
     float downTotalRate = 0;
-    float upTotalRate = 0;
 
-    //Stick downloads in the downloadsList box
-    QList<FileInfo> downloads;
+    /* Insert borrowed items. */
+    QStringList borrowTitles;
+    QStringList borrowKeys;
+    QList<unsigned int> friendIds;
+    files->getBorrowings(borrowTitles, borrowKeys, friendIds);
+    for(int i = 0; i < borrowTitles.count(); i++) {
+        QTreeWidgetItem *item = new QTreeWidgetItem();
+        item->setText(DOWNLOAD_NAME_COLUMN, borrowTitles[i]);
+        item->setText(DOWNLOAD_STATUS_COLUMN, "Borrowed");
+        item->setText(DOWNLOAD_FRIEND_COLUMN, peers->getPeerName(friendIds[i]));
+        item->setText(DOWNLOAD_FRIEND_ID, QString::number(friendIds[i]));
+        item->setText(DOWNLOAD_ITEM_TYPE, DOWNLOAD_BORROW_TYPE);
+        item->setText(DOWNLOAD_ITEM_ID, borrowKeys[i]);
+        transfers.append(item);
+    }
+
+    /* Insert file downloads. */
+    QList<downloadGroupInfo> downloads;
     files->FileDownloads(downloads);
-    //For each file being downloaded
-    for (int current_dl = 0; current_dl < downloads.size(); current_dl++) {
-        //For each transfer that file is a part of
-        for (int current_transfer = 0; current_transfer < downloads[current_dl].orig_item_ids.size(); current_transfer++) {
-            QTreeWidgetItem *transfer_item = findOrCreateTransferItem(downloads[current_dl].orig_item_ids[current_transfer],
-                                             downloads[current_dl].librarymixer_names[current_transfer], transfers);
-            //Create a subitem for the file to stick underneath the top level transfer item
-            QTreeWidgetItem *file_item = new QTreeWidgetItem(transfer_item);
-            file_item -> setText(DOWNLOAD_NAME_COLUMN, downloads[current_dl].paths[current_transfer]);
-            file_item -> setText(DOWNLOAD_TOTAL_SIZE_COLUMN, QString::number(downloads[current_dl].size / 1024, 'f', 0).append(" K"));
-            if (downloads[current_dl].size > 0)
-                file_item -> setText(DOWNLOAD_PERCENT_COLUMN, QString::number(100 * downloads[current_dl].transfered / downloads[current_dl].size , 'f', 0).append("%"));
-            QString status;
+    foreach (downloadGroupInfo group, downloads) {
+        QTreeWidgetItem *transferItem = new QTreeWidgetItem();
+        transfers.append(transferItem);
+        double groupTransferRate = 0;
+
+        transferItem->setText(DOWNLOAD_NAME_COLUMN, group.title);
+        //We can do just take the first file's first peer for the group's friend because multi-source isn't enabled
+        transferItem->setText(DOWNLOAD_FRIEND_COLUMN, peers->getPeerName(group.filesInGroup.first().peers.first().librarymixer_id));
+        transferItem->setText(DOWNLOAD_FRIEND_ID, QString::number(group.filesInGroup.first().peers.first().librarymixer_id));
+        transferItem->setText(DOWNLOAD_ITEM_TYPE, DOWNLOAD_GROUP_TYPE);
+        transferItem->setText(DOWNLOAD_ITEM_ID, QString::number(group.groupId));
+        if (!group.finalDestination.isEmpty()) {
+            transferItem->setText(DOWNLOAD_STATUS_COLUMN, "Complete");
+            transferItem->setText(DOWNLOAD_FINAL_LOCATION, group.finalDestination);
+        }
+
+        for (int fileNumber = 0; fileNumber < group.filesInGroup.count(); fileNumber++) {
+            QTreeWidgetItem *fileItem = new QTreeWidgetItem(transferItem);
+            fileItem->setText(DOWNLOAD_NAME_COLUMN, group.filenames[fileNumber]);
+            fileItem->setText(DOWNLOAD_TOTAL_SIZE_COLUMN, QString::number(group.filesInGroup[fileNumber].totalSize / 1024, 'f', 0).append(" K"));
+            fileItem->setText(DOWNLOAD_ITEM_TYPE, DOWNLOAD_FILE_TYPE);
+            fileItem->setText(DOWNLOAD_ITEM_ID, group.filesInGroup[fileNumber].hash);
+            /* For percentages, size 0 is a special case because we cannot calculate percent without divide by 0.
+               If we haven't transferred anything at all yet, leave percentage blank for a cleaner look. */
+            if (group.filesInGroup[fileNumber].totalSize == 0) {
+                fileItem->setText(DOWNLOAD_PERCENT_COLUMN, "100%");
+            } else if (group.filesInGroup[fileNumber].downloadedSize > 0) {
+                fileItem->setText(DOWNLOAD_PERCENT_COLUMN,
+                                  QString::number(100 * group.filesInGroup[fileNumber].downloadedSize / group.filesInGroup[fileNumber].totalSize , 'f', 0).append("%"));
+            }
+
             bool complete = false;
-            switch (downloads[current_dl].downloadStatus) {
-                case FT_STATE_FAILED:
-                    status = "Failed";
-                    complete = true;
-                    break;
-                case FT_STATE_INIT:
-                    status = "Initializing";
-                    break;
+            QString status;
+            //We can only do this because multisource isn't implemented yet
+            if (!peers->isOnline(group.filesInGroup[fileNumber].peers.first().librarymixer_id) &&
+                group.filesInGroup[fileNumber].downloadStatus != FT_STATE_COMPLETE)
+                status = "Friend offline";
+            else {
+                switch (group.filesInGroup[fileNumber].downloadStatus) {
                 case FT_STATE_WAITING:
-                    status = "Friend offline";
+                    status = "Waiting";
                     break;
-                case FT_STATE_DOWNLOADING:
-                    status = "Downloading";
-                    break;
-                case FT_STATE_IDLE:
-                    status = "Trying";
+                case FT_STATE_TRANSFERRING:
+                    if (group.filesInGroup[fileNumber].totalTransferRate > 0) {
+                        status = "Downloading";
+                    } else {
+                        status = "Trying";
+                    }
+                    fileItem->setText(DOWNLOAD_SPEED_COLUMN, QString::number(group.filesInGroup[fileNumber].totalTransferRate, 'f', 2).append(" K/s"));
+                    //Also update the running total for the status bar
+                    downTotalRate += group.filesInGroup[fileNumber].totalTransferRate;
+                    groupTransferRate += group.filesInGroup[fileNumber].totalTransferRate;
                     break;
                 case FT_STATE_COMPLETE:
                     status = "Complete";
                     complete = true;
                     break;
-                case FT_STATE_COMPLETE_WAIT:
-                    status = "File Complete";
-                    complete = true;
-                    break;
-                default:
-                    status = "Error";
-                    complete = true;
-                    break;
-            }
-            if (!complete) {
-                //Can't check for online status before status is set, because when download is complete, peers becomes empty.
-                if (!peers->isOnline(downloads[current_dl].peers.front().librarymixer_id)) {
-                    status = "Friend offline";
                 }
-                //This is how Retroshare did it, but is this right?  If there is lost data, will size - transfered potentially be less than zero?
-                file_item -> setText(DOWNLOAD_REMAINING_COLUMN, QString::number((downloads[current_dl].size - downloads[current_dl].transfered) / 1024, 'f', 0).append(" K"));
-                file_item -> setText(DOWNLOAD_FRIEND_COLUMN, peers->getPeerName(downloads[current_dl].peers.front().librarymixer_id));
-                file_item -> setText(DOWNLOAD_LIBRARYMIXER_ID, QString::number(downloads[current_dl].peers.front().librarymixer_id));
             }
+            fileItem->setText(DOWNLOAD_STATUS_COLUMN, status);
 
-            file_item -> setText(DOWNLOAD_STATUS_COLUMN, status);
-            if (status == "Downloading"){
-                file_item -> setText(DOWNLOAD_SPEED_COLUMN, QString::number(downloads[current_dl].tfRate, 'f', 2).append(" K/s"));
-                //Also update the running total for the status bar
-                downTotalRate += downloads[current_dl].tfRate;
+            if (!complete) {
+                fileItem->setText(DOWNLOAD_REMAINING_COLUMN,
+                                  QString::number((group.filesInGroup[fileNumber].totalSize - group.filesInGroup[fileNumber].downloadedSize) / 1024, 'f', 0).append(" K"));
+                fileItem->setText(DOWNLOAD_FRIEND_COLUMN, peers->getPeerName(group.filesInGroup[fileNumber].peers.first().librarymixer_id));
+                fileItem->setText(DOWNLOAD_FRIEND_ID, QString::number(group.filesInGroup[fileNumber].peers.first().librarymixer_id));
+            } else {
+                fileItem->setText(DOWNLOAD_FINAL_LOCATION, group.finalDestination + QDir::separator() + group.filenames[fileNumber]);
             }
+        }
 
-            file_item->setText(DOWNLOAD_HASH_COLUMN, downloads[current_dl].hash.c_str());
-            file_item->setText(DOWNLOAD_ITEM_ID, QString::number(downloads[current_dl].orig_item_ids[current_transfer]));
+        if (groupTransferRate > 0) {
+            transferItem->setText(DOWNLOAD_SPEED_COLUMN, QString::number(groupTransferRate, 'f', 2).append(" K/s"));
         }
     }
-    //Also put pendingRequests into downloadsList box
+
+    /* Insert requests for LibraryMixer items. */
     std::list<pendingRequest> pendingRequests;
     files->getPendingRequests(pendingRequests);
-
     std::list<pendingRequest>::iterator request_it;
     for (request_it = pendingRequests.begin(); request_it != pendingRequests.end(); request_it++) {
         QTreeWidgetItem *item = new QTreeWidgetItem();
-        item -> setText(DOWNLOAD_NAME_COLUMN, request_it->name);
-        item -> setText(DOWNLOAD_FRIEND_COLUMN, peers->getPeerName(request_it->librarymixer_id));
-        item -> setText(DOWNLOAD_LIBRARYMIXER_ID, QString::number(request_it->librarymixer_id));
+        item->setText(DOWNLOAD_NAME_COLUMN, request_it->name);
+        item->setText(DOWNLOAD_FRIEND_COLUMN, peers->getPeerName(request_it->friend_id));
+        item->setText(DOWNLOAD_FRIEND_ID, QString::number(request_it->friend_id));
         QString status;
         switch (request_it->status) {
-            case pendingRequest::REPLY_INTERNAL_ERROR:
-                status = "Error: Your friend had an internal error when responding";
-                break;
-            case pendingRequest::REPLY_NONE:
-            default:
-                if (!peers->isOnline(request_it->librarymixer_id)) status = "Friend offline";
-                else status = "Trying";
-                break;
+        case pendingRequest::REPLY_INTERNAL_ERROR:
+            status = "Error: Your friend had an internal error when responding";
+            break;
+        case pendingRequest::REPLY_LENT_OUT:
+            status = "Response: Your friend has currently lent it out (will keep trying)";
+            break;
+        case pendingRequest::REPLY_UNMATCHED:
+            //REPLY_UNMATCHED shares behavior with REPLY_CHAT, so we double them up
+        case pendingRequest::REPLY_CHAT:
+            status = "Response: Open chat window";
+            break;
+        case pendingRequest::REPLY_MESSAGE:
+            status = "Response: Show message";
+            break;
+        case pendingRequest::REPLY_NO_SUCH_ITEM:
+            status = "Error: Your friend says they don't have that item";
+            break;
+        case pendingRequest::REPLY_BROKEN_MATCH:
+            status = "Error: Your friend set a file to send, but it's been moved or deleted";
+            break;
+        default:
+            if (!peers->isOnline(request_it->friend_id)) status = "Friend offline";
+            else status = "Trying";
+            break;
         }
-        item -> setText(DOWNLOAD_STATUS_COLUMN, status);
-        item -> setText(DOWNLOAD_ITEM_ID, QString::number(request_it->item_id));
+        item->setText(DOWNLOAD_STATUS_COLUMN, status);
+        item->setText(DOWNLOAD_ITEM_TYPE, DOWNLOAD_PENDING_TYPE);
+        item->setText(DOWNLOAD_ITEM_ID, QString::number(request_it->item_id));
         transfers.append(item);
-    }
-    //Step through the borrowing list and update display with that
-    QList<int> item_ids;
-    QList<borrowStatuses> statuses;
-    QStringList names;
-    files->getBorrowingInfo(item_ids, statuses, names);
-    for(int i = 0; i < item_ids.count(); i++) {
-        QTreeWidgetItem *transfer_item = findOrCreateTransferItem(item_ids[i], names[i], transfers);
-        switch (statuses[i]) {
-            case BORROW_STATUS_PENDING:
-                transfer_item->setText(DOWNLOAD_STATUS_COLUMN, "Waiting for input");
-                break;
-            case BORROW_STATUS_GETTING:
-                transfer_item->setText(DOWNLOAD_STATUS_COLUMN, "Borrowing");
-                break;
-            case BORROW_STATUS_BORROWED:
-                transfer_item->setText(DOWNLOAD_STATUS_COLUMN, "Borrowed");
-                break;
-            case BORROW_STATUS_NOT:
-                break;
-        }
     }
 
     ui.downloadsList->insertTopLevelItems(0, transfers);
@@ -372,31 +411,34 @@ void TransfersDialog::insertTransfers() {
     ui.downloadsList->resizeColumnToContents(7);
     transfers.clear();
 
+    return downTotalRate;
+}
+
+float TransfersDialog::insertUploads() {
+    QList<QTreeWidgetItem *> transfers;
+
+    ui.uploadsList->clear();
+    float upTotalRate = 0;
+
     //Put uploads into uploadsList box
-    QList<FileInfo> uploads;
+    QList<uploadFileInfo> uploads;
     files->FileUploads(uploads);
-    QList<FileInfo>::const_iterator it;
+    QList<uploadFileInfo>::const_iterator it;
     for (it = uploads.begin(); it != uploads.end(); it++) {
         QTreeWidgetItem *item = new QTreeWidgetItem();
-        item -> setText(UPLOAD_FILE_COLUMN, it->paths.first());
-        item -> setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(it->peers.front().librarymixer_id));
-        item -> setText(UPLOAD_TOTAL_SIZE_COLUMN, QString::number(it->size / 1024, 'f', 0).append(" K"));
+        item->setText(UPLOAD_FILE_COLUMN, it->path);
+        item->setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(it->peers.front().librarymixer_id));
+        item->setText(UPLOAD_TOTAL_SIZE_COLUMN, QString::number(it->size / 1024, 'f', 0).append(" K"));
         QString status;
         switch (it->peers.front().status) {
-            case FT_STATE_FAILED:
-                status = tr("Failed");
-                break;
-            case FT_STATE_INIT:
-                status = tr("Initializing");
-                break;
             case FT_STATE_WAITING:
                 status = tr("Waiting");
                 break;
-            case FT_STATE_DOWNLOADING:
-                if (time(NULL) - it->lastTS > 5) status = "";
+            case FT_STATE_TRANSFERRING:
+                if (time(NULL) - it->lastTransfer > 5) status = "";
                 else status = tr("Uploading");
                 break;
-            case FT_STATE_IDLE:
+            case FT_STATE_ONLINE_IDLE:
                 status = tr("Idled");
                 break;
             case FT_STATE_COMPLETE:
@@ -406,14 +448,13 @@ void TransfersDialog::insertTransfers() {
                 status = QString::number(it->peers.front().status);
                 break;
         }
-        item -> setText(UPLOAD_STATUS_COLUMN, status);
-        item -> setText(UPLOAD_LIBRARYMIXER_ID, QString::number(it->peers.front().librarymixer_id));
+        item->setText(UPLOAD_STATUS_COLUMN, status);
+        item->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(it->peers.front().librarymixer_id));
         if (status == "Uploading") {
-            item -> setText(UPLOAD_SPEED_COLUMN, QString::number(it->tfRate, 'f', 2).append(" K/s"));
+            item->setText(UPLOAD_SPEED_COLUMN, QString::number(it->totalTransferRate, 'f', 2).append(" K/s"));
             //Also update the running total for the status bar
-            upTotalRate += it->tfRate;
+            upTotalRate += it->totalTransferRate;
         }
-        if (status != "Complete") item -> setText(UPLOAD_TRANSFERRED_COLUMN, QString::number(it->transfered / 1024, 'f', 0).append(" K"));
         transfers.append(item);
     }
 
@@ -422,30 +463,24 @@ void TransfersDialog::insertTransfers() {
     ui.uploadsList->resizeColumnToContents(UPLOAD_FILE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_FRIEND_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_SPEED_COLUMN);
-    ui.uploadsList->resizeColumnToContents(UPLOAD_TRANSFERRED_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_TOTAL_SIZE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_STATUS_COLUMN);
     transfers.clear();
 
-    //Set the status bar
-    mainwindow->ratesstatus->setRatesStatus(downTotalRate, upTotalRate);
-    //Set the system tray icon
-    //mainwindow->setTrayIcon(downTotalRate, upTotalRate);
+    return upTotalRate;
 }
 
-void TransfersDialog::insertTransferEvent(int event, int librarymixer_id, const QString &transfer_name, const QString &extra_info) {
-    if (event == NOTIFY_TRANSFER_LEND) {
-        QString friend_name = peers->getPeerName(librarymixer_id);
-        QString message = friend_name +
-                " will lend " +
-                transfer_name +
-                " to you, but wants it back at some point. Continue?";
-        if (QMessageBox::question(this, transfer_name, message, QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes) {
-            files->borrowPending(extra_info.toInt());
-            mainwindow->peersDialog->insertUserOptional(librarymixer_id, NOTIFY_USER_BORROW_ACCEPTED, transfer_name);
-        } else {
-            mainwindow->peersDialog->insertUserOptional(librarymixer_id, NOTIFY_USER_BORROW_DECLINED, transfer_name);
-        }
+void TransfersDialog::responseLendOfferReceived(unsigned int friend_id, unsigned int item_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong>filesizes) {
+    QString friend_name = peers->getPeerName(friend_id);
+    QString message = friend_name +
+                      " will lend " +
+                      title +
+                      " to you, but wants it back at some point. Continue?";
+    if (QMessageBox::question(this, title, message, QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes) {
+        files->borrowFiles(friend_id, title, paths, hashes, filesizes, FILE_HINTS_ITEM, QString::number(item_id));
+        mainwindow->peersDialog->insertUserOptional(friend_id, NOTIFY_USER_BORROW_ACCEPTED, title);
+    } else {
+        mainwindow->peersDialog->insertUserOptional(friend_id, NOTIFY_USER_BORROW_DECLINED, title);
     }
 }
 
@@ -457,42 +492,53 @@ void TransfersDialog::downloadsListContextMenu(QPoint point) {
     //Otherwise, get the hash which we can use to cancel a file transfer.
     QTreeWidgetItem *contextItem = ui.downloadsList->itemAt(point);
     if (contextItem != NULL) {
-        if (!contextItem->text(DOWNLOAD_LIBRARYMIXER_ID).isEmpty()) {
-            context_friend_id = contextItem->text(DOWNLOAD_LIBRARYMIXER_ID).toInt();
+        if (!contextItem->text(DOWNLOAD_FRIEND_ID).isEmpty()) {
+            context_friend_id = contextItem->text(DOWNLOAD_FRIEND_ID).toInt();
+            context_friend_name = contextItem->text(DOWNLOAD_FRIEND_COLUMN);
             QAction *chatAct = new QAction(QIcon(IMAGE_CHAT), "Chat", &contextMenu);
+            if (!peers->isOnline(context_friend_id)){
+                chatAct->setEnabled(false);
+                chatAct->setText(tr("Chat (friend offline)"));
+            }
             connect(chatAct, SIGNAL(triggered()), this, SLOT(chat()));
             contextMenu.addAction(chatAct);
         }
 
         contextMenu.addSeparator();
 
-        if (contextItem->text(DOWNLOAD_HASH_COLUMN).isEmpty()) {
-            context_item_id = contextItem->text(DOWNLOAD_ITEM_ID).toInt();
-            context_hash = "";
-        } else {
-            context_item_id = contextItem->text(DOWNLOAD_ITEM_ID).toInt();
-            context_hash = contextItem->text(DOWNLOAD_HASH_COLUMN).toStdString();
+        context_name = contextItem->text(DOWNLOAD_NAME_COLUMN);
+        context_parent = (contextItem->parent() == NULL) ? "" : contextItem->parent()->text(DOWNLOAD_ITEM_ID);
+        context_item_type = contextItem->text(DOWNLOAD_ITEM_TYPE);
+        context_item_id = contextItem->text(DOWNLOAD_ITEM_ID);
+        context_item_location = "";
+
+        if (context_item_type == DOWNLOAD_GROUP_TYPE ||
+            context_item_type == DOWNLOAD_FILE_TYPE ||
+            context_item_type == DOWNLOAD_PENDING_TYPE) {
+            if (contextItem->text(DOWNLOAD_STATUS_COLUMN) != "Complete") {
+                QAction *cancelAct = new QAction(QIcon(IMAGE_CANCEL), tr("Cancel"), &contextMenu);
+                connect(cancelAct, SIGNAL(triggered()), this, SLOT(cancel()));
+                contextMenu.addAction(cancelAct);
+            } else {
+                context_item_location = contextItem->text(DOWNLOAD_FINAL_LOCATION);
+                QAction *openAct = new QAction(QIcon(IMAGE_OPEN), tr("Open"), &contextMenu);
+                connect(openAct, SIGNAL(triggered()), this, SLOT(openFile()));
+                contextMenu.addAction(openAct);
+
+                QAction *openContainingAct = new QAction(QIcon(IMAGE_OPENCONTAINING), tr("Open Downloads Folder"), &contextMenu);
+                connect(openContainingAct, SIGNAL(triggered()), this, SLOT(openContaining()));
+                contextMenu.addAction(openContainingAct);
+            }
         }
 
-        /*Show cancel for all top level transfer items as well as
-                 individual files as long as the file is not either complete or part of a borrow.*/
-        if (contextItem->parent() == NULL ||
-                        (contextItem->text(DOWNLOAD_STATUS_COLUMN) != "Complete" &&
-                         !contextItem->parent()->text(DOWNLOAD_STATUS_COLUMN).startsWith("Borrow"))) {
-            context_name = contextItem->text(DOWNLOAD_NAME_COLUMN);
-            QAction *cancelAct = new QAction(QIcon(IMAGE_CANCEL), tr("Cancel"), &contextMenu);
+        if (context_item_type == DOWNLOAD_BORROW_TYPE) {
+            QAction *returnAct = new QAction(QIcon(IMAGE_SENDFILE), tr("Return files"), &contextMenu);
+            connect(returnAct, SIGNAL(triggered()), this, SLOT(returnFiles()));
+            contextMenu.addAction(returnAct);
+
+            QAction *cancelAct = new QAction(QIcon(IMAGE_CANCEL), tr("Remove"), &contextMenu);
             connect(cancelAct, SIGNAL(triggered()), this, SLOT(cancel()));
             contextMenu.addAction(cancelAct);
-        }
-        if (contextItem->text(DOWNLOAD_STATUS_COLUMN) == "Complete") {
-            context_name = files->getDownloadDirectory() + QDir::separator() + contextItem->text(DOWNLOAD_NAME_COLUMN);
-            QAction *openAct = new QAction(QIcon(IMAGE_OPEN), tr("Open"), &contextMenu);
-            connect(openAct, SIGNAL(triggered()), this, SLOT(openFile()));
-            contextMenu.addAction(openAct);
-
-            QAction *openContainingAct = new QAction(QIcon(IMAGE_OPENCONTAINING), tr("Open Downloads Folder"), &contextMenu);
-            connect(openContainingAct, SIGNAL(triggered()), this, SLOT(openContaining()));
-            contextMenu.addAction(openContainingAct);
         }
 
         contextMenu.addSeparator();
@@ -517,7 +563,7 @@ void TransfersDialog::uploadsListContextMenu(QPoint point) {
         }
 
         contextMenu.addSeparator();
-        context_name = contextItem->text(UPLOAD_FILE_COLUMN);
+        context_item_location = contextItem->text(UPLOAD_FILE_COLUMN);
         QAction *openAct = new QAction(QIcon(IMAGE_OPEN), tr("Open"), &contextMenu);
         connect(openAct, SIGNAL(triggered()), this, SLOT(openFile()));
         contextMenu.addAction(openAct);
@@ -533,24 +579,39 @@ void TransfersDialog::uploadsListContextMenu(QPoint point) {
 }
 
 void TransfersDialog::cancel() {
-    QString message("Are you sure that you want to cancel and delete:\n");
-    message.append(context_name);
-    if ((QMessageBox::question(this, tr("Cancel Download"), message,
-                               QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)) == QMessageBox::Yes) {
-        if (context_hash.empty()) {
-            files->LibraryMixerRequestCancel(context_item_id);
-        } else {
-            files->cancelFile(context_item_id, context_name, context_hash);
-            context_hash.clear();
+    if (context_item_type == DOWNLOAD_GROUP_TYPE ||
+        context_item_type == DOWNLOAD_FILE_TYPE ||
+        context_item_type == DOWNLOAD_PENDING_TYPE) {
+        QString message("Are you sure that you want to cancel and delete:\n");
+        message.append(context_name);
+        if ((QMessageBox::question(this, tr("Cancel Download"), message,
+                                   QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)) == QMessageBox::Yes) {
+            if (context_item_type == DOWNLOAD_GROUP_TYPE) {
+                files->cancelDownloadGroup(context_item_id.toInt());
+            } else if (context_item_type == DOWNLOAD_FILE_TYPE) {
+                files->cancelFile(context_parent.toInt(), context_item_id);
+            } else if (context_item_type == DOWNLOAD_PENDING_TYPE) {
+                files->LibraryMixerRequestCancel(context_item_id.toInt());
+            }
+        }
+    } else if (context_item_type == DOWNLOAD_BORROW_TYPE) {
+        if ((QMessageBox::question(this, tr("Cancel Download"),
+                                   "Are you sure you never want to return " + context_name +
+                                   " to " + peers->getPeerName(context_friend_id) +
+                                   "?\nRemoving something from the borrowed list can't be undone.",
+                                   QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)) == QMessageBox::Yes) {
+            files->deleteBorrowed(context_item_id);
         }
     }
 }
 
 void TransfersDialog::openFile() {
-    QDesktopServices::openUrl(QUrl("file:///" + context_name, QUrl::TolerantMode));
+    QFileInfo info(context_item_location);
+    QDesktopServices::openUrl(QUrl("file:///" + info.absoluteFilePath(), QUrl::TolerantMode));
 }
 
 void TransfersDialog::openContaining() {
+    QFileInfo info(context_item_location);
     QDesktopServices::openUrl(QUrl("file:///" + files->getDownloadDirectory(), QUrl::TolerantMode));
 }
 
@@ -567,24 +628,18 @@ void TransfersDialog::chat() {
         mainwindow->peersDialog->getOrCreateChat(context_friend_id, true);
 }
 
-QTreeWidgetItem *TransfersDialog::findOrCreateTransferItem(int item_id, QString name, QList<QTreeWidgetItem *> &transfers) {
-    QTreeWidgetItem *transfer_item;
-    QList<QTreeWidgetItem *>::iterator all_transfers_it;
-    //See if we already have a top level transfer item to hold this
-    for (all_transfers_it = transfers.begin(); all_transfers_it != transfers.end(); all_transfers_it++) {
-        if ((*all_transfers_it)->text(DOWNLOAD_ITEM_ID) == QString::number(item_id)) {
-            transfer_item = *all_transfers_it;
-            break;
+void TransfersDialog::returnFiles() {
+    if (context_friend_id != 0) {
+        QStringList paths = QFileDialog::getOpenFileNames(this, "It's easier to open a chat with " + context_friend_name + " and just drag in and drop files, but you can also do it this way");
+        if (!paths.empty()) {
+            files->returnFiles(context_name, paths, context_friend_id, context_item_id);
+            //We must construct our own QMessageBox rather than use a static function in order to avoid making a system sound on window popup
+            QMessageBox confirmBox(this);
+            confirmBox.setIconPixmap(QPixmap(IMAGE_SENDFILE));
+            confirmBox.setWindowTitle(context_name);
+            confirmBox.setText("A return offer will be sent to " + context_friend_name);
+            confirmBox.addButton("OK", QMessageBox::RejectRole);
+            confirmBox.exec();
         }
     }
-    //If not, create one
-    if (all_transfers_it == transfers.end()) {
-        transfer_item = new QTreeWidgetItem();
-        transfers.append(transfer_item);
-        //transfer_item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
-        transfer_item -> setText(DOWNLOAD_NAME_COLUMN, name);
-        transfer_item -> setText(DOWNLOAD_STATUS_COLUMN, "");
-        transfer_item -> setText(DOWNLOAD_ITEM_ID, QString::number(item_id));
-    }
-    return transfer_item;
 }

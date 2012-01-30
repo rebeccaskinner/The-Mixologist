@@ -500,12 +500,18 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
+    <layout class="QHBoxLayout" name="headerLayout">
      <item>
-      <widget class="QPushButton" name="updateLibraryButton">
+      <widget class="QPushButton" name="addLibraryButton">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <property name="minimumSize">
         <size>
-         <width>0</width>
+         <width>200</width>
          <height>34</height>
         </size>
        </property>
@@ -521,7 +527,57 @@
         </font>
        </property>
        <property name="toolTip">
-        <string>Redownloads your library from LibraryMixer.</string>
+        <string>Opens the page where you can manage your library.</string>
+       </property>
+       <property name="text">
+        <string>Add/Remove Library Items</string>
+       </property>
+       <property name="icon">
+        <iconset resource="images.qrc">
+         <normaloff>:/Images/AddLibrary.png</normaloff>:/Images/AddLibrary.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="updateLibraryButton">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>34</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>180</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <property name="font">
+        <font>
+         <pointsize>10</pointsize>
+        </font>
+       </property>
+       <property name="toolTip">
+        <string>Redownloads your library from LibraryMixer, and rescans for any files previously marked as missing. (F5)</string>
        </property>
        <property name="text">
         <string>Update Library</string>
@@ -530,127 +586,158 @@
         <iconset resource="images.qrc">
          <normaloff>:/Images/UpdateLibrary.png</normaloff>:/Images/UpdateLibrary.png</iconset>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="updateLibraryLabel">
-       <property name="text">
-        <string/>
+       <property name="shortcut">
+        <string>F5</string>
        </property>
       </widget>
      </item>
     </layout>
    </item>
    <item>
-    <widget class="QSplitter" name="splitter">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <widget class="QGroupBox" name="unmatchedGroup">
-      <property name="title">
-       <string>Items Without Automatic Responses</string>
-      </property>
-      <layout class="QGridLayout" name="gridLayout_2">
-       <item row="1" column="0">
-        <widget class="LibraryBox" name="unmatchedList">
-         <property name="contextMenuPolicy">
-          <enum>Qt::CustomContextMenu</enum>
+    <layout class="QVBoxLayout" name="libraryLayout">
+     <item>
+      <layout class="QHBoxLayout" name="libraryHeaderLayout">
+       <item>
+        <widget class="QLabel" name="libraryListIcon">
+         <property name="pixmap">
+          <pixmap resource="images.qrc">:/Images/LibraryMixer.png</pixmap>
          </property>
-         <property name="acceptDrops">
-          <bool>true</bool>
-         </property>
-         <property name="verticalScrollMode">
-          <enum>QAbstractItemView::ScrollPerPixel</enum>
-         </property>
-         <property name="indentation">
-          <number>0</number>
-         </property>
-         <property name="itemsExpandable">
-          <bool>false</bool>
-         </property>
-         <property name="sortingEnabled">
-          <bool>true</bool>
-         </property>
-         <property name="expandsOnDoubleClick">
-          <bool>false</bool>
-         </property>
-         <column>
-          <property name="text">
-           <string>Title</string>
-          </property>
-         </column>
-         <column>
-          <property name="text">
-           <string>By</string>
-          </property>
-         </column>
-         <column>
-          <property name="text">
-           <string>Status</string>
-          </property>
-         </column>
         </widget>
        </item>
-      </layout>
-     </widget>
-     <widget class="QGroupBox" name="matchedGroup">
-      <property name="title">
-       <string>Items With Automatic Responses</string>
-      </property>
-      <layout class="QGridLayout" name="gridLayout">
-       <item row="0" column="0" colspan="2">
-        <widget class="LibraryBox" name="matchedList">
-         <property name="contextMenuPolicy">
-          <enum>Qt::CustomContextMenu</enum>
+       <item>
+        <widget class="QLabel" name="libraryListLabel">
+         <property name="font">
+          <font>
+           <pointsize>9</pointsize>
+           <weight>75</weight>
+           <bold>true</bold>
+          </font>
          </property>
-         <property name="acceptDrops">
-          <bool>true</bool>
+         <property name="text">
+          <string>This section shows the stuff you've listed on LibraryMixer.com to highlight to your friends</string>
          </property>
-         <property name="verticalScrollMode">
-          <enum>QAbstractItemView::ScrollPerPixel</enum>
-         </property>
-         <property name="indentation">
-          <number>0</number>
-         </property>
-         <property name="itemsExpandable">
-          <bool>false</bool>
-         </property>
-         <property name="sortingEnabled">
-          <bool>true</bool>
-         </property>
-         <property name="expandsOnDoubleClick">
-          <bool>false</bool>
-         </property>
-         <column>
-          <property name="text">
-           <string>Title</string>
-          </property>
-         </column>
-         <column>
-          <property name="text">
-           <string>By</string>
-          </property>
-         </column>
-         <column>
-          <property name="text">
-           <string>Status</string>
-          </property>
-         </column>
         </widget>
        </item>
+       <item>
+        <spacer name="libraryHeaderSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
       </layout>
-     </widget>
-    </widget>
+     </item>
+     <item>
+      <widget class="QTreeView" name="libraryList">
+       <property name="contextMenuPolicy">
+        <enum>Qt::CustomContextMenu</enum>
+       </property>
+       <property name="acceptDrops">
+        <bool>true</bool>
+       </property>
+       <property name="verticalScrollMode">
+        <enum>QAbstractItemView::ScrollPerPixel</enum>
+       </property>
+       <property name="indentation">
+        <number>0</number>
+       </property>
+       <property name="uniformRowHeights">
+        <bool>true</bool>
+       </property>
+       <property name="itemsExpandable">
+        <bool>false</bool>
+       </property>
+       <property name="sortingEnabled">
+        <bool>true</bool>
+       </property>
+       <property name="expandsOnDoubleClick">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="offLMLayout">
+     <item>
+      <layout class="QHBoxLayout" name="offLMHeaderLayout">
+       <item>
+        <widget class="QLabel" name="offLMListIcon">
+         <property name="pixmap">
+          <pixmap resource="images.qrc">:/Images/LibrarySmall.png</pixmap>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="offLMListLabel">
+         <property name="font">
+          <font>
+           <pointsize>9</pointsize>
+           <weight>75</weight>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>This section shows the other junk you're also sharing with your friends (not listed on LibraryMixer.com)</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="offLMHeaderSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QTreeView" name="offLMList">
+       <property name="contextMenuPolicy">
+        <enum>Qt::CustomContextMenu</enum>
+       </property>
+       <property name="acceptDrops">
+        <bool>true</bool>
+       </property>
+       <property name="dragDropMode">
+        <enum>QAbstractItemView::DropOnly</enum>
+       </property>
+       <property name="defaultDropAction">
+        <enum>Qt::CopyAction</enum>
+       </property>
+       <property name="verticalScrollMode">
+        <enum>QAbstractItemView::ScrollPerPixel</enum>
+       </property>
+       <property name="uniformRowHeights">
+        <bool>true</bool>
+       </property>
+       <property name="animated">
+        <bool>true</bool>
+       </property>
+       <attribute name="headerStretchLastSection">
+        <bool>false</bool>
+       </attribute>
+       <attribute name="headerStretchLastSection">
+        <bool>false</bool>
+       </attribute>
+      </widget>
+     </item>
+    </layout>
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>LibraryBox</class>
-   <extends>QTreeWidget</extends>
-   <header>gui/LibraryHelper.h</header>
-  </customwidget>
- </customwidgets>
  <resources>
   <include location="images.qrc"/>
  </resources>

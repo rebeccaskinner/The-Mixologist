@@ -98,14 +98,14 @@ NetItem *ChatSerialiser::deserialise(void *data, uint32_t *pktsize) {
 
     switch (getNetItemSubType(rstype)) {
         case PKT_SUBTYPE_DEFAULT:
-            return new ChatMsgItem(data,*pktsize) ;
+            return new ChatMsgItem(data,*pktsize);
         case PKT_SUBTYPE_CHAT_STATUS:
-            return new ChatStatusItem(data,*pktsize) ;
+            return new ChatStatusItem(data,*pktsize);
         case PKT_SUBTYPE_CHAT_AVATAR:
-            return new ChatAvatarItem(data,*pktsize) ;
+            return new ChatAvatarItem(data,*pktsize);
         default:
-            std::cerr << "Unknown packet type in chat!" << std::endl ;
-            return NULL ;
+            std::cerr << "Unknown packet type in chat!" << std::endl;
+            return NULL;
     }
 }
 

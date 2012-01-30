@@ -40,8 +40,6 @@ linux-g++-64 {
 #    LIBS += ../ThirdParty/lib/libcrypto.a
 #    LIBS += ../ThirdParty/lib/libminiupnpc.a
 #    LIBS += ../ThirdParty/lib/libz.a
-#    LIBS += -L${HOME}/.wine/drive_c/pthreads/lib \
-#        -lpthreadGCE2
 #    LIBS += -lws2_32 \
 #        -luuid \
 #        -lole32 \
@@ -59,7 +57,6 @@ win32 {
     OBJECTS_DIR = temp/obj
     LIBS += ../MixologistLib/lib/libMixologist.a
     LIBS += -L"../ThirdParty/lib" \
-        -lpthreadGC2 \
         -lminiupnpc \
         -lz \
         -lssl \
@@ -104,7 +101,6 @@ INCLUDEPATH += .
 HEADERS += version.h \
     qtsingleapplication\mixologistapplication.h \
     interface/librarymixer-connect.h \
-    interface/librarymixer-library.h \
     interface/files.h \
     interface/init.h \
     interface/msgs.h \
@@ -120,7 +116,11 @@ HEADERS += version.h \
     gui/MainWindow.h \
     gui/PeersDialog.h \
     gui/LibraryDialog.h \
-    gui/LibraryHelper.h \
+    gui/LibraryModel.h \
+    gui/LibraryFriendModel.h \
+    gui/FriendsLibraryDialog.h \
+    gui/OffLMOwnModel.h \
+    gui/OffLMFriendModel.h \
     gui/PopupChatDialog.h \
     gui/Preferences/configpage.h \
     gui/Preferences/GeneralDialog.h \
@@ -133,7 +133,7 @@ HEADERS += version.h \
     gui/Toaster/IQtToaster.h \
     gui/Statusbar/peerstatus.h \
     gui/Statusbar/ratesstatus.h \
-    gui/Util/SettingsUtil.h \
+    gui/Util/GuiSettingsUtil.h \
     gui/Util/Helpers.h \
     gui/Util/OSHelpers.h
 FORMS += gui/StartDialog.ui \
@@ -142,6 +142,7 @@ FORMS += gui/StartDialog.ui \
     gui/MainWindow.ui \
     gui/PeersDialog.ui \
     gui/LibraryDialog.ui \
+    gui/FriendsLibraryDialog.ui \
     gui/PopupChatDialog.ui \
     gui/Preferences/GeneralDialog.ui \
     gui/Preferences/TransfersPrefDialog.ui \
@@ -158,7 +159,11 @@ SOURCES += main.cpp \
     gui/MainWindow.cpp \
     gui/PeersDialog.cpp \
     gui/LibraryDialog.cpp \
-    gui/LibraryHelper.cpp \
+    gui/LibraryModel.cpp \
+    gui/LibraryFriendModel.cpp \
+    gui/FriendsLibraryDialog.cpp \
+    gui/OffLMOwnModel.cpp \
+    gui/OffLMFriendModel.cpp \
     gui/PopupChatDialog.cpp \
     gui/Preferences/GeneralDialog.cpp \
     gui/Preferences/TransfersPrefDialog.cpp \
@@ -169,7 +174,7 @@ SOURCES += main.cpp \
     gui/Statusbar/ratesstatus.cpp \
     gui/Toaster/OnlineToaster.cpp \
     gui/Toaster/QtToaster.cpp \
-    gui/Util/SettingsUtil.cpp \
+    gui/Util/GuiSettingsUtil.cpp \
     gui/Util/Helpers.cpp \
     gui/Util/OSHelpers.cpp
 RESOURCES += gui/images.qrc

@@ -100,7 +100,7 @@ int pqipersongrp::tick() {
      */
 
     {
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
         if (pqil) pqil -> tick();
     }
 
@@ -118,7 +118,7 @@ int pqipersongrp::tick() {
 
 int pqipersongrp::status() {
     {
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
         if (pqil) {
             pqil -> status();
         }
@@ -139,7 +139,7 @@ int pqipersongrp::init_listener() {
         peerConnectState state;
         connMgr->getPeerConnectState(authMgr->OwnLibraryMixerId(), state);
 
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
         pqil = createListener(state.localaddr);
     }
     return 1;
@@ -151,7 +151,7 @@ int     pqipersongrp::restart_listener() {
     // restart.
     bool haveListener = false;
     {
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
         haveListener = (pqil != NULL);
     } /* UNLOCKED */
 
@@ -160,7 +160,7 @@ int     pqipersongrp::restart_listener() {
         peerConnectState state;
         connMgr->getPeerConnectState(authMgr->OwnLibraryMixerId(), state);
 
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
 
         pqil -> resetlisten();
         pqil -> setListenAddr(state.localaddr);
@@ -188,7 +188,7 @@ void    pqipersongrp::statusChange(const std::list<pqipeer> &plist) {
     }
 }
 
-int     pqipersongrp::addPeer(std::string id, int librarymixer_id) {
+int     pqipersongrp::addPeer(std::string id, unsigned int librarymixer_id) {
     {
         std::ostringstream out;
         out << "pqipersongrp::addPeer() cert_id: " << id;
@@ -197,7 +197,7 @@ int     pqipersongrp::addPeer(std::string id, int librarymixer_id) {
 
     pqiperson *pqip;
     {
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
         std::map<std::string, PQInterface *>::iterator it;
         it = pqis.find(id);
         if (it != pqis.end()) {
@@ -219,7 +219,7 @@ int     pqipersongrp::addPeer(std::string id, int librarymixer_id) {
 int     pqipersongrp::removePeer(std::string id) {
     std::map<std::string, PQInterface *>::iterator it;
 
-    MixStackMutex stack(coreMtx);
+    QMutexLocker stack(&coreMtx);
 
     it = pqis.find(id);
     if (it != pqis.end()) {
@@ -234,14 +234,14 @@ int     pqipersongrp::removePeer(std::string id) {
 }
 #endif
 
-int     pqipersongrp::connectPeer(std::string cert_id, int librarymixer_id) {
+int     pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer_id) {
     /* get status from p3connectMgr */
 #ifdef PGRP_DEBUG
     std::cerr << " pqipersongrp::connectPeer() id: " << id  << std::endl;
 #endif
 
     {
-        MixStackMutex stack(coreMtx);
+        QMutexLocker stack(&coreMtx);
         std::map<std::string, PQInterface *>::iterator it;
         it = pqis.find(cert_id);
         if (it == pqis.end()) return 0;
@@ -298,7 +298,7 @@ int     pqipersongrp::connectPeer(std::string cert_id, int librarymixer_id) {
 }
 
 void    pqipersongrp::timeoutPeer(std::string cert_id) {
-    MixStackMutex stack(coreMtx);
+    QMutexLocker stack(&coreMtx);
     std::map<std::string, PQInterface *>::iterator it;
     it = pqis.find(cert_id);
     if (it == pqis.end()) return;

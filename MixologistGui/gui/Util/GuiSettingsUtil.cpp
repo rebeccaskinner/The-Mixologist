@@ -1,6 +1,5 @@
 /****************************************************************
  *  Copyright 2010, Fair Use, Inc.
- *  Copyright 2008, Robert Fernie
  *
  *  This file is part of the Mixologist.
  *
@@ -20,31 +19,32 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#ifndef FT_SEARCH_HEADER
-#define FT_SEARCH_HEADER
+#include <gui/Util/GuiSettingsUtil.h>
+#include <QWidget>
+#include <QSettings>
 
-/*
- * ftSearch
- *
- * This is a generic search interface - used by ft* to find files.
- * The derived class will search for Caches/Local/ItemList/Remote entries.
- *
- */
+void GuiSettingsUtil::saveWidgetInformation(QWidget *widget, QString settingsFile) {
+    QSettings settings(settingsFile, QSettings::IniFormat);
+    settings.beginGroup("Geometry");
+    settings.beginGroup(widget->objectName());
 
-#include "interface/files.h" // includes interface/types.h too!
+    settings.setValue("size", widget->size());
+    settings.setValue("pos", widget->pos());
 
-class ftSearch {
+    settings.endGroup();
+    settings.endGroup();
+}
 
-public:
 
-    ftSearch() {
-        return;
-    }
-    virtual ~ftSearch() {
-        return;
-    }
-    virtual bool    search(std::string hash, uint64_t size, uint32_t hintflags, FileInfo &info) const = 0;
+void GuiSettingsUtil::loadWidgetInformation(QWidget *widget, QString settingsFile) {
+    QSettings settings(settingsFile, QSettings::IniFormat);
+    settings.beginGroup("Geometry");
+    settings.beginGroup(widget->objectName());
 
-};
+    widget->resize(settings.value("size", widget->size()).toSize());
+    widget->move(settings.value("pos", QPoint(200, 200)).toPoint());
 
-#endif
+    settings.endGroup();
+    settings.endGroup();
+}
+

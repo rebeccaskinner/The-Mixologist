@@ -31,14 +31,15 @@
 */
 
 
-#include "util/threads.h"
-
 /* universal networking functions */
 #include "tou_net.h"
 
 #include <iosfwd>
 #include <list>
 #include <deque>
+
+#include <QThread>
+#include <QMutex>
 
 std::ostream &operator<<(std::ostream &out,  const struct sockaddr_in &addr);
 bool operator==(const struct sockaddr_in &addr, const struct sockaddr_in &addr2);
@@ -57,7 +58,7 @@ public:
     virtual void recvPkt(void *data, int size, struct sockaddr_in &from) = 0;
 };
 
-class UdpLayer: public MixThread {
+class UdpLayer: public QThread {
 public:
 
     UdpLayer(UdpReceiver *recv, struct sockaddr_in &local);
@@ -70,7 +71,6 @@ public:
     /* setup connections */
     int openSocket();
 
-    /* MixThread functions */
     virtual void run(); /* called once the thread is started */
 
     void    recv_loop(); /* uses callback to UdpReceiver */
@@ -106,7 +106,7 @@ private:
     int sockfd;
     int ttl;
 
-    MixMutex sockMtx;
+    mutable QMutex sockMtx;
 };
 
 #include <iostream>

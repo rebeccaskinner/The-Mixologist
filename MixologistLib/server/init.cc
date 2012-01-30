@@ -1,20 +1,35 @@
-#include <signal.h>
-
-#include <unistd.h>
-
 #include "ft/ftserver.h"
 #include "ft/ftcontroller.h"
+#include "ft/ftofflmlist.h"
+#include "ft/fttemplist.h"
+#include "ft/ftfilewatcher.h"
+#include "ft/ftborrower.h"
 
-#include "util/debug.h"
-#include "util/dir.h"
-#include "util/net.h"
+#include "pqi/authmgr.h"
+#include "pqi/p3notify.h"
+#include "pqi/pqisslpersongrp.h"
+#include "pqi/pqiloopback.h"
 
-#include "interface/init.h"
-#include "interface/peers.h" //for peers variable
+#include "server/librarymixer-library.h"
+#include "server/librarymixer-friendlibrary.h"
+#include "server/server.h"
+#include "server/p3peers.h"
+#include "server/p3msgs.h"
 
 #include "services/statusservice.h"
 #include "services/p3chatservice.h"
 #include "services/mixologyservice.h"
+#include "services/p3chatservice.h"
+
+#include "interface/init.h"
+#include "interface/peers.h" //for peers variable
+
+#include "upnp/upnphandler.h"
+#include "dht/opendhtmgr.h"
+
+#include "util/debug.h"
+#include "util/dir.h"
+#include "util/net.h"
 
 #include <list>
 #include <string>
@@ -24,30 +39,9 @@
 #include <QTextStream>
 
 #include <dirent.h>
-
-/* Implemented Interfaces */
-#include "server/server.h"
-#include "server/p3peers.h"
-#include "server/p3msgs.h"
-
-#include "pqi/authmgr.h"
-
-// for blocking signals
-#include <signal.h>
-#include "util/debug.h"
-#include "pqi/p3notify.h"
-#include "upnp/upnphandler.h"
-#include "dht/opendhtmgr.h"
-#include "pqi/pqisslpersongrp.h"
-#include "pqi/pqiloopback.h"
-#include "ft/ftcontroller.h"
-/* Implemented Interfaces */
-#include "server/p3peers.h"
-#include "server/p3msgs.h"
-#include "ft/ftserver.h"
-#include "services/p3chatservice.h"
-
 #include <sys/time.h>
+#include <signal.h>
+#include <unistd.h>
 
 #ifdef WINDOWS_SYS
 #include <shlobj.h>
@@ -57,9 +51,6 @@
 #endif
 
 // initial configuration bootstrapping...
-
-/* Win/Unix Differences */
-char Init::dirSeperator;
 
 /* Directories and Files*/
 QString Init::basedir;
@@ -81,12 +72,21 @@ bool Init::udpListenerOnly;
 //Definition for the extern variables
 Files *files = NULL;
 ftServer *ftserver = NULL;
+ftController *fileDownloadController = NULL;
 Control *control = NULL;
 p3ConnectMgr *connMgr = NULL;
 AuthMgr *authMgr = NULL;
 Notify *notify = NULL;
 Msgs *msgs = NULL;
 Peers *peers = NULL;
+LibraryMixerLibraryManager *librarymixermanager = NULL;
+LibraryMixerFriendLibrary *libraryMixerFriendLibrary = NULL;
+ftFileWatcher *fileWatcher = NULL;
+ftBorrowManager *borrowManager = NULL;
+ftOffLMList *offLMList = NULL;
+ftTempList *tempList = NULL;
+MixologyService *mixologyService = NULL;
+StatusService *statusService = NULL;
 
 void Init::InitNetConfig() {
     port = 1680; // default port.
@@ -100,24 +100,12 @@ void Init::InitNetConfig() {
     debugLevel  = PQL_WARNING;
     udpListenerOnly = false;
 
-#ifndef WINDOWS_SYS
-    dirSeperator = '/'; // For unix.
-#else
-    dirSeperator = '\\'; // For windows.
-#endif
-
     /* Setup logging */
     setOutputLevel(LOG_WARNING); // default to Warnings.
 
     // Setup more detailed logging for desired zones.
     // For Testing purposes, can set any individual section to have greater logfile output.
-    //setZoneLevel(PQL_DEBUG_BASIC, 38422); // pqipacket.
-    setZoneLevel(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE);
-    setZoneLevel(LOG_DEBUG_ALL, FTFILECREATORZONE);
-    setZoneLevel(LOG_DEBUG_ALL, FTFILEPROVIDERZONE);
-    setZoneLevel(LOG_DEBUG_ALL, FTDATADEMULTIPLEXZONE);
-    setZoneLevel(LOG_DEBUG_ALERT, PQIHANDLERZONE);
-    setZoneLevel(LOG_DEBUG_ALERT, PQISTREAMERZONE);
+    //setZoneLevel(PQL_DEBUG_BASIC, PQIHANDLERZONE);
 }
 
 /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
@@ -125,13 +113,6 @@ void Init::InitNetConfig() {
 void Init::processCmdLine(int argc, char **argv) {
     /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #else
-
-/* for static PThreads under windows... we need to init the library...
- */
-#ifdef PTW32_STATIC_LIB
-#include <pthread.h>
-#endif
-
 void Init::processCmdLine(int argcIgnored, char **argvIgnored) {
 
     /* THIS IS A HACK TO ALLOW WINDOWS TO ACCEPT COMMANDLINE ARGUMENTS */
@@ -164,13 +145,6 @@ void Init::processCmdLine(int argcIgnored, char **argvIgnored) {
     for ( i=0; i<argc; i++) {
         printf("%d: %s\n", i, argv[i]);
     }
-
-    /* for static PThreads under windows... we need to init the library...
-     */
-#ifdef PTW32_STATIC_LIB
-    pthread_win32_process_attach_np();
-#endif
-
 #endif
     /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
 
@@ -299,6 +273,7 @@ void Init::loadBaseDir() {
     }
     basedir = h;
     basedir += "/.Mixologist";
+    basedir = QDir::toNativeSeparators(basedir);
 #else //Windows
     char *h = getenv("APPDATA");
 #ifdef DEBUGSTARTUP
@@ -334,15 +309,15 @@ void Init::loadBaseDir() {
     }
 }
 
-void Init::loadUserDir(int librarymixer_id) {
+void Init::loadUserDir(unsigned int librarymixer_id) {
 
-    userdir = basedir + dirSeperator + QString::number(librarymixer_id);
+    userdir = basedir + QDir::separator() + QString::number(librarymixer_id);
     if (!DirUtil::checkCreateDirectory(userdir)) exit(1);
 
     return;
 }
 
-QString Init::InitEncryption(int _librarymixer_id) {
+QString Init::InitEncryption(unsigned int _librarymixer_id) {
     authMgr = new AuthMgr();
     authMgr->initSSL(); //first time using SSL system is here
 
@@ -375,7 +350,7 @@ Control *Init::createControl(QString name) {
     /**************************** END WINDOWS/UNIX SPECIFIC PART ******************/
 
     std::string ownId = authMgr->OwnCertId();
-    int librarymixer_id = authMgr->OwnLibraryMixerId();
+    unsigned int librarymixer_id = authMgr->OwnLibraryMixerId();
 
     /**************************************************************************/
     /* Any Initial Configuration (Commandline Options)  */
@@ -388,25 +363,23 @@ Control *Init::createControl(QString name) {
 
     /**************************************************************************/
 
+    QString saveDir;
+    QString partialsDir;
 #ifndef WINDOWS_SYS
-    char *saveDir = getenv("HOME");
-    char *tmpDir = getenv("TMPDIR");
-    QString emergencySaveDir = saveDir;
-    QString emergencyPartialsDir;
-    if (tmpDir != NULL) emergencyPartialsDir = tmpDir;
-    else emergencyPartialsDir = "/tmp";
-    emergencyPartialsDir = emergencyPartialsDir + dirSeperator + "LibraryMixerPartialDownloads";
+    char *envSaveDir = getenv("HOME");
+    char *envTmpDir = getenv("TMPDIR");
+    saveDir = envSaveDir;
+    if (envTmpDir != NULL) partialsDir = envTmpDir;
+    else partialsDir = "/tmp";
+    partialsDir = partialsDir + QDir::separator() + "MixologistPartialDownloads";
 #else //Windows
-    QString emergencySaveDir;
-    QString emergencyPartialsDir;
-    //wchar_t wcharFolder[MAX_PATH];
-    char charFolder[MAX_PATH];
-    if (SHGetFolderPath( 0, CSIDL_DESKTOPDIRECTORY, NULL, SHGFP_TYPE_CURRENT, charFolder) == S_OK) {
-        emergencySaveDir = charFolder;
-    } else emergencySaveDir = "C:\\LibraryMixerDownloads";
-    char *tmpDir = getenv("TMP");
-    if (tmpDir != NULL) emergencyPartialsDir = tmpDir;
-    else emergencyPartialsDir = "C:\\LibraryMixerPartialDownloads";
+    char envSaveDir[MAX_PATH];
+    if (SHGetFolderPath(0, CSIDL_DESKTOPDIRECTORY, NULL, SHGFP_TYPE_CURRENT, envSaveDir) == S_OK) {
+        saveDir = envSaveDir;
+    } else saveDir = "C:\\MixologistDownloads";
+    char *envTmpDir = getenv("TMP");
+    if (envTmpDir != NULL) partialsDir = QString(envTmpDir) + QDir::separator() + "MixologistPartialDownloads";
+    else partialsDir = "C:\\MixologistPartialDownloads";
 #endif
 
     /**************************************************************************/
@@ -420,34 +393,41 @@ Control *Init::createControl(QString name) {
     connMgr->addNetAssistConnect(server->mDhtMgr);
 
     server->pqih = new pqisslpersongrp(flags);
+    connMgr->addMonitor(server->pqih);
 
-    /****** New Ft Server **** !!! */
+    /* This is used by the LibraryMixerLibraryManager to begin hashing files that need hashing. */
+    QThread* fileWatcherThread = new QThread();
+    fileWatcher = new ftFileWatcher();
+    fileWatcher->moveToThread(fileWatcherThread);
+    fileWatcherThread->start();
+
+    /* This must take place before the ftserver so it can use it in its own setup. */
+    librarymixermanager = new LibraryMixerLibraryManager();
+    libraryMixerFriendLibrary = new LibraryMixerFriendLibrary();
+
+    borrowManager = new ftBorrowManager();
+
+    /****** New Ft Server *****/
     files = ftserver = new ftServer();
     ftserver->setP3Interface(server->pqih);
 
     ftserver->SetupFtServer();
 
-    /* setup any extra bits (Default Paths) */
-    ftserver->loadOrSetDownloadDirectory(emergencySaveDir);
-    ftserver->loadOrSetPartialsDirectory(emergencyPartialsDir);
+    /* setup default paths) */
+    fileDownloadController->loadOrSetDownloadDirectory(saveDir);
+    fileDownloadController->loadOrSetPartialsDirectory(partialsDir);
 
     /* create Services */
-    server->pqih->addService(new StatusService());
+    statusService = new StatusService();
+    server->pqih->addService(statusService);
+    connMgr->addMonitor(statusService);
 
     p3ChatService *chatservice = new p3ChatService();
     server->pqih->addService(chatservice);
 
-    MixologyService *mixologyservice = new MixologyService();
-    server->pqih->addService(mixologyservice);
-    ftserver->setMixologyService(mixologyservice);
-
-    /**************************************************************************/
-    /* need to Monitor too! */
-
-    connMgr->addMonitor(server->pqih);
-
-    /**************************************************************************/
-
+    mixologyService = new MixologyService();
+    server->pqih->addService(mixologyService);
+    ftserver->setupMixologyService();
 
     /**************************************************************************/
     /* (2) Load configuration files */
@@ -506,11 +486,11 @@ Control *Init::createControl(QString name) {
 }
 
 QString Init::getBaseDirectory(bool withDirSeperator) {
-    if (withDirSeperator) return (basedir + dirSeperator);
+    if (withDirSeperator) return (basedir + QDir::separator());
     return basedir;
 }
 
 QString Init::getUserDirectory(bool withDirSeperator) {
-    if (withDirSeperator) return (userdir + dirSeperator);
+    if (withDirSeperator) return (userdir + QDir::separator());
     return userdir;
 }

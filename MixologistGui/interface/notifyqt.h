@@ -32,6 +32,9 @@ class PeersDialog;
 class LibraryDialog;
 class TransfersDialog;
 
+/* This class served as an interface between the C++ library and the QT GUI.
+   However, now that the library has been moved to QT, this should be phased out in favor of direct use of signals and slots. */
+
 class NotifyQt: public QObject, public NotifyBase {
 	Q_OBJECT
 public:
@@ -40,50 +43,43 @@ public:
         virtual ~NotifyQt() {return;}
 
         //When there is a suggestion to download something from a friend
-        virtual void notifySuggestion(int librarymixer_id, int item_id, QString name);
+        virtual void notifySuggestion(unsigned int librarymixer_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes);
         //When there are failed requests from a friend
-        virtual void notifyRequestEvent(transferEvent event, int librarymixer_id, int item_id = 0);
+        virtual void notifyRequestEvent(transferEvent event, unsigned int librarymixer_id, unsigned int item_id = 0);
         //When there are responses from a friend on a requested transfer
-        virtual void notifyTransferEvent(transferEvent event, int librarymixer_id, QString transfer_name, QString extra_info = "");
-        //When library list updated
-        virtual void notifyLibraryUpdated();
+        virtual void notifyTransferEvent(transferEvent event, unsigned int librarymixer_id, QString transfer_name, QString extra_info = "");
         //When there are status updates for chat buddies
-        virtual void notifyChatStatus(int librarymixer_id, const QString& status_string);
+        virtual void notifyChatStatus(unsigned int librarymixer_id, const QString& status_string);
         //When a file is being hashed
         virtual void notifyHashingInfo(QString fileinfo);
         //When there is something to stick in the log of the Network dialog
         virtual void notifyLog(QString message);
         //Something happened involving a user that is low priority, and only optionally should be displayed
-        virtual void notifyUserOptional(int librarymixer_id, userOptionalCodes code, QString message);
+        virtual void notifyUserOptional(unsigned int librarymixer_id, userOptionalCodes code, QString message);
 
 signals:
-	// It's beneficial to send info to the GUI using signals, because signals are thread-safe
-	// as they get queued by Qt.
-
         //When there is a suggestion to download something from a friend
-        void suggestionReceived(int librarymixer_id, int item_id, const QString& name);
+        void suggestionReceived(unsigned int friend_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
         //When there are failed requests from a friend
-        void requestEventOccurred(int, int, int);
+        void requestEventOccurred(int event, unsigned int librarymixer_id, unsigned int item_id);
         //When there are responses from a friend on a requested transfer that require discussion
-        void transferChatEventOccurred(int, int, const QString&, const QString&);
+        void transferChatEventOccurred(int event, unsigned int librarymixer_id, QString transfer_name, QString extra_info);
         //When there are responses from a friend on a requested transfer that require a query
-        void transferQueryEventOccurred(int, int, const QString&, const QString&);
+        void transferQueryEventOccurred(int event, unsigned int librarymixer_id, QString transfer_name, QString extra_info);
         //When someone unrecognized tries to connect
         void connectionDenied();
         //When a file is being hashed
-        void hashingInfoChanged(const QString&) const ;
-        //When library list updated
-        void libraryUpdated();
+        void hashingInfoChanged(QString fileinfo);
         //When transfers updated
-	void transfersChanged() const ;
+        void transfersChanged();
         //When friends updated
-        void friendsChanged() const ;
+        void friendsChanged();
         //When there are status updates for chat buddies
-        void chatStatusChanged(int,const QString&) const ;
+        void chatStatusChanged(unsigned int librarymixer_id, QString status_string);
         //When there is something to stick in the log of the Network dialog
-        void logInfoChanged(const QString&) const ;
+        void logInfoChanged(QString message);
         //When there is optional information on a user
-        void userOptionalInfo(int librarymixer_id, int code, QString message);
+        void userOptionalInfo(unsigned int librarymixer_id, int code, QString message);
 
 public slots:
 	void	UpdateGUI(); /* called by timer */

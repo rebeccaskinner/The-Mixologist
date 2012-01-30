@@ -21,9 +21,11 @@
  ****************************************************************/
 
 #include <cstdlib>
+#include <time.h>
 #include "fttransfermodule.h"
 #include "ftserver.h"
 #include "interface/peers.h"
+#include <interface/files.h>
 #include "util/debug.h"
 
 //The amount of time we're targeting to be able to complete one rtt measurement cycle in
@@ -31,37 +33,50 @@ const int32_t FT_TM_STD_RTT  = 9; //9 seconds
 //The minimum amount of time that can pass in one rtt measurement cycle that we'll recognize
 const int32_t FT_TM_FAST_RTT = 1; //1 second
 
-ftTransferModule::ftTransferModule(ftFileCreator *fc, ftDataDemultiplex *dm, ftController *c)
-    :mFileCreator(fc), mFtController(c), mTransferStatus(FILE_DOWNLOADING), actualRate(0) {
-    MixStackMutex stack(tfMtx);
+ftTransferModule::ftTransferModule(unsigned int initial_friend_id, uint64_t size, const QString &hash)
+    :actualRate(0) {
+    QMutexLocker stack(&tfMtx);
 
-    //If we're already done on completion (i.e. resuming a multifile transfer where some files are done)
-    //then flag this as completed.
+    QString temporaryLocation =  files->getPartialsDirectory() + QDir::separator() + hash;
+    mFileCreator = new ftFileCreator(temporaryLocation, size, hash);
+
+    peerInfo pInfo(initial_friend_id, peers->findCertByLibraryMixerId(initial_friend_id));
+    mFileSources.insert(pInfo.cert_id, pInfo);
+
+    /* If we're already done on completion (i.e. resuming a multifile transfer where some files are done)
+       then flag this as completed.
+       Otherwise, set this to waiting so that the ftController can start it when appropriate. */
     if (mFileCreator->finished()) mTransferStatus = FILE_COMPLETE;
+    else mTransferStatus = FILE_WAITING;
+}
+
+ftTransferModule::~ftTransferModule() {
+    delete mFileCreator;
 }
 
 int ftTransferModule::tick() {
     {
-        MixStackMutex stack(tfMtx);
+        QMutexLocker stack(&tfMtx);
 
         QString toLog = "ftTransferModule::tick()";
-        toLog += (" hash: " + mFileCreator->getHash()).c_str();
+        toLog += (" hash: " + mFileCreator->getHash());
         toLog.append(" mTransferStatus: " + QString::number(mTransferStatus));
         toLog.append(" file size: " + QString::number(mFileCreator->getFileSize()));
         toLog.append(" peerCount: " + QString::number(mFileSources.size()));
         log(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE, toLog);
     }
 
-    fileTransferStatus flags;
+    /* Cache the current status so we don't need to hold the mutex overly long. */
+    fileTransferStatus currentStatus;
     {
-        MixStackMutex stack(tfMtx);
-        flags = mTransferStatus;
+        QMutexLocker stack(&tfMtx);
+        currentStatus = mTransferStatus;
     }
 
-    switch (flags) {
+    switch (currentStatus) {
         case FILE_DOWNLOADING:
             {
-                MixStackMutex stack(tfMtx);
+                QMutexLocker stack(&tfMtx);
 
                 QMap<std::string,peerInfo>::iterator mit;
                 for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
@@ -70,9 +85,8 @@ int ftTransferModule::tick() {
             }
             updateActualRate();
             break;
-        case FILE_COMPLETING:
-            completeFileTransfer();
-            break;
+        case FILE_COMPLETE:
+            return 1;
         default:
             break;
     }
@@ -80,12 +94,22 @@ int ftTransferModule::tick() {
     return 0;
 }
 
-bool ftTransferModule::setFileSources(QList<int> sourceIds) {
-    MixStackMutex stack(tfMtx);
+ftTransferModule::fileTransferStatus ftTransferModule::transferStatus() const {
+    QMutexLocker stack(&tfMtx);
+    return mTransferStatus;
+}
+
+void ftTransferModule::transferStatus(fileTransferStatus newStatus) {
+    QMutexLocker stack(&tfMtx);
+    mTransferStatus = newStatus;
+}
+
+bool ftTransferModule::setFileSources(QList<unsigned int> sourceIds) {
+    QMutexLocker stack(&tfMtx);
 
     mFileSources.clear();
 
-    log(LOG_DEBUG_BASIC, FTTRANSFERMODULEZONE, "Resetting sources list for file " + QString(mFileCreator->getHash().c_str()));
+    log(LOG_DEBUG_BASIC, FTTRANSFERMODULEZONE, "Resetting sources list for file " + QString(mFileCreator->getHash()));
 
     for (int i = 0; i < sourceIds.size(); i++) {
         peerInfo pInfo(sourceIds[i], peers->findCertByLibraryMixerId(sourceIds[i]));
@@ -95,8 +119,8 @@ bool ftTransferModule::setFileSources(QList<int> sourceIds) {
     return true;
 }
 
-bool ftTransferModule::getFileSources(QList<int> &sourceIds) {
-    MixStackMutex stack(tfMtx);
+bool ftTransferModule::getFileSources(QList<unsigned int> &sourceIds) {
+    QMutexLocker stack(&tfMtx);
     QMap<std::string,peerInfo>::iterator it;
     for (it = mFileSources.begin(); it != mFileSources.end(); it++) {
         sourceIds.push_back(it.value().librarymixer_id);
@@ -104,8 +128,8 @@ bool ftTransferModule::getFileSources(QList<int> &sourceIds) {
     return true;
 }
 
-bool ftTransferModule::addFileSource(int librarymixer_id) {
-    MixStackMutex stack(tfMtx);
+bool ftTransferModule::addFileSource(unsigned int librarymixer_id) {
+    QMutexLocker stack(&tfMtx);
     QMap<std::string,peerInfo>::iterator mit;
     for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
         if (mit.value().librarymixer_id == librarymixer_id) break;
@@ -119,8 +143,8 @@ bool ftTransferModule::addFileSource(int librarymixer_id) {
     return true;
 }
 
-bool ftTransferModule::setPeerState(int librarymixer_id, uint32_t state) {
-    MixStackMutex stack(tfMtx);
+bool ftTransferModule::setPeerState(unsigned int librarymixer_id, uint32_t state) {
+    QMutexLocker stack(&tfMtx);
 
     QMap<std::string,peerInfo>::iterator mit;
 
@@ -147,8 +171,8 @@ bool ftTransferModule::setPeerState(int librarymixer_id, uint32_t state) {
     return true;
 }
 
-bool ftTransferModule::getPeerState(int librarymixer_id, uint32_t &state, uint32_t &tfRate) {
-    MixStackMutex stack(tfMtx);
+bool ftTransferModule::getPeerState(unsigned int librarymixer_id, uint32_t &state, uint32_t &tfRate) {
+    QMutexLocker stack(&tfMtx);
     QMap<std::string,peerInfo>::const_iterator mit;
 
     for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
@@ -172,14 +196,14 @@ bool ftTransferModule::getPeerState(int librarymixer_id, uint32_t &state, uint32
 bool ftTransferModule::recvFileData(std::string peerId, uint64_t offset, uint32_t chunk_size, void *data) {
     {
         QString toLog = "ftTransferModule::recvFileData()";
-        toLog += (" hash: " + mFileCreator->getHash()).c_str();
+        toLog += (" hash: " + mFileCreator->getHash());
         toLog.append(" offset: " + QString::number(offset));
         toLog.append(" chunk_size: " + QString::number(chunk_size));
         log(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE, toLog);
     }
 
     {
-        MixStackMutex stack(tfMtx);
+        QMutexLocker stack(&tfMtx);
 
         QMap<std::string,peerInfo>::iterator mit;
         mit = mFileSources.find(peerId);
@@ -194,26 +218,14 @@ bool ftTransferModule::recvFileData(std::string peerId, uint64_t offset, uint32_
         locked_recvDataUpdateStats(mit.value(), offset, chunk_size);
     }
 
-    mFileCreator -> addFileData(offset, chunk_size, data);
+    mFileCreator->addFileData(offset, chunk_size, data);
 
     free(data);
     return true;
 }
 
-void ftTransferModule::cancelTransfer() {
-    MixStackMutex stack(tfMtx);
-    mTransferStatus = FILE_FAIL_CANCEL;
-}
-
-void ftTransferModule::completeFileTransfer() {
-    log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::completeFileTransfer()");
-    MixStackMutex stack(tfMtx);
-    mTransferStatus = FILE_COMPLETE;
-    if (mFtController) mFtController->FlagFileComplete(mFileCreator->getHash());
-}
-
 void ftTransferModule::updateActualRate() {
-    MixStackMutex stack(tfMtx);
+    QMutexLocker stack(&tfMtx);
 
     actualRate = 0;
     QMap<std::string,peerInfo>::iterator mit;
@@ -255,13 +267,10 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
     int ageRequestTime = currentTime - info.lastRequestTime;
 
     /* if offline - ignore */
-    if ((info.state == PQIPEER_SUSPEND) ||
-        (info.state == PQIPEER_NOT_ONLINE)) {
-        return false;
-    }
+    if (info.state == PQIPEER_NOT_ONLINE) return false;
 
     /* If we haven't made a new request in a long time.
-       This can be because of connection failure or because we were too aggressive in the amount we request
+       This can be either because of connection failure or because we were too aggressive in the amount we requested
        and it couldn't be completed in FT_TM_REQUEST_TIMEOUT */
     if (ageRequestTime > (int) (FT_TM_REQUEST_TIMEOUT * (info.nResets + 1))) {
         log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() request timeout");
@@ -270,9 +279,7 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
              * will mean variations in which peer
              * starts first. hopefully stop deadlocks.
              */
-            if (rand() % 10 != 0) {
-                return false;
-            }
+            if (rand() % 10 != 0) return false;
         }
 
         /* reset, treat as if we received the last request so we can send a new request */
@@ -292,12 +299,12 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
     /* if we haven't received any data in a long time */
     if (ageReceiveTime > (int) FT_TM_DOWNLOAD_TIMEOUT) {
         log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() receive timeout");
-        info.state = PQIPEER_IDLE;
+        info.state = PQIPEER_ONLINE_IDLE;
         return false;
     }
 
     /* update rate, weighing 90% previous number and 10% current number */
-    info.actualRate = info.actualRate * 0.9 + 0.1 * info.pastTickTransfered;
+    info.actualRate = info.actualRate * 0.5 + info.pastTickTransfered * 0.5;
     info.pastTickTransfered = 0;
 
     /* If more time has already passed in this rtt period than FT_TM_STD_RTT (our target time)
@@ -332,28 +339,30 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
     /* do request */
     info.lastRequestTime = currentTime;
     uint64_t requestOffset = 0;
-    if (mFileCreator->getMissingChunk(requestOffset, requestSize)) {
+    if (mFileCreator->allocateRemainingChunk(requestOffset, requestSize) == false) {
+        mTransferStatus = FILE_COMPLETE;
+    } else {
         if (requestSize > 0) {
             info.state = PQIPEER_DOWNLOADING;
             {
                 QString toLog = "ftTransferModule::locked_tickPeerTransfer() requesting data";
-                toLog += (" hash: " + mFileCreator->getHash()).c_str();
+                toLog += (" hash: " + mFileCreator->getHash());
                 toLog.append(" requestOffset: " + QString::number(requestOffset));
                 toLog.append(" requestSize: " + QString::number(requestSize));
                 log(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE, toLog);
             }
             ftserver->sendDataRequest(info.cert_id, mFileCreator->getHash(), mFileCreator->getFileSize(), requestOffset, requestSize);
 
-            /* start next rtt measurement period */
+            /* if it's time to start next rtt measurement period */
             if (!info.rttActive) {
                 info.rttStart = currentTime;
                 info.rttActive = true;
                 info.rttOffset = requestOffset + requestSize;
             }
         } else {
-            log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() waiting for available data");
+            log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() waiting for a chunk to become available for a new request");
         }
-    } else mTransferStatus = FILE_COMPLETING;
+    }
 
     return true;
 }
@@ -381,8 +390,8 @@ void ftTransferModule::locked_recvDataUpdateStats(peerInfo &info, uint64_t offse
          */
 
         info.mRateChange = FT_TM_MAX_INCREASE *
-                             (FT_TM_STD_RTT - rtt) /
-                             (FT_TM_STD_RTT - FT_TM_FAST_RTT);
+                           (FT_TM_STD_RTT - rtt) /
+                           (FT_TM_STD_RTT - FT_TM_FAST_RTT);
 
         if (info.mRateChange > FT_TM_MAX_INCREASE)
             info.mRateChange = FT_TM_MAX_INCREASE;

@@ -24,7 +24,7 @@
 #define PQI_SERVICE_HEADER
 
 #include "pqi/pqi_base.h"
-#include "util/threads.h"
+#include <QMutex>
 
 // PQI Service, is a generic lower layer on which services can run on.
 //
@@ -89,11 +89,12 @@ public:
     int incoming(RawItem *);
     RawItem *outgoing();
 
+    /* This tick is called from pqipersongrp. */
     int tick();
 
 private:
 
-    MixMutex srvMtx;
+    mutable QMutex srvMtx;
     std::map<uint32_t, pqiService *> services;
     std::map<uint32_t, pqiService *>::iterator rrit;
 

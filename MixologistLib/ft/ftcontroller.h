@@ -23,83 +23,137 @@
 #ifndef FT_CONTROLLER_HEADER
 #define FT_CONTROLLER_HEADER
 
-#include "util/threads.h"
 #include "pqi/pqimonitor.h"
-
 #include "interface/files.h"
 
+#include <QThread>
+#include <QMutex>
 #include <QMap>
 #include <QString>
 #include <QDir>
 
-class ftFileCreator;
 class ftTransferModule;
-class ftFileProvider;
-class ftSearch;
-class ftItemList;
-class ftDataDemultiplex;
-class ftFileControl;
-class ftPendingRequest;
+
+class ftController;
+extern ftController *fileDownloadController;
+
+/* Internal class used to represent a one or more files that are transferred together as a single download.
+   For example:
+   Each downloaded LibraryMixerItem would have a downloadGroup, regardless of the number of files in it.
+   Each downloaded TempShareItem would have a downloadGroup.
+   Each single request for any number of files from ftOffLM would be in a single download group. */
+struct downloadGroup {
+    unsigned int friend_id;
+    QString title;
+
+    enum DownloadType {
+        DOWNLOAD_NORMAL = 0,
+        DOWNLOAD_BORROW = 1,
+        DOWNLOAD_RETURN = 2
+    };
+
+    downloadGroup() :downloadFinished(false) {}
+
+    /* These fields are "" and 0 for non-borrow downloads.
+       For borrows, they are information supplied by the sender we will pass back on transfer completion so he knows which item we just borrowed. */
+    DownloadType downloadType;
+    unsigned int source_type;
+    QString source_id;
+
+    /* These two lists are synchronized, such that filenames[0] contains the final name for files[0] */
+    QStringList filenames;
+    QList<ftTransferModule*> filesInGroup;
+
+    bool downloadFinished;
+
+    /* The path of the final resting place of the files. */
+    QString finalDestination;
+
+    /* Fills in appropriate statistics about this group's current situation. */
+    void getStatus(int *waiting_to_download, int *downloading, int *completed, int *total) const;
+
+    /* Starts a transfer on a file that is waiting to download. */
+    void startOneTransfer();
+};
 
 /*
 This class is the master file downloads controller, and its loop steps through the downloads sending requests for
-further data, and handles items that have finished download
+further data, and handles items that have finished download.
+
+On receiving requested ata ftDataDemultiplex calls ftController's handleReceiveData to handle it.
+
+Downloads belong to downloadGroups, which contain information about a batch of file(s) being downloaded.
+Each file additionally is represented by an ftTransferModule.
 */
-class ftController: public MixThread, public pqiMonitor {
+class ftController: public QThread, public pqiMonitor {
 
 public:
-    ftController(ftDataDemultiplex *dm, ftSearch *fs, ftItemList *fil);
+    ftController();
 
     //Thread loop for file downloads
     virtual void run();
+
     //Called by ftServer to indicate transfers may begin to download
-    bool activate();
+    void activate();
 
     /***************************************************************/
     /********************** Control Interface **********************/
     /***************************************************************/
 
-    /* Requests the file.
-       If activate() has not yet been called, adds it to the mPendingRequest queue.
-       If a file is already being downloaded, adds in another set of librarymixer_names,
-       orig_item_ids and fnames to mark that it is being requested by more than one transfer. */
-    bool requestFile(QString librarymixer_name, int orig_item_id, QString fname,
-                     std::string hash, uint64_t size, uint32_t flags, QList<int> &sourceIds);
-    /* Overloaded. Requests a single file for multiple librarymixer transfers. */
-    bool requestFile(QStringList librarymixer_names, QList<int> orig_item_ids, QStringList filenames,
-                     std::string hash, uint64_t size, uint32_t flags, QList<int> &sourceIds);
+    /* Creates a new download of a batch of files. */
+    bool downloadFiles(unsigned int friend_id, const QString &title, const QStringList &paths,
+                       const QStringList &hashes, const QList<qlonglong> &filesizes);
+
+    /* Creates a new download to borrow a batch of files.
+       source_type is one of the file_hint constants defined above to indicate the type of share we are borrowing from.
+       source_id's meaning changes depending on the source_type, but always uniquely identifies the item. */
+    bool borrowFiles(unsigned int friend_id, const QString &title, const QStringList &paths,
+                     const QStringList &hashes, const QList<qlonglong> &filesizes,
+                     uint32_t source_type, QString source_id);
+
+    /* Creates a new download to get back a batch of files that were previously borrowed.
+       Returns false on failure, including if records of this batch of files are missing or indicate it was not lent to this friend.
+       source_type is one of the file_hint constants defined above to indicate the type of share we are borrowing from.
+       source_id's meaning changes depending on the source_type, but always uniquely identifies the item. */
+    bool downloadBorrowedFiles(unsigned int friend_id, uint32_t source_type, QString source_id,
+                               const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes);
+
     /* Cancels all files that have that librarymixer item ID */
-    bool LibraryMixerTransferCancel(int orig_item_id);
+    void cancelDownloadGroup(int groupId);
+
     /* Cancels a file.
        However, if there is more than one set of transfer information, that means it is being
        requested by more than one transfer, and it only removes information on the one marked.
        (i.e. it cancels the download from that transfer, but not the rest.)
        If checkComplete is not false, then after cancelling the file, it will be check that item
        to see if this was the last file that was holding up its completion and it should be completed.*/
-    bool cancelFile(int orig_item_id, QString filename, std::string hash, bool checkComplete = true);
+    void cancelFile(int groupId, const QString &hash);
+
     /* Enables pausing and starting of transfers
        TEMPORARILY DISABLED */
-    bool controlFile(int orig_item_id, std::string hash, uint32_t flags);
+    bool controlFile(int orig_item_id, QString hash, uint32_t flags);
+
     /* Clears out mCompleted */
     void clearCompletedFiles();
-    /* Called by a ftTransferModule for a file when it is done.
-       Not mutex protected, since this is only called by ftTransferModule.tick() which is called
-       from within ftcontroller's own mutex by run. */
-    void FlagFileComplete(std::string hash);
 
     /* Get information on all current downloads. */
-    bool FileDownloads(QList<FileInfo> &downloads);
+    void FileDownloads(QList<downloadGroupInfo> &downloads);
 
     /* Directory Handling */
     /* Set the directories as specified, saving changes to settings file. */
     bool setDownloadDirectory(QString path);
     bool setPartialsDirectory(QString path);
+
     /* First attempt to load from saved settings, and use path as a fallback. */
     bool loadOrSetDownloadDirectory(QString path);
     bool loadOrSetPartialsDirectory(QString path);
+
     /* Return the directories currently being used */
-    QString getDownloadDirectory(){return mDownloadPath;}
-    QString getPartialsDirectory(){return mPartialsPath;}
+    QString getDownloadDirectory() const;
+    QString getPartialsDirectory() const;
+
+    /* Called from ftDataDemultiplex when we receive new data to pass it to the appropriate transferModule. */
+    bool handleReceiveData(const std::string &peerId, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
 
     /***************************************************************/
     /********************** pqiMonitor Functions********************/
@@ -109,127 +163,103 @@ public:
     virtual void statusChange(const std::list<pqipeer> &changeList);
 
 private:
+    /* Called from tick() to handle moving files to the appropriate places, notifying the GUI, etc. when an entire downloadGroup completes.
+       As it is called from within tick(), it has no mutex protection for itself. */
+    void finishGroup(int groupKey);
 
-    /** RunTime Functions called by the run loop **/
-    /* Takes an element of mDownload and frees all the transfer elements.
-       No mutex protection, call from within mutex. */
-    void finishFile(ftFileControl *fc);
-    /* Returns true if all items for that transfer are done, else false.
-       Also returns false if no items are found at all with that orig_item_id.
-       No mutex protection, call from within mutex. */
-    bool checkTransferComplete(int orig_item_id);
-    /* For all members of mDownloads that match the given LibraryMixer item id, moves the files
-       to final destination and moves the ftFileControl from mDownloads to mCompleted.
-       However, if a given ftFileControl has more than one set of identifying information
-       (i.e. more than one orig_item_id) then only removes one set of information from the
-       ftFileControl and copies that set to mCompleted.
-       No mutex protection, call from within mutex. */
-    void completeTransfer(int orig_item_id);
-    /* Pulls a file off mInitialToLoad and calls FileRequest on it. */
-    bool handleAPendingRequest();
+    /* If no other transfers are using these files, moves the files to the downloadPath, and removes the transferModules from mDownloads.
+       If other transfers are using a file, copies the file to the downloadPath, and leaves the transferModule. */
+    bool moveFilesToDownloadPath(int groupKey);
+
+    /* Delegates to each of the different lending providers on how to return the files to their original locations.
+       If no other transfers are using these files, moves the files, and remove the transferModules from mDownloads.
+       If other transfers are using a file, copies the file, and leaves the transferModule. */
+    bool moveLentFilesToOriginalPaths(int groupKey);
+
+    /* Does the actual work in creating a new download of a batch of files and saving it to saved transfers.
+       If a specificKey other than -1, that key will be assigned to the group or else it will fail if unavailable.
+       Setting a specificKey is used for restoring saved transfers on startup (retaining the same key is needed to keep the save in sync).
+       Not mutex protected so we can call from inside internal mutexes. */
+    virtual bool internalDownloadFiles(unsigned int friend_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes,
+                                       int specificKey, downloadGroup::DownloadType download_type, unsigned int source_type, const QString &source_id);
+
+    /* Requests the file.
+       If a file is already being downloaded, returns it.
+       Otherwise, creates a new ftTransferModule and adds it to mDownloads.
+       No mutex protection. */
+    ftTransferModule* internalRequestFile(unsigned int friend_id, const QString &hash, uint64_t size);
+
+    /* Internal function that does the lifting for both of the public cancel functions.
+       No mutex protection because both of the cancel functions are mutex protected. */
+    void internalCancelFile(int groupId, ftTransferModule* file);
+
+    /* Returns true if more than one downloadGroup contains the given file.
+       This information is useful for finishGroup(), so we know whether to leave the transferModule in mDownloads and the file behind.
+       As it is called from within finishGroup(), it has no mutex protection for itself. */
+    bool inMultipleDownloadGroups(ftTransferModule* file) const;
+
+    /* Returns true if it is any non-completed downloadGroup. */
+    bool inActiveDownloadGroup(ftTransferModule* file) const;
 
     /** Called by statusChange monitor */
     /* Update each ftTransferModule as to changes in friend connectivity. */
-    bool setPeerState(ftTransferModule *tm, int librarymixer_id,  bool online);
+    bool setPeerState(ftTransferModule *tm, unsigned int librarymixer_id,  bool online);
 
-    /* Returns information in info about file identified by hash.
-       Called by FileDownloads.
-       Not mutex protected, so only call from within mutex. */
-    bool FileDetails(QMap<std::string, ftFileControl>::const_iterator file, FileInfo &info);
+    /* Called by FileDownloads() to fill in info on information from file.
+       Not mutex protected, as FileDownloads() is protected. */
+    void fileDetails(ftTransferModule* file, downloadFileInfo &info);
 
-    /* Utility function that takes an input string, and encodes it so that it can be used
-       as a key in an ini QSettings file.
-       In particular, '/' and '\' are encoded to '|'. */
-    QString iniEncode(QString input){return input.replace("/", "|").replace("\\", "|");}
+    /* Reads in the saved transfers from the save file on disk. After it finishes it sets the mInitialLoadDone variable to true. */
+    void loadSavedTransfers();
 
-    /* pointers to other components */
-    ftSearch *mSearch;
-    ftDataDemultiplex *mDataplex;
-    ftItemList *mItemList;
+    /* Adds the group to the save file on disk of current transfers.
+       If there is a pre-existing group with that groupKey, it will be removed. */
+    void addGroupToSavedTransfers(int groupKey, const downloadGroup &group);
 
-    MixMutex ctrlMutex;
+    /* Removes the given group from the save file on disk of current transfers. */
+    void removeGroupFromSavedTransfers(int groupKey);
 
-    /* List to Pause File transfers until Caches are properly loaded */
+    mutable QMutex ctrlMutex;
+
     //Starts out false, and becomes true when activate() is called
     bool mFtActive;
-    //Starts out true, and becomes false when all of mInitialToLoad is called
-    bool mFtInitialLoadDone;
-    //Items are added to this when FileRequest is called before mFtActive is true.
-    std::list<ftPendingRequest> mInitialToLoad;
+    //Starts out false, and becomes true after first time tick() calls
+    bool mInitialLoadDone;
 
-    //List of files being downloaded
-    //Map is by the file hash
-    QMap<std::string, ftFileControl> mDownloads;
-    //List of files done being downloaded
-    //Map is by the file hash
-    QMap<std::string, ftFileControl> mCompleted;
+    /* mDownloadGroups and mDownloads are the related QMaps that store information on all of our downloads.
+
+       mDownloads is a map from the file hash to the ftTransferModule.
+       It enables us to step through all files being downloaded conveniently.
+       Normally an ftTransferModule represents a file being downloaded.
+       However, mDownloads contains only ftTransferModules for files that are part of groups that have not yet completed.
+       Another way of looking at it, is that mDownloads contains all files that either are or will be in the temp directory,
+       but not files that are only part of downloadGroups that fully completed and thus have been moved to their final destinations.
+
+       mDownloadGroups is a map from an arbitrary int that is used only to uniquely identify the group to the downloadGroup,
+       which represents a group of files that were requested as one unit by the user.
+       It enables us to control which files are being downloaded with limits by group, and to store data about the group.
+       Within each downloadGroup is a list of the ftTransferModules contains in that downloadGroup.
+
+       This overlap of pointers to the ftTransferModules is a possible source of confusion.
+       The life cycle of a ftTransferModule is as follows:
+       (1) Created when a new file not already being downloaded is downloaded.
+       (2) Added to both mDownloads and the file list in its downloadGroup.
+       (2) Upon completion of that file, the ftTransferModule is kept around until the last downloadGroup downloading it fully completes.
+       (3) At such time, the actual file on disk is moved out of the temp folder to that last downloadGroup's destinaiton.
+       (4) Additionally, the ftTransferModule is removed from mDownloads, but not deleted or removed from its downloadGroups.
+           It is not deleted so we can continue to call it to get display information for the GUI.
+           However, it must be removed from mDownloads so that if a new transfer begins that includes the same file, it can create
+           a new ftTransferModule to download the file with the same hash.
+           Therefore, it is actually possible to have more than one ftTransferModule for the same file, as long as only one is active in mDownloads.
+       (5) Only when the user calls clearCompleted or cancel, will an ftTransferModule be deleted.
+           This is because both of these operations indicate it is no longer needed for display by the GUI. */
+    QMap<QString, ftTransferModule*> mDownloads;
+    QMap<int, downloadGroup> mDownloadGroups;
 
     //The path completed files are moved to
     QString mDownloadPath;
     //The path that incoming files are temporarily stored in
     QString mPartialsPath;
-};
-
-/*Internal class used to represent files being downloaded to be stored by ftController.
-  Each file has one ftFileControl, but may be used by multiple transfers (have multiple names and
-  other identifying info) if the same file is found in more than one download simultaneously. */
-class ftFileControl {
-public:
-
-    enum downloadStatus {
-        DOWNLOADING, //Default status
-        COMPLETED_CHECK, //Done downloading, check to see if all associated downloads done
-        COMPLETED_WAIT, //Done downloading, waiting for associated downloads to finish
-        /* The ones above here are for the mDownloads list, below here for mCompleted list */
-        COMPLETED_ERROR, //Error when trying to complete on file copy/move operations
-        COMPLETED //Done
-    };
-
-    ftFileControl() :mTransfer(NULL), mCreator(NULL), mState(DOWNLOADING), mSize(0), mFlags(0) {return;}
-    ftFileControl(uint64_t size, std::string hash, uint32_t flags)
-        :mState(DOWNLOADING), mHash(hash), mSize(size), mFlags(flags) {return;}
-
-    //Returns the destination in the temp directory while downloading
-    QString tempDestination(){
-        return files->getPartialsDirectory() + QDir::separator() + mHash.c_str();
-    }
-
-    //There can be more than one if two separate downloads are downloading the same file
-    //These items are synchronized, in that the first item of each refer to one unified set, the 2nd another, etc.
-    QStringList librarymixer_names;
-    QStringList filenames;
-    QList<int> orig_item_ids;
-
-    ftTransferModule *mTransfer;
-    ftFileCreator *mCreator;
-    downloadStatus mState;
-    std::string mHash; //Also used as the name of the temporary file
-    uint64_t mSize;
-    uint32_t mFlags;
-};
-
-/* Used to store things in ftController's mInitialToLoad list
-   Contains all necessary information to make a request
-   Unlike ftFileControl, each ftPendingRequest only represents a single file for a single transfer. */
-
-class ftPendingRequest {
-public:
-    ftPendingRequest(QString _librarymixer_name, int _orig_item_id, QString fname, std::string hash,
-                     uint64_t size, uint32_t flags, QList<int> &_sourceIds)
-        : librarymixer_name(_librarymixer_name), orig_item_id(_orig_item_id), filename(fname),
-          mHash(hash), mSize(size), mFlags(flags), sourceIds(_sourceIds) {return;}
-
-    ftPendingRequest() : mSize(0), mFlags(0) {return;}
-
-    //These items are synchronized, in that the first item of each refer to one unified set, the 2nd another, etc.
-    QString librarymixer_name;
-    int orig_item_id;
-    QString filename;
-
-    std::string mHash;
-    uint64_t mSize;
-    uint32_t mFlags;
-    QList<int> sourceIds;
 };
 
 #endif

@@ -48,7 +48,7 @@ pqilistener *pqisslpersongrp::createListener(struct sockaddr_in laddr) {
     return listener;
 }
 
-pqiperson *pqisslpersongrp::createPerson(std::string id, int librarymixer_id, pqilistener *listener) {
+pqiperson *pqisslpersongrp::createPerson(std::string id, unsigned int librarymixer_id, pqilistener *listener) {
     {
         std::ostringstream out;
         out << "pqipersongrp::createPerson() PeerId: " << id;

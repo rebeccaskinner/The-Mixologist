@@ -32,7 +32,7 @@ const int pqipersonzone = 82371;
  * #define PERSON_DEBUG
  ****/
 
-pqiperson::pqiperson(std::string id, int librarymixer_id, pqipersongrp *pg)
+pqiperson::pqiperson(std::string id, unsigned int librarymixer_id, pqipersongrp *pg)
     :PQInterface(id, librarymixer_id), active(false), activepqi(NULL),
      inConnectAttempt(false), waittimes(0),
      pqipg(pg) {

@@ -30,6 +30,7 @@
 #include <iomanip>
 
 #include "util/debug.h"
+#include "time.h"
 const int rsudpsorterzone = 28477;
 
 static const int STUN_TTL = 64;
@@ -60,7 +61,7 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
     std::cerr << std::endl;
 #endif
 
-    sortMtx.lock();   /********** LOCK MUTEX *********/
+    sortMtx.lock();
     mStunLastRecv = time(NULL);
 
     /* look for a peer */
@@ -96,7 +97,7 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
         (it->second)->recvPkt(data, size);
     }
 
-    sortMtx.unlock();   /******** UNLOCK MUTEX *********/
+    sortMtx.unlock();
     /* done */
 }
 
@@ -114,7 +115,7 @@ int  UdpSorter::sendPkt(void *data, int size, struct sockaddr_in &to, int ttl) {
 }
 
 int     UdpSorter::status(std::ostream &out) {
-    sortMtx.lock();   /********** LOCK MUTEX *********/
+    sortMtx.lock();
 
     out << "UdpSorter::status()" << std::endl;
     out << "localaddr: " << laddr << std::endl;
@@ -125,7 +126,7 @@ int     UdpSorter::status(std::ostream &out) {
     }
     out << std::endl;
 
-    sortMtx.unlock();   /******** UNLOCK MUTEX *********/
+    sortMtx.unlock();
 
     udpLayer->status(out);
 
@@ -163,7 +164,7 @@ int UdpSorter::close() {
 
 /* add a TCPonUDP stream */
 int UdpSorter::addUdpPeer(UdpPeer *peer, const struct sockaddr_in &raddr) {
-    sortMtx.lock();   /********** LOCK MUTEX *********/
+    sortMtx.lock();
 
 
     /* check for duplicate */
@@ -179,12 +180,12 @@ int UdpSorter::addUdpPeer(UdpPeer *peer, const struct sockaddr_in &raddr) {
         streams[raddr] = peer;
     }
 
-    sortMtx.unlock();   /******** UNLOCK MUTEX *********/
+    sortMtx.unlock();
     return ok;
 }
 
 int UdpSorter::removeUdpPeer(UdpPeer *peer) {
-    MixStackMutex stack(sortMtx);   /********** LOCK MUTEX *********/
+    QMutexLocker stack(&sortMtx);
 
     /* check for duplicate */
     std::map<struct sockaddr_in, UdpPeer *>::iterator it;
@@ -316,9 +317,9 @@ int     UdpSorter::doStun(struct sockaddr_in stun_addr) {
     /* send it off */
     sendPkt(stundata, tmplen, stun_addr, STUN_TTL);
 
-    sortMtx.lock();   /********** LOCK MUTEX *********/
+    sortMtx.lock();
     mStunLastSend = time(NULL);
-    sortMtx.unlock();   /******** UNLOCK MUTEX *********/
+    sortMtx.unlock();
 
 #ifdef DEBUG_UDP_SORTER
     std::ostringstream out;
@@ -470,7 +471,7 @@ bool UdpStun_isStunPacket(void *data, int size) {
 /******************************* STUN Handling ********************************/
 
 bool UdpSorter::setStunKeepAlive(uint32_t required) {
-    sortMtx.lock();   /********** LOCK MUTEX *********/
+    sortMtx.lock();
 
     mStunKeepAlive = (required != 0);
 
@@ -478,7 +479,7 @@ bool UdpSorter::setStunKeepAlive(uint32_t required) {
     std::cerr << "UdpSorter::setStunKeepAlive() to: " << mStunKeepAlive;
     std::cerr << std::endl;
 #endif
-    sortMtx.unlock();   /******** UNLOCK MUTEX *********/
+    sortMtx.unlock();
 
     return 1;
 }
@@ -492,9 +493,9 @@ bool    UdpSorter::addStunPeer(const struct sockaddr_in &remote, const char *pee
 
     storeStunPeer(remote, peerid);
 
-    sortMtx.lock();   /********** LOCK MUTEX *********/
+    sortMtx.lock();
     bool needStun = (!eaddrKnown);
-    sortMtx.unlock();   /******** UNLOCK MUTEX *********/
+    sortMtx.unlock();
 
     if (needStun) {
         doStun(remote);
@@ -510,7 +511,8 @@ bool    UdpSorter::storeStunPeer(const struct sockaddr_in &remote, const char *p
     std::cerr << std::endl;
 #endif
 
-    MixStackMutex stack(sortMtx);   /********** LOCK MUTEX *********/
+    QMutexLocker stack(&sortMtx);
+
 
     std::list<TouStunPeer>::iterator it;
     for (it = mStunList.begin(); it != mStunList.end(); it++) {
@@ -547,7 +549,8 @@ bool    UdpSorter::checkStunKeepAlive() {
     TouStunPeer peer;
     time_t now;
     {
-        MixStackMutex stack(sortMtx);   /********** LOCK MUTEX *********/
+        QMutexLocker stack(&sortMtx);
+
 
         if (!mStunKeepAlive) {
 #ifdef DEBUG_UDP_SORTER
@@ -586,7 +589,8 @@ bool    UdpSorter::checkStunKeepAlive() {
     doStun(peer.remote);
 
     {
-        MixStackMutex stack(sortMtx);   /********** LOCK MUTEX *********/
+        QMutexLocker stack(&sortMtx);
+
         if (peer.failCount < TOU_STUN_MAX_FAIL_COUNT) {
             peer.failCount++;
             peer.lastsend = now;

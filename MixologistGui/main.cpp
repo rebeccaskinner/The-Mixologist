@@ -28,6 +28,7 @@
 #include <gui/NetworkDialog.h>
 #include <gui/TransfersDialog.h>
 #include <gui/LibraryDialog.h>
+#include <gui/FriendsLibraryDialog.h>
 #include <gui/StartDialog.h>
 #include <interface/init.h>
 #include <interface/iface.h>
@@ -88,14 +89,11 @@ int main(int argc, char *argv[]) {
     //The main window can minimize to system tray, and when minimized, we don't want the program to quit when the last visible window closes.
     instance.setQuitOnLastWindowClosed(false);
     //For MixologistApplication (extending QTSingleApplication) to pass urls to an already running instance.
-    QObject::connect(&instance, SIGNAL(messageReceived(const QString &)),
-                     mainwindow->transfersDialog, SLOT(download(const QString &)));
+    QObject::connect(&instance, SIGNAL(messageReceived(QString)),
+                     mainwindow->transfersDialog, SLOT(download(QString)));
     //To display a label at the bottom while hashing files.
-    QObject::connect(notify, SIGNAL(hashingInfoChanged(const QString &)),
-                     mainwindow, SLOT(updateHashingInfo(const QString &)));
-    //To display library on the LibraryDialog.
-    QObject::connect(notify, SIGNAL(libraryUpdated()),
-                     mainwindow->libraryDialog, SLOT(insertLibrary()));
+    QObject::connect(notify, SIGNAL(hashingInfoChanged(QString)),
+                     mainwindow, SLOT(updateHashingInfo(QString)));
     //To display transfers on the TransfersDialog, as well as the total rate info in the corner.
     QObject::connect(notify, SIGNAL(transfersChanged()),
                      mainwindow->transfersDialog, SLOT(insertTransfers()));
@@ -103,30 +101,30 @@ int main(int argc, char *argv[]) {
     QObject::connect(notify, SIGNAL(friendsChanged()),
                      mainwindow->peersDialog, SLOT(insertPeers()));
     //To display chat status in chat windows.
-    QObject::connect(notify, SIGNAL(chatStatusChanged(int,const QString &)),
-                     mainwindow->peersDialog, SLOT(updatePeerStatusString(int,const QString &)));
+    QObject::connect(notify, SIGNAL(chatStatusChanged(unsigned int, QString)),
+                     mainwindow->peersDialog, SLOT(updatePeerStatusString(unsigned int, QString)));
     //To popup a chat box on incoming requests where a chat window is needed
-    QObject::connect(notify, SIGNAL(requestEventOccurred(int,int,int)),
-                     mainwindow->peersDialog, SLOT(insertRequestEvent(int,int,int)));
+    QObject::connect(notify, SIGNAL(requestEventOccurred(int,unsigned int,unsigned int)),
+                     mainwindow->peersDialog, SLOT(insertRequestEvent(int,unsigned int,unsigned int)));
     //To popup a chat box on transfer events where the friend's response requests chatting or indicates an error.
-    QObject::connect(notify, SIGNAL(transferChatEventOccurred(int,int,QString,QString)),
-                     mainwindow->peersDialog, SLOT(insertTransferEvent(int,int,QString,QString)));
-    //To popup a query box on transfer events where the friend's response requires further input.
-    QObject::connect(notify, SIGNAL(transferQueryEventOccurred(int,int,QString,QString)),
-                     mainwindow->transfersDialog, SLOT(insertTransferEvent(int,int,QString,QString)));
+    QObject::connect(notify, SIGNAL(transferChatEventOccurred(int,unsigned int,QString,QString)),
+                     mainwindow->peersDialog, SLOT(insertTransferEvent(int,unsigned int,QString,QString)));
     //To popup a box informing that a friend is attempting to send a file.
-    QObject::connect(notify, SIGNAL(suggestionReceived(int,int,QString)),
-                     mainwindow->transfersDialog, SLOT(suggestionReceived(int,int,QString)));
+    //QList<qlonglong> is not a default registerd type for QT's meta-object system, so we must first manually register it.
+    qRegisterMetaType<QList<qlonglong> >("QList<qlonglong>");
+    QObject::connect(notify, SIGNAL(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)),
+                     mainwindow->transfersDialog, SLOT(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)));
     /* When we have an attempted connection from a peer with a bad authentication certificate, update friends from the server
        to make sure that it's not because we have outdated information. Routing this through the GUI enables us
        to show the update graphics while doing an automatic update. */
     QObject::connect(notify, SIGNAL(connectionDenied()),
                      mainwindow->peersDialog, SLOT(updateFriends()));
-    QObject::connect(notify, SIGNAL(userOptionalInfo(int,int,QString)),
-                     mainwindow->peersDialog, SLOT(insertUserOptional(int,int,QString)));
+    QObject::connect(notify, SIGNAL(userOptionalInfo(unsigned int,int,QString)),
+                     mainwindow->peersDialog, SLOT(insertUserOptional(unsigned int,int,QString)));
 
     QSettings *settings = new QSettings(*mainSettings, QSettings::IniFormat);
     if (!settings->value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool()) mainwindow->show();
+
     settings->deleteLater();
 
     if (!args.isEmpty() && args.last().startsWith("mixology:", Qt::CaseInsensitive)) {

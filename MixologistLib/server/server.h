@@ -24,7 +24,8 @@
 #define MRK_P3_INTERFACE_H
 
 #include "interface/iface.h"
-#include "util/threads.h"
+#include <QThread>
+#include <QMutex>
 
 /*
 The main thread that does most of the work, and implements the Control interface in iface.h that provides high-level control over MixologistLib.
@@ -38,36 +39,43 @@ class p3DhtMgr;
 class p3ChatService;
 class ftServer;
 
-class Server: public Control, public MixThread {
+class Server: public Control, public QThread {
 public:
     Server(){return;}
     virtual ~Server(){return;};
 
+    /* Starts all of MixologistLib's threads. */
     virtual bool StartupMixologist();
+    /* Shuts down connections. */
     virtual bool ShutdownMixologist();
 
+    /* Reloads transfer limits set in settings.ini by the user. */
     virtual void ReloadTransferRates();
+
+    /* Used so that the GUI can inform the library of what version the client is, which is shared with friends on connect.
+       setVersion is not thread-safe but is only being called once on startup before any reading could happen, and then by the status service.
+       If any other thread is going to access these variables, make sure to update and make this thread-safe.
+       The clientName is the name of that client, and can be anything, but for the Mixologist is simply Mixologist.
+       The clientVersion is the version number with that client.
+       The latestKnownVersion indicates that the user has indicated he should not be informed about new versions equal to or lower than that version. */
+    virtual void setVersion(const QString &clientName, qulonglong clientVersion, qulonglong latestKnownVersion);
+    virtual QString clientName();
+    virtual qulonglong clientVersion();
+    virtual qulonglong latestKnownVersion();
+
+private:
 
     /* This is the main MixologistLib loop, handles the ticking */
     virtual void run();
 
-    /* locking stuff */
-    void lockCore() {
-        coreMutex.lock();
-    }
+    mutable QMutex coreMutex;
 
-    void unlockCore() {
-        coreMutex.unlock();
-    }
-
-private:
-
-    /* mutex */
-    MixMutex coreMutex;
-
-    /* General Internal Helper Functions (Must be Locked)
-    */
+    /* General Internal Helper Functions (Must be Locked) */
     double getCurrentTS();
+
+    QString storedClientName;
+    qulonglong storedClientVersion;
+    qulonglong storedLatestKnownVersion;
 
 public:
 

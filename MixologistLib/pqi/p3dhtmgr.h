@@ -29,10 +29,12 @@
 #include <map>
 #include "pqi/pqinetwork.h"
 
-#include "util/threads.h"
 #include "pqi/pqimonitor.h"
 
 #include "pqi/pqiassist.h"
+
+#include <QThread>
+#include <QMutex>
 
 /* All other #defs are in .cc */
 #define DHT_ADDR_INVALID        0xff
@@ -87,7 +89,7 @@ public:
     std::string hash2; /* SHA1 Hash of reverse Id */
 };
 
-class p3DhtMgr: public pqiNetAssistConnect, public MixThread {
+class p3DhtMgr: public pqiNetAssistConnect, public QThread {
     /*
      */
 public:
@@ -219,7 +221,7 @@ private:
     // use pqiNetAssistConnect.. version pqiConnectCb *connCb;
 
     /* protected by Mutex */
-    MixMutex dhtMtx;
+    mutable QMutex dhtMtx;
 
     bool     mDhtOn; /* User desired state */
     bool     mDhtModifications; /* any user requests? */

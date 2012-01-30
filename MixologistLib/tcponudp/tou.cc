@@ -33,6 +33,7 @@ static  const int kInitStreamTable = 5;
 #include <iostream>
 
 #include <errno.h>
+#include <time.h>
 
 #define DEBUG_TOU_INTERFACE 1
 /***

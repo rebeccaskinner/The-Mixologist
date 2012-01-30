@@ -25,15 +25,11 @@
 #include <QSettings>
 #include <interface/settings.h>
 #include "interface/peers.h" //for peers variable
-#include "interface/iface.h" //for Control variable and librarymixerconnect
+#include "interface/iface.h" //for Control variable, librarymixerconnect
 
 #include "interface/librarymixer-connect.h"
-#include "interface/librarymixer-library.h"
-
-#if defined(WIN32) || defined(__CYGWIN__)
-#include "wtypes.h"
-#include <winioctl.h> //For sleep
-#endif
+#include "server/librarymixer-library.h"
+#include "server/librarymixer-friendlibrary.h"
 
 const int BLOCKING_TRANSFER_TIMEOUT = 10000; //10 seconds
 
@@ -64,6 +60,11 @@ void LibraryMixerConnect::setupModeAndHost(QString *host, QHttp::ConnectionMode 
         http->setUser(email, password);
         *mode = QHttp::ConnectionModeHttps;
     } else *mode = QHttp::ConnectionModeHttp;
+
+    if (host->compare(DEFAULT_MIXOLOGY_SERVER, Qt::CaseInsensitive) == 0){
+        *host = DEFAULT_MIXOLOGY_SERVER_VALUE;
+    }
+
     if (host->startsWith("http://")) {
         *mode = QHttp::ConnectionModeHttp;
         host->remove(0, 7);
@@ -72,13 +73,9 @@ void LibraryMixerConnect::setupModeAndHost(QString *host, QHttp::ConnectionMode 
         *mode = QHttp::ConnectionModeHttps;
         host->remove(0, 8);
     }
-    if (host->compare(DEFAULT_MIXOLOGY_SERVER, Qt::CaseInsensitive) == 0){
-        *host = DEFAULT_MIXOLOGY_SERVER_VALUE;
-    }
 }
 
-int LibraryMixerConnect::downloadXML(const QString &path,
-                                     QIODevice *destination) {
+int LibraryMixerConnect::downloadXML(const QString &path, QIODevice *destination) {
     QString host;
     QHttp::ConnectionMode mode;
     setupModeAndHost(&host, &mode);
@@ -105,7 +102,7 @@ int LibraryMixerConnect::downloadVersion(qlonglong current) {
 int LibraryMixerConnect::downloadInfo() {
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
-    info_download_id = downloadXML("/api/user?id=&name=&checkout_link1=&contact_link1=&link_title1=&checkout_link2=&contact_link2=&link_title2=&checkout_link3=&contact_link3=&link_title3=",
+    info_download_id = downloadXML("/api/user?id=&name=&checkout_link1=&contact_link1=&link_title1=&checkout_link2=&contact_link2=&link_title2=&checkout_link3=&contact_link3=&link_title3=&library=&libraryonlycheckout=true&librarypaginate=-1",
                                    buffer);
     return info_download_id;
 }
@@ -115,16 +112,12 @@ int LibraryMixerConnect::downloadLibrary(bool blocking) {
         lastLibraryUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
         if (!buffer->open(QIODevice::ReadWrite)) return -1;
-        library_download_id = downloadXML("/api/library?paginate=false&onlycheckout=true", buffer);
+        library_download_id = downloadXML("/api/user?library=&libraryonlycheckout=true&librarypaginate=-1", buffer);
         if (blocking) {
             doneTransfer = false;
             QTimer::singleShot(BLOCKING_TRANSFER_TIMEOUT, this, SLOT(blockingTimeOut()));
             while (!doneTransfer) {
-#ifdef WIN32
-                Sleep(1000); /* milliseconds */
-#else
-                usleep(1000000); /* microseconds */
-#endif
+                qApp->processEvents(QEventLoop::WaitForMoreEvents);
             }
             return 0;
         } else return library_download_id;
@@ -147,6 +140,18 @@ int LibraryMixerConnect::downloadFriends(bool blocking) {
             }
             return 0;
         } else return friend_download_id;
+    }
+    return -1;
+}
+
+int LibraryMixerConnect::downloadFriendsLibrary() {
+    if (lastFriendLibraryUpdate.isNull() || lastFriendLibraryUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
+        lastFriendLibraryUpdate = QDateTime::currentDateTime();
+        buffer = new QBuffer();
+        if (!buffer->open(QIODevice::ReadWrite)) return -1;
+        friend_library_download_id = downloadXML("/api/library?excludeself=&onlycheckout=",
+                                                 buffer);
+        return friend_library_download_id;
     }
     return -1;
 }
@@ -225,7 +230,7 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
     if (requestId == version_check_id) {
         if (error) goto versionDownloadError;
 
-        qlonglong version = 0;
+        qulonglong version = 0;
         QString description("");
         QString importance("Recommended");
 
@@ -287,11 +292,19 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         if (contact3Node.isNull()) goto infoDownloadError;
         QDomElement title3Node = rootNode.firstChildElement("link_title3");
         if (title3Node.isNull()) goto infoDownloadError;
+        QDomElement libraryNode = rootNode.firstChildElement("library");
+        if (libraryNode.isNull()) goto infoDownloadError;
 
         emit downloadedInfo(nameNode.text(), idNode.text().toInt(),
                             checkout1Node.text(), contact1Node.text(), title1Node.text(),
                             checkout2Node.text(), contact2Node.text(), title2Node.text(),
                             checkout3Node.text(), contact3Node.text(), title3Node.text());
+
+        /* The connection used by StartDialog to the signal downloadedInfo will run in the same thread.
+           This is essential because it means that all of the StartDialog setup, including the creation of the librarymixermanager
+           will occur before this line, which uses the librarymixermanager. */
+        librarymixermanager->mergeLibrary(libraryNode);
+
         return;
     } else if (requestId == info_upload_id) {
         if (error) goto infoUploadError;
@@ -347,14 +360,6 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
 
         emit uploadedInfo();
         return;
-    } else if (requestId == library_download_id) {
-        if (error) goto libraryDownloadError;
-        buffer->seek(0);
-        LibraryMixerLibraryManager::mergeLibrary(*buffer);
-        buffer->deleteLater();
-        emit downloadedLibrary();
-        doneTransfer = true;
-        return;
     } else if (requestId == friend_download_id) {
         if (error) goto friendDownloadError;
 
@@ -370,7 +375,8 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
 
             std::string local_ip, external_ip;
             QString name, certificate;
-            int librarymixer_id, local_port, external_port;
+            unsigned int librarymixer_id;
+            int local_port, external_port;
 
             if (!friendNode.firstChildElement("name").isNull()) {
                 name = friendNode.firstChildElement("name").text();
@@ -402,6 +408,36 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         emit downloadedFriends();
         doneTransfer = true;
         return;
+    } else if (requestId == friend_library_download_id) {
+        if (error) goto friendLibraryDownloadError;
+
+        QDomDocument xml;
+        buffer->seek(0);
+        if (!xml.setContent(buffer)) goto friendLibraryDownloadError;
+        buffer->deleteLater();
+        QDomElement rootNode = xml.documentElement();
+        if (rootNode.tagName() != "library" ) goto friendLibraryDownloadError;
+
+        libraryMixerFriendLibrary->mergeLibrary(rootNode);
+
+        emit downloadedFriendsLibrary();
+
+        return;
+    } else if (requestId == library_download_id) {
+        if (error) goto libraryDownloadError;
+        QDomDocument xml;
+        buffer->seek(0);
+        if (!xml.setContent(buffer)) goto infoDownloadError;
+        buffer->deleteLater();
+        QDomElement rootNode = xml.documentElement();
+        QDomElement libraryNode = rootNode.firstChildElement("library");
+        if (libraryNode.isNull()) goto infoDownloadError;
+
+        librarymixermanager->mergeLibrary(libraryNode);
+
+        emit downloadedLibrary();
+        doneTransfer = true;
+        return;
     }
 versionDownloadError:
     handleErrorReceived(version_download_error);
@@ -413,11 +449,14 @@ infoDownloadError:
 infoUploadError:
     handleErrorReceived(info_upload_error);
     return;
-libraryDownloadError:
-    handleErrorReceived(library_download_error);
-    return;
 friendDownloadError:
     handleErrorReceived(friend_download_error);
+    return;
+friendLibraryDownloadError:
+    handleErrorReceived(friend_library_download_error);
+    return;
+libraryDownloadError:
+    handleErrorReceived(library_download_error);
     return;
 }
 

@@ -158,13 +158,13 @@ int     UdpLayer::status(std::ostream &out) {
 
 int UdpLayer::close() {
     /* close socket if open */
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     if (sockfd > 0) {
         tounet_close(sockfd);
     }
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
     return 1;
 }
 
@@ -184,8 +184,9 @@ void UdpLayer::recv_loop() {
         /* select on the socket TODO */
         fd_set rset;
         for (;;) {
+            if (sockfd < 0) break;
             FD_ZERO(&rset);
-            FD_SET(sockfd, &rset);
+            FD_SET((unsigned int)sockfd, &rset);
             timeout.tv_sec = 0;
             timeout.tv_usec = 500000;       /* 500 ms timeout */
             status = select(sockfd+1, &rset, NULL, NULL, &timeout);
@@ -236,7 +237,7 @@ int UdpLayer::sendPkt(void *data, int size, sockaddr_in &to, int ttl) {
 
 /* setup connections */
 int UdpLayer::openSocket() {
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     /* make a socket */
     sockfd = tounet_socket(PF_INET, SOCK_DGRAM, 0);
@@ -252,7 +253,7 @@ int UdpLayer::openSocket() {
         errorState = EADDRINUSE;
         //exit(1);
 
-        sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+        sockMtx.unlock();
         return -1;
     }
 
@@ -268,7 +269,7 @@ int UdpLayer::openSocket() {
     std::cerr << "Socket Bound to : " << laddr << std::endl;
 #endif
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
 
 #ifdef DEBUG_UDP_LAYER
     std::cerr << "Setting TTL to " << UDP_DEF_TTL << std::endl;
@@ -280,12 +281,12 @@ int UdpLayer::openSocket() {
 }
 
 int UdpLayer::setTTL(int t) {
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     int err = tounet_setsockopt(sockfd, IPPROTO_IP, IP_TTL, &t, sizeof(int));
     ttl = t;
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
 
 #ifdef DEBUG_UDP_LAYER
     std::cerr << "UdpLayer::setTTL(" << t << ") returned: " << err;
@@ -296,24 +297,24 @@ int UdpLayer::setTTL(int t) {
 }
 
 int UdpLayer::getTTL() {
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     int t = ttl;
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
 
     return t;
 }
 
 /* monitoring / updates */
 int UdpLayer::okay() {
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     bool nonFatalError = ((errorState == 0) ||
                           (errorState == EAGAIN) ||
                           (errorState == EINPROGRESS));
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
 
 #ifdef DEBUG_UDP_LAYER
     if (!nonFatalError) {
@@ -339,12 +340,12 @@ int UdpLayer::receiveUdpPacket(void *data, int *size, struct sockaddr_in &from) 
     socklen_t fromsize = sizeof(fromaddr);
     int insize = *size;
 
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     insize = tounet_recvfrom(sockfd,data,insize,0,
                              (struct sockaddr *)&fromaddr,&fromsize);
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
 
     if (0 < insize) {
 #ifdef DEBUG_UDP_LAYER
@@ -367,13 +368,13 @@ int UdpLayer::sendUdpPacket(const void *data, int size, struct sockaddr_in &to) 
 #endif
     struct sockaddr_in toaddr = to;
 
-    sockMtx.lock();   /********** LOCK MUTEX *********/
+    sockMtx.lock();
 
     tounet_sendto(sockfd, data, size, 0,
                   (struct sockaddr *) &(toaddr),
                   sizeof(toaddr));
 
-    sockMtx.unlock(); /******** UNLOCK MUTEX *********/
+    sockMtx.unlock();
     return 1;
 }
 

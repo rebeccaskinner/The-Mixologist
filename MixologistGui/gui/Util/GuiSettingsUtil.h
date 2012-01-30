@@ -19,15 +19,15 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#ifndef _SETTINGSUTIL_H
-#define _SETTINGSUTIL_H
+#ifndef _GUI_SETTINGS_UTIL_H
+#define _GUI_SETTINGS_UTIL_H
 
 #include <interface/settings.h>
 
 class QWidget;
 class QString;
 
-class SettingsUtil {
+class GuiSettingsUtil {
 
 public:
         //Save placement, state and size information of a window.

@@ -25,42 +25,64 @@
 
 #include <iostream>
 #include <stdint.h>
-#include "util/threads.h"
 #include "interface/files.h"
 #include <QFile>
+#include <QMutex>
 
 /*
  * ftFileProvider represents a single file that is being read from.
- * This is extended ftFileCreator in order to represent a file being written to.
+ * This is extended by ftFileCreator in order to represent a file being written to.
  */
 class ftFileProvider {
 public:
-    ftFileProvider(QString path, uint64_t size, std::string hash);
+    ftFileProvider(QString path, uint64_t size, QString hash);
     virtual ~ftFileProvider();
+
+    //Returns true if the file is found on disk and has the size expected. Does not check hash.
+    bool checkFileValid();
+
+    //Called by ftDataDemultiplex to fill out the uploadFileInfo with all of the stats on this file
+    virtual bool FileDetails(uploadFileInfo &fileInfo);
 
     //Reads from the file starting at the specified offset for an amount equal to chunk_size into data
     //Returns false on any type of failure to read
     virtual bool getFileData(uint64_t offset, uint32_t &chunk_size, void *data);
-    //Called by ftDataDemultiplex to fill out the FileInfo with all of the stats on this file
-    virtual bool FileDetails(FileInfo &fileInfo);
+
+    //Closes the file handle to the file
+    void closeFile();
+
+    //Return the file's full path
+    QString getPath() const;
+
     //Returns the file hash
-    std::string getHash() {return hash;}
+    QString getHash() const;
+
     //Returns the file size
-    uint64_t getFileSize() {return fullFileSize;}
+    uint64_t getFileSize() const;
+
     //Called from ftDataDemultiplex to update the stat on the last friend to have requested this
-    void setLastRequestor(const std::string &id) ;
+    void setLastRequestor(const std::string &id);
+
     //Moves the old file to new location and updates internal variables
     bool moveFile(QString newPath);
+
+    //Accessors for a flag on whether this is an internal Mixologist file.
+    //Generally used to share files without displaying them in the UI
+    bool isInternalMixologistFile() const {return internalMixologistFile;}
+    void setInternalMixologistFile(bool newValue) {internalMixologistFile = newValue;}
 
 protected:
     //Total file size of the file
     uint64_t fullFileSize;
     //Hash of the file
-    std::string hash;
+    QString hash;
     //Path to the file
     QString path;
     //QFile object that we use for all file operations
     QFile *file;
+    //True if this is a file that is being shared for the Mixologist's own operations rather than by the user.
+    //Used by off-LibraryMixer sharing when transfering the XML share information
+    bool internalMixologistFile;
 
     //These stats are used to report information to the GUI
     //Right now, we are combining stats if multiple friends are requesting the same file
@@ -76,7 +98,7 @@ protected:
     time_t lastTransferRateCalc; //Used for estimating transfer rate.
     uint32_t transferredSinceLastCalc;
 
-    MixMutex ftcMutex;
+    mutable QMutex ftcMutex;
 };
 
 #endif // FT_FILE_PROVIDER_HEADER

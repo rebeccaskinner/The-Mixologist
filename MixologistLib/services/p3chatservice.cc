@@ -218,7 +218,7 @@ std::list<ChatMsgItem *> p3ChatService::getChatQueue() {
 
 void p3ChatService::setOwnAvatarJpegData(const unsigned char *data,int size) {
     {
-        MixStackMutex stack(mChatMtx); /********** STACK LOCKED MTX ******/
+        QMutexLocker stack(&mChatMtx);
 
         if (_own_avatar != NULL)
             delete _own_avatar ;
@@ -232,7 +232,7 @@ void p3ChatService::setOwnAvatarJpegData(const unsigned char *data,int size) {
 }
 
 void p3ChatService::receiveAvatarJpegData(ChatAvatarItem *ci) {
-    MixStackMutex stack(mChatMtx); /********** STACK LOCKED MTX ******/
+    QMutexLocker stack(&mChatMtx);
 
     bool new_peer = (_avatars.find(ci->PeerId()) == _avatars.end()) ;
 
@@ -243,7 +243,7 @@ void p3ChatService::receiveAvatarJpegData(ChatAvatarItem *ci) {
 
 void p3ChatService::getOwnAvatarJpegData(unsigned char *& data,int &size) {
     // should be a Mutex here.
-    MixStackMutex stack(mChatMtx); /********** STACK LOCKED MTX ******/
+    QMutexLocker stack(&mChatMtx);
 
     uint32_t s = 0 ;
     if (_own_avatar != NULL) {
@@ -256,7 +256,7 @@ void p3ChatService::getOwnAvatarJpegData(unsigned char *& data,int &size) {
 }
 void p3ChatService::getAvatarJpegData(const std::string &peer_id,unsigned char *& data,int &size) {
     // should be a Mutex here.
-    MixStackMutex stack(mChatMtx); /********** STACK LOCKED MTX ******/
+    QMutexLocker stack(&mChatMtx);
 
     std::map<std::string,AvatarInfo *>::const_iterator it = _avatars.find(peer_id) ;
 
@@ -285,7 +285,7 @@ void p3ChatService::sendAvatarRequest(const std::string &peer_id) {
 }
 
 ChatAvatarItem *p3ChatService::makeOwnAvatarItem() {
-    MixStackMutex stack(mChatMtx); /********** STACK LOCKED MTX ******/
+    QMutexLocker stack(&mChatMtx);
     ChatAvatarItem *ci = new ChatAvatarItem();
 
     _own_avatar->toUnsignedChar(ci->image_data,ci->image_size) ;

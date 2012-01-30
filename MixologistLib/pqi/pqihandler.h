@@ -25,16 +25,16 @@
 
 #include "pqi/pqi.h"
 
-#include "util/threads.h"
-
 #include <map>
 #include <list>
+
+#include <QMutex>
 
 /*
 Aggregates the PQInterfaces (i.e. pqipersons, each of which corresponds to a peer/pqiloopback, for self),
 creating a single interface from which to call to send or get NetItems.
 Manages total bandwidth limits and enforces them on the PQInterfaces.
-In practice, this is used in pqipersongrp as a class is extends.
+In practice, this is used in pqipersongrp as a class it extends.
 */
 class pqihandler: public P3Interface {
 public:
@@ -76,7 +76,7 @@ protected:
     //Called from locked_GetItems, takes an incoming item and puts it on the appropriate incoming queue (i.e. service, file request, file data)
     void locked_SortnStoreItem(NetItem *item);
 
-    MixMutex coreMtx;
+    mutable QMutex coreMtx;
 
     //Where all the aggregated PQInterfaces are held
     std::map<std::string, PQInterface *> pqis; //cert_ids / PQInterface
@@ -99,25 +99,25 @@ private:
 };
 
 inline void pqihandler::setMaxIndivRate(bool in, float val) {
-    MixStackMutex stack(coreMtx);
+    QMutexLocker stack(&coreMtx);
     if (in) maxIndivIn = val;
     else maxIndivOut = val;
 }
 
 inline float pqihandler::getMaxIndivRate(bool in) {
-    MixStackMutex stack(coreMtx);
+    QMutexLocker stack(&coreMtx);
     if (in) return maxIndivIn;
     else return maxIndivOut;
 }
 
 inline void pqihandler::setMaxRate(bool in, float val) {
-    MixStackMutex stack(coreMtx);
+    QMutexLocker stack(&coreMtx);
     if (in) maxTotalIn = val;
     else maxTotalOut = val;
 }
 
 inline float pqihandler::getMaxRate(bool in) {
-    MixStackMutex stack(coreMtx);
+    QMutexLocker stack(&coreMtx);
     if (in) return maxTotalIn;
     else return maxTotalOut;
 }

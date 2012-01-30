@@ -45,17 +45,20 @@
 class pqiNetAssist {
 public:
 
-    virtual ~pqiNetAssist() {
-        return;
-    }
+    virtual ~pqiNetAssist() {return;}
 
     /* External Interface */
-    virtual void    enable(bool on) = 0;
-    virtual void    shutdown() = 0; /* blocking call */
-    virtual void    restart() = 0;
+    /* Asynchronous call to enable or disable this NetAssist. */
+    virtual void enable(bool on) = 0;
+    /* Blocking call to disable this NetAssist. */
+    virtual void shutdown() = 0;
+    /* Asynchronous call to disable this NetAssist and restart it. */
+    virtual void restart() = 0;
 
-    virtual bool    getEnabled() = 0;
-    virtual bool    getActive() = 0;
+    /* True if this NetAssist has been set to enabled. */
+    virtual bool getEnabled() = 0;
+    /* True if this NetAssist has successfully started. */
+    virtual bool getActive() = 0;
 
 };
 
@@ -66,13 +69,13 @@ public:
         return;
     }
 
-    /* the address that the listening port is on */
-    virtual void    setInternalPort(unsigned short iport_in) = 0;
-    virtual void    setExternalPort(unsigned short eport_in) = 0;
+    /* The address that the listening port is on. */
+    virtual void setInternalPort(unsigned short iport_in) = 0;
+    virtual void setExternalPort(unsigned short eport_in) = 0;
 
-    /* as determined by uPnP */
-    virtual bool    getInternalAddress(struct sockaddr_in &addr) = 0;
-    virtual bool    getExternalAddress(struct sockaddr_in &addr) = 0;
+    /* Addresses as determined by uPnP. */
+    virtual bool getInternalAddress(struct sockaddr_in &addr) = 0;
+    virtual bool getExternalAddress(struct sockaddr_in &addr) = 0;
 
 };
 
@@ -93,28 +96,28 @@ public:
      * for the DHT, and must be non-blocking and return quickly
      */
 
-    virtual void    setBootstrapAllowed(bool on) = 0;
-    virtual bool    getBootstrapAllowed() = 0;
+    virtual void setBootstrapAllowed(bool on) = 0;
+    virtual bool getBootstrapAllowed() = 0;
 
     /* set key data */
-    virtual bool    setExternalInterface(struct sockaddr_in laddr,
+    virtual bool setExternalInterface(struct sockaddr_in laddr,
                                          struct sockaddr_in raddr, uint32_t type) = 0;
 
     /* add / remove peers */
-    virtual bool    findPeer(std::string id) = 0;
-    virtual bool    dropPeer(std::string id) = 0;
+    virtual bool findPeer(std::string id) = 0;
+    virtual bool dropPeer(std::string id) = 0;
 
     /* post DHT key saying we should connect (callback when done) */
-    virtual bool    notifyPeer(std::string id) = 0;
+    virtual bool notifyPeer(std::string id) = 0;
 
     /* extract current peer status */
-    virtual bool    getPeerStatus(std::string id,
+    virtual bool getPeerStatus(std::string id,
                                   struct sockaddr_in &laddr, struct sockaddr_in &raddr,
                                   uint32_t &type, uint32_t &mode) = 0;
 
     /* stun */
-    virtual bool    enableStun(bool on)     = 0;
-    virtual bool    addStun(std::string id)     = 0;
+    virtual bool enableStun(bool on)     = 0;
+    virtual bool addStun(std::string id)     = 0;
 
 protected:
     std::string  mPeerId;

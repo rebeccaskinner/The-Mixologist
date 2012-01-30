@@ -68,6 +68,7 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     ui.startMinimized->setChecked(settings.value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool());
+    ui.offLM->setChecked(settings.value("Gui/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool());
 
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
         ui.showAdvanced->setChecked(true);
@@ -79,6 +80,8 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 bool GeneralDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Gui/StartMinimized", ui.startMinimized->checkState());
+    settings.setValue("Gui/EnableOffLibraryMixer", ui.offLM->checkState());
+
 
     if (canHandleRunOnBoot()) setRunOnBoot(ui.runOnBoot->isChecked());
     return true;
@@ -134,7 +137,7 @@ void GeneralDialog::showAdvanced(bool show) {
     if(show) {
         ui.showAdvanced->setText("Hide Advanced View");
         mainwindow->networkDialog = new NetworkDialog(mainwindow->ui.stackPages);
-        mainwindow->_pages.insert(mainwindow->ui.actionNetwork, mainwindow->networkDialog);
+        mainwindow->actionPages.insert(mainwindow->ui.actionNetwork, mainwindow->networkDialog);
         mainwindow->ui.stackPages->insertWidget(mainwindow->ui.stackPages->count(), mainwindow->networkDialog);
         mainwindow->ui.actionNetwork->setVisible(true);
         QObject::connect(mainwindow->notify, SIGNAL(logInfoChanged(QString)),
@@ -147,7 +150,7 @@ void GeneralDialog::showAdvanced(bool show) {
         ui.showAdvanced->setText("Show Advanced View");
         mainwindow->ui.actionNetwork->setVisible(false);
         mainwindow->ui.stackPages->removeWidget(mainwindow->networkDialog);
-        mainwindow->_pages.remove(mainwindow->ui.actionNetwork);
+        mainwindow->actionPages.remove(mainwindow->ui.actionNetwork);
         mainwindow->networkDialog->deleteLater();
         mainwindow->preferencesWindow->ui.actionConnection->setVisible(false);
         mainwindow->preferencesWindow->ui.stackPages->removeWidget(mainwindow->preferencesWindow->connectionDialog);

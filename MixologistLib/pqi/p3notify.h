@@ -26,8 +26,8 @@
 #include "interface/notify.h"
 #include "pqi/pqinotify.h"
 
-#include "util/threads.h"
 #include <list>
+#include <QMutex>
 
 class p3NotifySysMsg {
 public:
@@ -71,7 +71,7 @@ public:
 
 private:
 
-    MixMutex noteMtx;
+    mutable QMutex noteMtx;
 
     //These store the pending messages.
     std::list<p3NotifySysMsg> pendingSysMsgs;

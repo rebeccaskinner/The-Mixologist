@@ -41,7 +41,7 @@ const int PQISTREAM_ABS_MAX = 900000000; /* ~900 MB/sec (actually per loop) */
  ***/
 
 
-pqistreamer::pqistreamer(Serialiser *rss, std::string id, int librarymixer_id, BinInterface *bio_in, int bio_flags_in)
+pqistreamer::pqistreamer(Serialiser *rss, std::string id, unsigned int librarymixer_id, BinInterface *bio_in, int bio_flags_in)
     :PQInterface(id, librarymixer_id), serialiser(rss), bio(bio_in), bio_flags(bio_flags_in),
      pkt_wpending(NULL),
      totalRead(0), totalSent(0),
@@ -54,7 +54,6 @@ pqistreamer::pqistreamer(Serialiser *rss, std::string id, int librarymixer_id, B
     pkt_rpending = malloc(pkt_rpend_size);
     reading_state = reading_state_initial;
 
-    //  thread_id = pthread_self();
     // avoid uninitialized (and random) memory read.
     memset(pkt_rpending,0,pkt_rpend_size);
 
@@ -85,7 +84,7 @@ pqistreamer::pqistreamer(Serialiser *rss, std::string id, int librarymixer_id, B
 }
 
 pqistreamer::~pqistreamer() {
-    MixStackMutex stack(streamerMtx);      // lock out_pkt and out_data
+        QMutexLocker stack(&streamerMtx);
 
     {
         std::ostringstream out;
@@ -152,8 +151,8 @@ int pqistreamer::SendItem(NetItem *si) {
     }
 
     // This is called by different threads, and by threads that are not the handleoutgoing thread,
-    // so it should be protected by a mutex !!
-    MixStackMutex stack(streamerMtx);      // lock out_pkt and out_data
+    // so it should be protected by a mutex
+    QMutexLocker stack(&streamerMtx);
 
     {
         std::ostringstream out;
@@ -251,7 +250,7 @@ int pqistreamer::tick() {
         out << std::endl;
 
         {
-            MixStackMutex stack(streamerMtx);      // lock out_pkt and out_data
+            QMutexLocker stack(&streamerMtx);
             int total = 0;
 
             for (it = out_pkt.begin(); it != out_pkt.end(); it++) {
@@ -302,7 +301,7 @@ int pqistreamer::status() {
 /**************** HANDLE OUTGOING TRANSLATION + TRANSMISSION ******/
 
 int pqistreamer::handleoutgoing() {
-    MixStackMutex stack(streamerMtx); // lock out_pkt and out_data
+    QMutexLocker stack(&streamerMtx);
 
     {
         std::ostringstream out;
@@ -540,7 +539,7 @@ start_packet_read:
 
 /* BandWidth Management Assistance */
 
-int     pqistreamer::outAllowedBytes() {
+int pqistreamer::outAllowedBytes() {
     int currentTime = time(NULL);
 
     int maxout = (int) (getMaxRate(false) * 1000.0);

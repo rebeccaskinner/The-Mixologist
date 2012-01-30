@@ -30,54 +30,38 @@
 #include "gui/TransfersDialog.h"
 #include "gui/Toaster/OnlineToaster.h"
 
+#include <version.h>
+
 #include <iostream>
 #include <sstream>
 #include <time.h>
 
-/*****
- * #define NOTIFY_DEBUG
- ****/
-
-void NotifyQt::notifySuggestion(int librarymixer_id, int item_id, QString name) {
-    emit userOptionalInfo(librarymixer_id, NOTIFY_USER_SUGGEST_RECEIVED, name);
-    emit suggestionReceived(librarymixer_id, item_id, name);
+void NotifyQt::notifySuggestion(unsigned int librarymixer_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes) {
+    emit userOptionalInfo(librarymixer_id, NOTIFY_USER_SUGGEST_RECEIVED, title);
+    emit suggestionReceived(librarymixer_id, title, paths, hashes, filesizes);
 }
 
-void NotifyQt::notifyRequestEvent(transferEvent event, int librarymixer_id, int item_id) {
+void NotifyQt::notifyRequestEvent(transferEvent event, unsigned int librarymixer_id, unsigned int item_id) {
     emit requestEventOccurred(event, librarymixer_id, item_id);
 }
 
-void NotifyQt::notifyTransferEvent(transferEvent event, int librarymixer_id, QString transfer_name, QString extra_info) {
-    if (event == NOTIFY_TRANSFER_LEND) {
-        emit transferQueryEventOccurred(event, librarymixer_id, transfer_name, extra_info);
-    } else {
-        emit transferChatEventOccurred(event, librarymixer_id, transfer_name, extra_info);
-    }
+void NotifyQt::notifyTransferEvent(transferEvent event, unsigned int librarymixer_id, QString transfer_name, QString extra_info) {
+    emit transferChatEventOccurred(event, librarymixer_id, transfer_name, extra_info);
 }
 
-void NotifyQt::notifyChatStatus(int librarymixer_id, const QString &status_string) {
-#ifdef NOTIFY_DEBUG
-    std::cerr << "NotifyQt::notifyChatStatus()" << std::endl;
-#endif
+void NotifyQt::notifyChatStatus(unsigned int librarymixer_id, const QString &status_string) {
     emit chatStatusChanged(librarymixer_id, status_string) ;
 }
 
 void NotifyQt::notifyHashingInfo(QString fileinfo) {
-#ifdef NOTIFY_DEBUG
-    std::cerr << "NotifyQt::notifyHashingInfo()" << std::endl;
-#endif
     emit hashingInfoChanged(fileinfo);
-}
-
-void NotifyQt::notifyLibraryUpdated() {
-    emit libraryUpdated();
 }
 
 void NotifyQt::notifyLog(QString message) {
     emit logInfoChanged(message);
 }
 
-void NotifyQt::notifyUserOptional(int librarymixer_id, userOptionalCodes code, QString message) {
+void NotifyQt::notifyUserOptional(unsigned int librarymixer_id, userOptionalCodes code, QString message) {
     emit userOptionalInfo(librarymixer_id, code, message);
 }
 
@@ -109,7 +93,6 @@ void NotifyQt::UpdateGUI() {
             QSettings settings(*mainSettings, QSettings::IniFormat);
 
             switch (type) {
-                    /* id is the name */
                 case POPUP_CONNECT:
                     if (settings.value("Gui/NotifyConnect", DEFAULT_NOTIFY_CONNECT).toBool()) {
                         OnlineToaster *onlineToaster = new OnlineToaster();
@@ -125,14 +108,23 @@ void NotifyQt::UpdateGUI() {
                                                           QSystemTrayIcon::Information, INT_MAX );
                     }
                     break;
-                case POPUP_UNMATCHED:
-                    if (settings.value("Gui/NotifyUnmatched", DEFAULT_NOTIFY_UNMATCHED).toBool()) {
-                        mainwindow->trayOpenTo = mainwindow->libraryDialog;
-                        mainwindow->trayIcon->showMessage("New library items",
-                                                          "You have new items in your library on LibraryMixer that you have not yet setup in the Mixologist.",
-                                                          QSystemTrayIcon::Warning);
+                case POPUP_NEW_VERSION_FROM_FRIEND:
+                    if (QMessageBox::question(NULL,
+                                              "New version",
+                                              name +
+                                              " connected to you with a newer version of the Mixologist (" +
+                                              VersionUtil::convert_to_display_version(msg.toLongLong()) +
+                                              "). Quit now and download the update?",
+                                              QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+                            == QMessageBox::Yes) {
+                        QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/")));
+                        exit(1);
                     }
                     break;
+                case POPUP_MISC:
+                    mainwindow->trayIcon->showMessage(name,
+                                                      msg,
+                                                      QSystemTrayIcon::Information, INT_MAX);
             }
         }
 
@@ -140,14 +132,14 @@ void NotifyQt::UpdateGUI() {
             /* make a warning message */
             switch (type) {
                 case SYS_ERROR:
-                    QMessageBox::critical(0,title,msg);
+                    QMessageBox::critical(0, title, msg);
                     break;
                 case SYS_WARNING:
-                    QMessageBox::warning(0,title,msg);
+                    QMessageBox::warning(0, title, msg);
                     break;
                 default:
                 case SYS_INFO:
-                    QMessageBox::information(0,title,msg);
+                    QMessageBox::information(0, title, msg);
                     break;
             }
         }

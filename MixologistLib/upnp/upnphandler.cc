@@ -19,465 +19,384 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-/* This stuff is actually C */
-
-#ifdef  __cplusplus
-extern "C" {
-#endif
-
-#ifdef  __cplusplus
-} /* extern C */
-#endif
-/* This stuff is actually C */
-
 #include "upnp/upnphandler.h"
-#include "upnp/upnputil.h"
 #include "util/debug.h"
-
-class uPnPConfigData {
-public:
-    struct UPNPDev *devlist;
-    struct UPNPUrls urls;
-    struct IGDdatas data;
-    char lanaddr[16];   /* my ip address on the LAN */
-};
-
-#include <iostream>
-#include <sstream>
-
 #include "util/net.h"
+
+#include <QThread>
+
+upnphandler::upnphandler()
+    :enabled(false), upnpState(UPNP_S_UNINITIALISED), upnpConfig(NULL), desiredExternalPort(0), currentExternalPort(0){}
+
+/* Interface */
+void  upnphandler::enable(bool on) {
+    bool start = false;
+    bool stop = false;
+    {
+        QMutexLocker stack(&upnpMtx);
+
+        if (enabled == on) return;
+
+        if (on) start = true;
+        else stop = true;
+
+        enabled = on;
+    }
+
+    if (start) UPnPAsynchronizer::createWorker(this)->requestStart();
+    else if (stop) UPnPAsynchronizer::createWorker(this)->requestStop();
+}
+
+
+void upnphandler::shutdown() {
+    shutdown_upnp();
+}
+
+
+void upnphandler::restart() {
+    UPnPAsynchronizer::createWorker(this)->requestRestart();;
+}
+
+bool upnphandler::getEnabled() {
+    //No need to lock for reading a boolean
+    return enabled;
+}
+
+bool upnphandler::getActive() {
+    QMutexLocker stack(&upnpMtx);
+
+    //If we aren't ready yet, we can just return false right off
+    if (upnpState != UPNP_S_ACTIVE) return false;
+
+    //However, if we believe we are active, we should recheck to make sure everything is still working
+    UPnPConfigData *config = upnpConfig;
+    //Sanity check
+    if (!config || (upnpState <= UPNP_S_READY));
+
+    char internalAddress[256];
+    char internalPortTCP[256];
+    char internalPortUDP[256];
+    char externalPortTCP[256];
+    char externalPortUDP[256];
+
+    struct sockaddr_in localAddr = upnp_internalAddress;
+    uint32_t numericIP = ntohl(localAddr.sin_addr.s_addr);
+
+    snprintf(internalPortTCP, 256, "%d", ntohs(localAddr.sin_port));
+    snprintf(internalPortUDP, 256, "%d", ntohs(localAddr.sin_port));
+
+    snprintf(internalAddress, 256, "%d.%d.%d.%d",
+             ((numericIP >> 24) & 0xff),
+             ((numericIP >> 16) & 0xff),
+             ((numericIP >> 8) & 0xff),
+             ((numericIP >> 0) & 0xff));
+
+    snprintf(externalPortTCP, 256, "%d", currentExternalPort);
+    snprintf(externalPortUDP, 256, "%d", currentExternalPort);
+
+    log(LOG_DEBUG_BASIC, UPNPHANDLERZONE,
+        "UPnPHandler::checkUPnPState Checking Redirection: InAddr: " + QString(internalAddress) +
+        " InPort: " + QString(internalPortTCP) +
+        " ePort: " + QString(externalPortTCP) +
+        " eProt: TCP");
+
+    bool tcpOk = TestRedirect(&(config->urls), &(config->data), internalAddress, internalPortTCP, externalPortTCP, "TCP");
+    bool udpOk = TestRedirect(&(config->urls), &(config->data), internalAddress, internalPortUDP, externalPortUDP, "UDP");
+
+    if (!tcpOk) {
+        upnpState = UPNP_S_TCP_FAILED;
+    } else if (!udpOk) {
+        upnpState = UPNP_S_UDP_FAILED;
+    }
+
+    if ((!tcpOk) || (!udpOk)) {
+        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "upnphandler::checkUPnPState() ... Redirect Expired, restarting");
+
+        return false;
+    }
+
+    return true;
+}
+
+void upnphandler::setInternalPort(unsigned short newPort) {
+    upnpMtx.lock();
+
+    log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "UPnPHandler::setInternalPort(" + QString::number(newPort) + ") current port: " + QString::number(internalPort));
+
+    if (internalPort != newPort) {
+        internalPort = newPort;
+        if (enabled && (upnpState == UPNP_S_ACTIVE)) {
+            this->restart();
+        }
+    }
+    upnpMtx.unlock();
+}
+
+void upnphandler::setExternalPort(unsigned short newPort) {
+    upnpMtx.lock();
+
+    log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "UPnPHandler::setExternalPort(" + QString::number(newPort) + ") current port: " + QString::number(desiredExternalPort));
+
+    /* flag both shutdown/start->for restart */
+    if (desiredExternalPort != newPort) {
+        desiredExternalPort = newPort;
+        if (enabled && (upnpState == UPNP_S_ACTIVE)) {
+            this->restart();
+        }
+    }
+
+    upnpMtx.unlock();
+}
+
+/* as determined by uPnP */
+bool upnphandler::getInternalAddress(struct sockaddr_in &addr) {
+    upnpMtx.lock();
+
+    log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "UPnPHandler::getInternalAddress()");
+
+    addr = upnp_internalAddress;
+    bool valid = (upnpState >= UPNP_S_ACTIVE);
+
+    upnpMtx.unlock();
+
+    return valid;
+}
+
+bool upnphandler::getExternalAddress(struct sockaddr_in &addr) {
+    upnpMtx.lock();
+
+    log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "UPnPHandler::getExternalAddress()");
+    addr = upnp_externalAddress;
+    bool valid = (upnpState == UPNP_S_ACTIVE);
+
+    upnpMtx.unlock();
+
+    return valid;
+}
 
 bool upnphandler::initUPnPState() {
     /* allocate memory */
-    uPnPConfigData *upcd = new uPnPConfigData;
+    UPnPConfigData *newConfigData = new UPnPConfigData;
 
-    upcd->devlist = upnpDiscover(2000, NULL, NULL, 0);
+    newConfigData->devlist = upnpDiscover(2000, NULL, NULL, 0);
 
-    if(upcd->devlist) {
+    if(newConfigData->devlist) {
         struct UPNPDev *device;
         log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "List of UPNP devices found on the network:");
-        for(device=upcd->devlist; device; device=device->pNext) {
+        for(device=newConfigData->devlist; device; device=device->pNext) {
             log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "desc: " + QString(device->descURL) + " st: " + QString(device->st));
         }
-        putchar('\n');
-        if(UPNP_GetValidIGD(upcd->devlist, &(upcd->urls),
-                            &(upcd->data), upcd->lanaddr,
-                            sizeof(upcd->lanaddr))) {
-            log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Found valid IGD: " + QString(upcd->urls.controlURL));
-            log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Local LAN ip address: " + QString(upcd->lanaddr));
+
+        /* Search for an Internet Gateway Device that we can configure with. */
+        if(UPNP_GetValidIGD(newConfigData->devlist, &(newConfigData->urls), &(newConfigData->data),
+                            newConfigData->lanaddr, sizeof(newConfigData->lanaddr))) {
+            log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Found valid IGD: " + QString(newConfigData->urls.controlURL));
+            log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Local LAN ip address: " + QString(newConfigData->lanaddr));
 
             /* MODIFY STATE */
-            dataMtx.lock(); /* LOCK MUTEX */
+            {
+                QMutexLocker stack(&upnpMtx);
+                /* convert to ipaddress. */
+                inet_aton(newConfigData->lanaddr, &(upnp_internalAddress.sin_addr));
+                upnp_internalAddress.sin_port = htons(internalPort);
 
-            /* convert to ipaddress. */
-            inet_aton(upcd->lanaddr, &(upnp_iaddr.sin_addr));
-            upnp_iaddr.sin_port = htons(iport);
+                upnpState = UPNP_S_READY;
 
-            upnpState = UPNP_S_READY;
-            if (upnpConfig) {
-                delete upnpConfig;
+                if (upnpConfig) delete upnpConfig;
+                upnpConfig = newConfigData;
             }
-            upnpConfig = upcd;   /* */
 
-            dataMtx.unlock(); /* UNLOCK MUTEX */
-
-
-            /* done -> READY */
-            return 1;
+            return true;
 
         } else {
             log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "No valid UPNP Internet Gateway Device found.");
         }
 
-
-        freeUPNPDevlist(upcd->devlist);
-        upcd->devlist = 0;
+        freeUPNPDevlist(newConfigData->devlist);
+        newConfigData->devlist = 0;
     } else {
-        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "No IGD UPnP Device found on the network!");
+        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "No UPnP Devices found on the network!");
     }
 
-    /* MODIFY STATE */
-    dataMtx.lock(); /* LOCK MUTEX */
+    /* Failure - Cleanup */
+    delete newConfigData;
 
-    upnpState = UPNP_S_UNAVAILABLE;
-    delete upcd;
-    upnpConfig = NULL;
+    {
+        QMutexLocker stack(&upnpMtx);
+        upnpState = UPNP_S_UNAVAILABLE;
+        if (upnpConfig) delete upnpConfig;
+        upnpConfig = NULL;
+    }
 
-    dataMtx.unlock(); /* UNLOCK MUTEX */
-
-    /* done, FAILED -> NOT AVAILABLE */
-
-    return 0;
+    return false;
 }
 
-bool upnphandler::printUPnPState() {
-    MixStackMutex stack(dataMtx); /* LOCK STACK MUTEX */
+void upnphandler::printUPnPState() {
+    QMutexLocker stack(&upnpMtx);
 
-    uPnPConfigData *config = upnpConfig;
+    UPnPConfigData *config = upnpConfig;
     if ((upnpState >= UPNP_S_READY) && (config)) {
-        DisplayInfos(&(config -> urls), &(config->data));
-        GetConnectionStatus(&(config -> urls), &(config->data));
-        ListRedirections(&(config -> urls), &(config->data));
+        DisplayInfos(&(config->urls), &(config->data));
+        GetConnectionStatus(&(config->urls), &(config->data));
+        ListRedirections(&(config->urls), &(config->data));
     } else log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "UPNP not ready");
 
-    return 1;
-}
-
-
-bool upnphandler::checkUPnPActive() {
-    MixStackMutex stack(dataMtx); /* LOCK STACK MUTEX */
-
-    uPnPConfigData *config = upnpConfig;
-    if ((upnpState > UPNP_S_READY) && (config)) {
-        char eprot1[] = "TCP";
-        char eprot2[] = "UDP";
-
-        char in_addr[256];
-        char in_port1[256];
-        char in_port2[256];
-        char eport1[256];
-        char eport2[256];
-
-        struct sockaddr_in localAddr = upnp_iaddr;
-        uint32_t linaddr = ntohl(localAddr.sin_addr.s_addr);
-
-        snprintf(in_port1, 256, "%d", ntohs(localAddr.sin_port));
-        snprintf(in_port2, 256, "%d", ntohs(localAddr.sin_port));
-
-        snprintf(in_addr, 256, "%d.%d.%d.%d",
-                 ((linaddr >> 24) & 0xff),
-                 ((linaddr >> 16) & 0xff),
-                 ((linaddr >> 8) & 0xff),
-                 ((linaddr >> 0) & 0xff));
-
-        snprintf(eport1, 256, "%d", eport_curr);
-        snprintf(eport2, 256, "%d", eport_curr);
-
-        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE,
-            "UPnPHandler::checkUPnPState Checking Redirection: InAddr: " + QString(in_addr) +
-            " InPort: " + QString(in_port1) +
-            " ePort: " + QString(eport1) +
-            " eProt: " + QString(eprot1));
-
-        bool tcpOk = TestRedirect(&(config -> urls), &(config->data),
-                                  in_addr, in_port1, eport1, eprot1);
-        bool udpOk = TestRedirect(&(config -> urls), &(config->data),
-                                  in_addr, in_port2, eport2, eprot2);
-
-        if ((!tcpOk) || (!udpOk)) {
-            log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "upnphandler::checkUPnPState() ... Redirect Expired, restarting");
-
-            toStop = true;
-            toStart = true;
-        }
-    }
-
-    return true;
-}
-
-class upnpThreadData {
-public:
-    upnphandler *handler;
-    bool start;
-    bool stop;
-};
-
-/* Thread routines */
-extern "C" void *doSetupUPnP(void *p) {
-    upnpThreadData *data = (upnpThreadData *) p;
-    if ((!data) || (!data->handler)) {
-        pthread_exit(NULL);
-    }
-
-    /* publish it! */
-    if (data -> stop) {
-        data->handler->shutdown_upnp();
-    }
-
-    if (data -> start) {
-        data->handler->initUPnPState();
-        data->handler->start_upnp();
-    }
-
-    data->handler->printUPnPState();
-
-    delete data;
-    pthread_exit(NULL);
-
-    return NULL;
-}
-
-bool upnphandler::background_setup_upnp(bool start, bool stop) {
-    pthread_t tid;
-
-    /* launch thread */
-    upnpThreadData *data = new upnpThreadData();
-    data->handler = this;
-    data->start = start;
-    data->stop = stop;
-
-    pthread_create(&tid, 0, &doSetupUPnP, (void *) data);
-    pthread_detach(tid); /* so memory is reclaimed in linux */
-
-    return true;
+    return;
 }
 
 bool upnphandler::start_upnp() {
-    MixStackMutex stack(dataMtx); /* LOCK STACK MUTEX */
+    QMutexLocker stack(&upnpMtx);
 
-    uPnPConfigData *config = upnpConfig;
-    if (!((upnpState >= UPNP_S_READY) && (config))) {
+    UPnPConfigData *config = upnpConfig;
+    if (!config || (upnpState < UPNP_S_READY)) {
         log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "upnphandler::start_upnp() Not Ready");
         return false;
     }
 
-    char eprot1[] = "TCP";
-    char eprot2[] = "UDP";
-
-    /* if we're to load -> load */
-    /* select external ports */
-    eport_curr = eport;
-    if (!eport_curr) {
-        /* use local port if eport is zero */
-        eport_curr = iport;
-        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "Using LocalPort for extPort!");
-    }
-
-    if (!eport_curr) {
-        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "Invalid eport ... ");
+    if (desiredExternalPort != 0) {
+        currentExternalPort = desiredExternalPort;
+    } else if (internalPort != 0) {
+        currentExternalPort = internalPort;
+        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "Using internalPort for externalPort!");
+    } else {
+        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "Unable to set externalPort");
         return false;
     }
 
-
     /* our port */
-    char in_addr[256];
-    char in_port1[256];
-    char in_port2[256];
-    char eport1[256];
-    char eport2[256];
+    char internalAddress[256];
+    char internalPortTCP[256];
+    char internalPortUDP[256];
+    char externalPortTCP[256];
+    char externalPortUDP[256];
 
-    upnp_iaddr.sin_port = htons(iport);
-    struct sockaddr_in localAddr = upnp_iaddr;
-    uint32_t linaddr = ntohl(localAddr.sin_addr.s_addr);
+    upnp_internalAddress.sin_port = htons(internalPort);
+    struct sockaddr_in localAddress = upnp_internalAddress;
+    uint32_t numericIP = ntohl(localAddress.sin_addr.s_addr);
 
-    snprintf(in_port1, 256, "%d", ntohs(localAddr.sin_port));
-    snprintf(in_port2, 256, "%d", ntohs(localAddr.sin_port));
-    snprintf(in_addr, 256, "%d.%d.%d.%d",
-             ((linaddr >> 24) & 0xff),
-             ((linaddr >> 16) & 0xff),
-             ((linaddr >> 8) & 0xff),
-             ((linaddr >> 0) & 0xff));
+    snprintf(internalPortTCP, 256, "%d", ntohs(localAddress.sin_port));
+    snprintf(internalPortUDP, 256, "%d", ntohs(localAddress.sin_port));
+    snprintf(internalAddress, 256, "%d.%d.%d.%d",
+             ((numericIP >> 24) & 0xff),
+             ((numericIP >> 16) & 0xff),
+             ((numericIP >> 8) & 0xff),
+             ((numericIP >> 0) & 0xff));
 
-    snprintf(eport1, 256, "%d", eport_curr);
-    snprintf(eport2, 256, "%d", eport_curr);
+    snprintf(externalPortTCP, 256, "%d", currentExternalPort);
+    snprintf(externalPortUDP, 256, "%d", currentExternalPort);
 
     log(LOG_DEBUG_ALERT, UPNPHANDLERZONE,
-        "Attempting Redirection: InAddr: " + QString(in_addr) +
-        " InPort: " + QString(in_port1) +
-        " ePort: " + QString(eport1) +
-        " eProt: " + QString(eprot1));
+        "Attempting Redirection: Internal Address: " + QString(internalAddress) +
+        " Internal Port: " + QString(internalPortTCP) +
+        " External Port: " + QString(externalPortTCP) +
+        " External Protocol: TCP");
 
-    if (!SetRedirectAndTest(&(config -> urls), &(config->data),
-                            in_addr, in_port1, eport1, eprot1)) {
+    if (!SetRedirectAndTest(&(config->urls), &(config->data), internalAddress, internalPortTCP, externalPortTCP, "TCP")) {
         upnpState = UPNP_S_TCP_FAILED;
-    } else if (!SetRedirectAndTest(&(config -> urls), &(config->data),
-                                   in_addr, in_port2, eport2, eprot2)) {
+    } else if (!SetRedirectAndTest(&(config->urls), &(config->data), internalAddress, internalPortUDP, externalPortUDP, "UDP")) {
         upnpState = UPNP_S_UDP_FAILED;
     } else {
         upnpState = UPNP_S_ACTIVE;
     }
 
-
     /* now store the external address */
     char externalIPAddress[32];
-    UPNP_GetExternalIPAddress(config -> urls.controlURL,
-                              //config->data.first.servicetype,
-                              config->data.servicetype,
-                              externalIPAddress);
+    UPNP_GetExternalIPAddress(config->urls.controlURL, config->data.servicetype, externalIPAddress);
 
-    sockaddr_clear(&upnp_eaddr);
+    sockaddr_clear(&upnp_externalAddress);
 
     if(externalIPAddress[0]) {
-        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Stored external address: " + QString(externalIPAddress) + ":" + QString::number(eport_curr));
+        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Stored external address: " + QString(externalIPAddress) + ":" + QString::number(currentExternalPort));
 
-        inet_aton(externalIPAddress, &(upnp_eaddr.sin_addr));
-        upnp_eaddr.sin_family = AF_INET;
-        upnp_eaddr.sin_port = htons(eport_curr);
+        inet_aton(externalIPAddress, &(upnp_externalAddress.sin_addr));
+        upnp_externalAddress.sin_family = AF_INET;
+        upnp_externalAddress.sin_port = htons(currentExternalPort);
     } else {
         log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Failed to get external address");
     }
 
-    toStart = false;
-
     return true;
-
 }
 
 bool upnphandler::shutdown_upnp() {
-    MixStackMutex stack(dataMtx); /* LOCK STACK MUTEX */
+    QMutexLocker stack(&upnpMtx);
 
-    uPnPConfigData *config = upnpConfig;
-    if (!((upnpState >= UPNP_S_READY) && (config))) {
+    UPnPConfigData *config = upnpConfig;
+    if (!config || (upnpState < UPNP_S_READY)) {
         return false;
     }
 
-    char eprot1[] = "TCP";
-    char eprot2[] = "UDP";
-
     /* always attempt this (unless no port number) */
-    if (eport_curr > 0) {
+    if (currentExternalPort > 0) {
 
-        char eport1[256];
-        char eport2[256];
+        char externalPortTCP[256];
+        char externalPortUDP[256];
 
-        snprintf(eport1, 256, "%d", eport_curr);
-        snprintf(eport2, 256, "%d", eport_curr);
+        snprintf(externalPortTCP, 256, "%d", currentExternalPort);
+        snprintf(externalPortUDP, 256, "%d", currentExternalPort);
 
-        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Attempting to remove redirection port: " + QString(eprot1));
+        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Attempting to remove redirection port: TCP");
 
-        RemoveRedirect(&(config -> urls), &(config->data),
-                       eport1, eprot1);
+        RemoveRedirect(&(config->urls), &(config->data), externalPortTCP, "TCP");
 
-        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Attempting to remove redirection port: " + QString(eprot2));
+        log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Attempting to remove redirection port: UDP");
 
-        RemoveRedirect(&(config -> urls), &(config->data),
-                       eport2, eprot2);
+        RemoveRedirect(&(config->urls), &(config->data), externalPortUDP, "UDP");
 
         upnpState = UPNP_S_READY;
-        toStop = false;
     }
 
     return true;
-
 }
 
-/************************ External Interface *****************************
- *
- *
- *
- */
-
-upnphandler::upnphandler()
-    :toEnable(false), toStart(false), toStop(false),
-    eport(0), eport_curr(0),
-    upnpState(UPNP_S_UNINITIALISED),
-    upnpConfig(NULL) {
-    return;
+UPnPAsynchronizer::UPnPAsynchronizer(upnphandler* handler)
+    :handler(handler){
+    this->connect(this, SIGNAL(startRequested(bool)), this, SLOT(startUPnP(bool)), Qt::QueuedConnection);
+    this->connect(this, SIGNAL(stopRequested(bool)), this, SLOT(stopUPnP(bool)), Qt::QueuedConnection);
 }
 
-upnphandler::~upnphandler() {
-    return;
+UPnPAsynchronizer* UPnPAsynchronizer::createWorker(upnphandler* handler) {
+    UPnPAsynchronizer *asynchronousWorker = new UPnPAsynchronizer(handler);
+    QThread *thread = new QThread();
+    asynchronousWorker->moveToThread(thread);
+    thread->connect(asynchronousWorker, SIGNAL(workCompleted()), thread, SLOT(quit()));
+    thread->connect(asynchronousWorker, SIGNAL(workCompleted()), thread, SLOT(deleteLater()));
+    thread->start();
+    return asynchronousWorker;
 }
 
-/* Interface */
-void  upnphandler::enable(bool active) {
-    dataMtx.lock();   /***  LOCK MUTEX  ***/
+void UPnPAsynchronizer::requestStart() {
+    emit startRequested(true);
+}
 
-    if (active != toEnable) {
-        if (active) {
-            toStart = true;
-        } else {
-            toStop = true;
-        }
+void UPnPAsynchronizer::requestStop() {
+    emit stopRequested(true);
+}
+
+void UPnPAsynchronizer::requestRestart() {
+    emit stopRequested(false);
+    emit startRequested(true);
+}
+
+void UPnPAsynchronizer::startUPnP(bool emitCompletion) {
+    handler->initUPnPState();
+    handler->start_upnp();
+
+    handler->printUPnPState();
+
+    if (emitCompletion) {
+        emit workCompleted();
+        this->deleteLater();
     }
-    toEnable = active;
+}
 
-    bool start = toStart;
+void UPnPAsynchronizer::stopUPnP(bool emitCompletion) {
+    handler->shutdown_upnp();
 
-    dataMtx.unlock(); /*** UNLOCK MUTEX ***/
+    handler->printUPnPState();
 
-    if (start) {
-        /* make background thread to startup UPnP */
-        background_setup_upnp(true, false);
+    if (emitCompletion) {
+        emit workCompleted();
+        this->deleteLater();
     }
-
-
 }
-
-
-void    upnphandler::shutdown() {
-    /* blocking call to shutdown upnp */
-
-    shutdown_upnp();
-}
-
-
-void    upnphandler::restart() {
-    /* non-blocking call to shutdown upnp, and startup again. */
-    background_setup_upnp(true, true);
-}
-
-
-
-bool    upnphandler::getEnabled() {
-    // no need to lock for reading a boolean
-    return toEnable;
-}
-
-bool    upnphandler::getActive() {
-    // no need to lock for reading a boolean
-    return (upnpState == UPNP_S_ACTIVE);
-}
-
-/* the address that the listening port is on */
-void    upnphandler::setInternalPort(unsigned short iport_in) {
-    dataMtx.lock();   /***  LOCK MUTEX  ***/
-
-    log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "UPnPHandler::setInternalPort(" + QString::number(iport_in) + ") current port: " + QString::number(iport));
-
-    if (iport != iport_in) {
-        iport = iport_in;
-        if ((toEnable) &&
-                (upnpState == UPNP_S_ACTIVE)) {
-            toStop  = true;
-            toStart = true;
-        }
-    }
-    dataMtx.unlock(); /*** UNLOCK MUTEX ***/
-}
-
-void    upnphandler::setExternalPort(unsigned short eport_in) {
-    dataMtx.lock();   /***  LOCK MUTEX  ***/
-
-    log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "UPnPHandler::setExternalPort(" + QString::number(eport_in) + ") current port: " + QString::number(eport));
-
-    /* flag both shutdown/start -> for restart */
-    if (eport != eport_in) {
-        eport = eport_in;
-        if ((toEnable) &&
-                (upnpState == UPNP_S_ACTIVE)) {
-            toStop  = true;
-            toStart = true;
-        }
-    }
-
-    dataMtx.unlock(); /*** UNLOCK MUTEX ***/
-}
-
-/* as determined by uPnP */
-bool    upnphandler::getInternalAddress(struct sockaddr_in &addr) {
-    dataMtx.lock();   /***  LOCK MUTEX  ***/
-
-    log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "UPnPHandler::getInternalAddress()");
-
-    addr = upnp_iaddr;
-    bool valid = (upnpState >= UPNP_S_ACTIVE);
-
-    dataMtx.unlock(); /*** UNLOCK MUTEX ***/
-
-    return valid;
-}
-
-bool    upnphandler::getExternalAddress(struct sockaddr_in &addr) {
-    dataMtx.lock();   /***  LOCK MUTEX  ***/
-
-    log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "UPnPHandler::getExternalAddress()");
-    addr = upnp_eaddr;
-    bool valid = (upnpState == UPNP_S_ACTIVE);
-
-    dataMtx.unlock(); /*** UNLOCK MUTEX ***/
-
-    return valid;
-}
-
-

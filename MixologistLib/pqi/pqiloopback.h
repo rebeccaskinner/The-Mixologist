@@ -32,7 +32,7 @@
 
 class pqiloopback: public PQInterface {
 public:
-    pqiloopback(std::string id, int librarymixer_id);
+    pqiloopback(std::string id, unsigned int librarymixer_id);
     virtual ~pqiloopback();
 
     // search Interface.

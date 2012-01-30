@@ -491,17 +491,17 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QPushButton" name="updateFriendsButton">
+      <widget class="QPushButton" name="addFriendsButton">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <property name="minimumSize">
         <size>
-         <width>0</width>
+         <width>200</width>
          <height>34</height>
-        </size>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>180</width>
-         <height>16777215</height>
         </size>
        </property>
        <property name="font">
@@ -510,7 +510,51 @@
         </font>
        </property>
        <property name="toolTip">
-        <string>Redownloads the latest connection information for your friends from LibraryMixer, and retries to connect to all your offline friends.</string>
+        <string>Opens the page where you can manage your friends list.</string>
+       </property>
+       <property name="text">
+        <string>Add/Remove Friends</string>
+       </property>
+       <property name="icon">
+        <iconset resource="images.qrc">
+         <normaloff>:/Images/AddFriend.png</normaloff>:/Images/AddFriend.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="updateFriendsButton">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>34</height>
+        </size>
+       </property>
+       <property name="font">
+        <font>
+         <pointsize>10</pointsize>
+        </font>
+       </property>
+       <property name="toolTip">
+        <string>Redownloads the latest connection information for your friends from LibraryMixer, and retries to connect to all your offline friends. (F5)</string>
        </property>
        <property name="text">
         <string>Update Friends List</string>
@@ -519,12 +563,8 @@
         <iconset resource="images.qrc">
          <normaloff>:/Images/UpdateFriends.png</normaloff>:/Images/UpdateFriends.png</iconset>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="updateFriendsLabel">
-       <property name="text">
-        <string/>
+       <property name="shortcut">
+        <string>F5</string>
        </property>
       </widget>
      </item>
@@ -559,8 +599,11 @@
      <property name="rootIsDecorated">
       <bool>false</bool>
      </property>
-     <property name="itemsExpandable">
+     <property name="uniformRowHeights">
       <bool>true</bool>
+     </property>
+     <property name="itemsExpandable">
+      <bool>false</bool>
      </property>
      <property name="sortingEnabled">
       <bool>true</bool>
@@ -582,7 +625,7 @@
      </attribute>
      <column>
       <property name="text">
-       <string/>
+       <string>Icon</string>
       </property>
       <property name="textAlignment">
        <set>AlignHCenter|AlignVCenter|AlignCenter</set>
@@ -590,16 +633,7 @@
      </column>
      <column>
       <property name="text">
-       <string>Person</string>
-      </property>
-      <property name="foreground">
-       <brush brushstyle="NoBrush">
-        <color alpha="255">
-         <red>0</red>
-         <green>0</green>
-         <blue>0</blue>
-        </color>
-       </brush>
+       <string>Name</string>
       </property>
      </column>
      <column>
@@ -609,7 +643,7 @@
      </column>
      <column>
       <property name="text">
-       <string/>
+       <string>LibraryMixerID</string>
       </property>
      </column>
     </widget>

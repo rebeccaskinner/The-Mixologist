@@ -36,40 +36,40 @@ public:
 
     /* Peer Details (Net & Auth) */
     virtual std::string getOwnCertId();
-    virtual int getOwnLibraryMixerId();
+    virtual unsigned int getOwnLibraryMixerId();
     virtual QString getOwnName();
 
     //List of LibraryMixer ids for all online friends
-    virtual bool    getOnlineList(std::list<int> &ids);
+    virtual bool getOnlineList(std::list<int> &ids);
     //List of LibraryMixer ids for all friends with encryption keys
-    virtual bool    getSignedUpList(std::list<int> &ids);
+    virtual bool getSignedUpList(std::list<int> &ids);
     //List of LibraryMixer ids for all friends
-    virtual bool    getFriendList(std::list<int> &ids);
+    virtual bool getFriendList(std::list<int> &ids);
 
-    virtual bool    isOnline(int librarymixer_id);
-    virtual bool    isFriend(int librarymixer_id);
-    virtual QString getPeerName(int librarymixer_id);
+    virtual bool isOnline(unsigned int librarymixer_id);
+    virtual bool isFriend(unsigned int librarymixer_id);
+    virtual QString getPeerName(unsigned int librarymixer_id);
     /*Fills in PeerDetails for user with librarymixer_id
       Can be used for friends or self.
       Returns true, or false if unable to find user with librarymixer_id*/
-    virtual bool    getPeerDetails(int librarymixer_id, PeerDetails &d);
+    virtual bool getPeerDetails(unsigned int librarymixer_id, PeerDetails &d);
 
     //Returns the associated cert_id or "" if unable to find.
-    virtual std::string     findCertByLibraryMixerId(int librarymixer_id);
+    virtual std::string findCertByLibraryMixerId(unsigned int librarymixer_id);
     //Returns the associated librarymixer_id or -1 if unable to find.
-    virtual int     findLibraryMixerByCertId(std::string cert_id);
+    virtual unsigned int findLibraryMixerByCertId(std::string cert_id);
 
     /* Add/Remove Friends */
     //Either adds a new friend, or updates the existing friend
-    virtual bool addUpdateFriend(int librarymixer_id, QString cert, QString name);
+    virtual bool addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name);
 
     /* Network Stuff */
-    virtual void connectAttempt(int librarymixer_id);
+    virtual void connectAttempt(unsigned int librarymixer_id);
     virtual void connectAll();
-    virtual bool setLocalAddress(int librarymixer_id, std::string addr, uint16_t port);
-    virtual bool setExtAddress(int librarymixer_id, std::string addr, uint16_t port);
-    virtual bool setNetworkMode(int librarymixer_id, uint32_t netMode);
-    virtual bool setVisState(int librarymixer_id, uint32_t mode);
+    virtual bool setLocalAddress(unsigned int librarymixer_id, std::string addr, uint16_t port);
+    virtual bool setExtAddress(unsigned int librarymixer_id, std::string addr, uint16_t port);
+    virtual bool setNetworkMode(unsigned int librarymixer_id, uint32_t netMode);
+    virtual bool setVisState(unsigned int librarymixer_id, uint32_t mode);
 };
 
 #endif

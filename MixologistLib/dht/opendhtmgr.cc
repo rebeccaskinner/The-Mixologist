@@ -22,8 +22,6 @@
 
 #include "dht/opendhtmgr.h"
 #include "dht/opendht.h"
-#include "util/threads.h" /* for pthreads headers */
-
 
 class dhtSearchData {
 public:
@@ -50,7 +48,7 @@ extern "C" void *doDhtPublish(void *p) {
 #endif
     dhtPublishData *data = (dhtPublishData *) p;
     if (data == NULL) {
-        pthread_exit(NULL);
+        //pthread_exit(NULL);
         return NULL;
     }
 
@@ -59,7 +57,7 @@ extern "C" void *doDhtPublish(void *p) {
         data->client->publishKey(data->key, data->value, data->ttl);
 
     delete data;
-    pthread_exit(NULL);
+    //pthread_exit(NULL);
 
     return NULL;
 }
@@ -68,7 +66,7 @@ extern "C" void *doDhtPublish(void *p) {
 extern "C" void *doDhtSearch(void *p) {
     dhtSearchData *data = (dhtSearchData *) p;
     if ((!data) || (!data->mgr) || (!data->client)) {
-        pthread_exit(NULL);
+        //pthread_exit(NULL);
 
         return NULL;
     }
@@ -85,7 +83,7 @@ extern "C" void *doDhtSearch(void *p) {
     }
 
     delete data;
-    pthread_exit(NULL);
+    //pthread_exit(NULL);
 
     return NULL;
 }
@@ -101,6 +99,8 @@ OpenDHTMgr::OpenDHTMgr(std::string ownId, pqiConnectCb *cb, QString configdir)
 
 /********** OVERLOADED FROM p3DhtMgr ***************/
 bool    OpenDHTMgr::dhtInit() {
+    return true;
+#ifdef false
     QString configpath = mConfigDir;
 
     /* load up DHT gateways */
@@ -120,6 +120,7 @@ bool    OpenDHTMgr::dhtInit() {
         return mClient -> loadServers(filename);
     }
     return true;
+#endif
 }
 
 bool    OpenDHTMgr::dhtShutdown() {
@@ -150,7 +151,7 @@ int     OpenDHTMgr::status(std::ostream &) {
 /* Blocking calls (only from thread) */
 bool OpenDHTMgr::publishDHT(std::string key, std::string value, uint32_t ttl) {
     /* launch a publishThread */
-    pthread_t tid;
+    //pthread_t tid;
 
 #ifdef OPENDHT_DEBUG
     std::cerr << "in publishDHT(.......)" << std::endl ;
@@ -163,25 +164,25 @@ bool OpenDHTMgr::publishDHT(std::string key, std::string value, uint32_t ttl) {
     pub->value = value;
     pub->ttl = ttl;
 
-    void *data = (void *) pub;
-    pthread_create(&tid, 0, &doDhtPublish, data);
-    pthread_detach(tid); /* so memory is reclaimed in linux */
+    //void *data = (void *) pub;
+    //pthread_create(&tid, 0, &doDhtPublish, data);
+    //pthread_detach(tid); /* so memory is reclaimed in linux */
 
     return true;
 }
 
 bool OpenDHTMgr::searchDHT(std::string key) {
     /* launch a publishThread */
-    pthread_t tid;
+    //pthread_t tid;
 
     dhtSearchData *dht = new dhtSearchData;
     dht->mgr = this;
     dht->client = mClient;
     dht->key = key;
 
-    void *data = (void *) dht;
-    pthread_create(&tid, 0, &doDhtSearch, data);
-    pthread_detach(tid); /* so memory is reclaimed in linux */
+    //void *data = (void *) dht;
+    //pthread_create(&tid, 0, &doDhtSearch, data);
+    //pthread_detach(tid); /* so memory is reclaimed in linux */
 
     return true;
 }

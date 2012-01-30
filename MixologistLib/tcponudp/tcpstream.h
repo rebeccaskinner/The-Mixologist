@@ -114,7 +114,7 @@ private:
     uint32  genSequenceNo();
     bool    isOldSequence(uint32 tst, uint32 curr);
 
-    MixMutex tcpMtx;
+    mutable QMutex tcpMtx;
 
     /* Internal Functions - only called inside mutex protection */
 

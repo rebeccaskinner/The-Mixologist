@@ -48,7 +48,7 @@ RatesStatus::RatesStatus(QWidget *parent)
     // iconLabel doesn't change over time, so we didn't need a minimum size
     hbox->addWidget(iconLabel);
 
-    statusRates = new QLabel( tr("<strong>Down:</strong> 0.00 (kB/s) | <strong>Up:</strong> 0.00 (kB/s) "), this );
+    statusRates = new QLabel( tr("<strong>Down:</strong> 0.00 (KB/s) | <strong>Up:</strong> 0.00 (KB/s) "), this );
     //statusPeers->setMinimumSize( statusPeers->frameSize().width() + 0, 0 );
     hbox->addWidget(statusRates);
 
@@ -58,7 +58,7 @@ RatesStatus::RatesStatus(QWidget *parent)
 
 void RatesStatus::setRatesStatus(float downKb, float upKb) {
     std::ostringstream out;
-    out << "<strong>" << tr("Down:").toStdString() << "</strong> " << std::setprecision(2) << std::fixed << downKb << " (kB/s) |  <strong>" << tr("Up:").toStdString() << "</strong> " << std::setprecision(2) << std::fixed <<  upKb << " (kB/s) ";
+    out << "<strong>" << tr("Down:").toStdString() << "</strong> " << std::setprecision(2) << std::fixed << downKb << " (KB/s) |  <strong>" << tr("Up:").toStdString() << "</strong> " << std::setprecision(2) << std::fixed <<  upKb << " (KB/s) ";
 
     statusRates->setText(QString::fromStdString(out.str()));
 

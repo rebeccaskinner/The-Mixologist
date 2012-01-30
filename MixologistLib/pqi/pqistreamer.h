@@ -25,7 +25,7 @@
 
 // Only dependent on the base stuff.
 #include "pqi/pqi_base.h"
-#include "util/threads.h"
+#include <QMutex>
 
 #include <list>
 
@@ -38,7 +38,7 @@ While doing so, it also manages the bandwidth based on limits passed down to it 
 
 class pqistreamer: public PQInterface {
 public:
-    pqistreamer(Serialiser *rss, std::string peerid, int librarymixer_id, BinInterface *bio_in, int bio_flagsin);
+    pqistreamer(Serialiser *rss, std::string peerid, unsigned int librarymixer_id, BinInterface *bio_in, int bio_flagsin);
     virtual ~pqistreamer();
 
     // PQInterface
@@ -105,7 +105,7 @@ private:
     float avgReadCount;
     float avgSentCount;
 
-    MixMutex streamerMtx;
+    mutable QMutex streamerMtx;
 };
 
 

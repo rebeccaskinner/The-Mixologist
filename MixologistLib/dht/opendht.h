@@ -24,7 +24,6 @@
 #define OPEN_DHT_CLIENT_H
 
 #include "pqi/pqinetwork.h"
-#include "util/threads.h"
 
 #include <inttypes.h>
 #include <string>
@@ -34,6 +33,7 @@
 #include "dht/dhtclient.h"
 
 #include <QString>
+#include <QMutex>
 
 class dhtServer {
 public:
@@ -70,7 +70,7 @@ private:
     bool openDHT_sendMessage(std::string msg, std::string &response);
     bool openDHT_getDHTList(std::string &response);
 
-    MixMutex dhtMutex;
+    mutable QMutex dhtMutex;
     std::map<std::string, dhtServer> mServers;
     uint32_t mDHTFailCount;
 

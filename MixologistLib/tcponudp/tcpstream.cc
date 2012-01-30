@@ -97,14 +97,14 @@ TcpStream::TcpStream(UdpSorter *lyr)
 
 /* Stream Control! */
 int TcpStream::connect(const struct sockaddr_in &raddr, uint32_t conn_period) {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     setRemoteAddress(raddr);
 
     /* check state */
     if (state != TCP_CLOSED) {
         if (state == TCP_ESTABLISHED) {
-            tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+            tcpMtx.unlock();
             return 0;
         } else if (state < TCP_ESTABLISHED) {
             errorState = EAGAIN;
@@ -112,7 +112,7 @@ int TcpStream::connect(const struct sockaddr_in &raddr, uint32_t conn_period) {
             // major issues!
             errorState = EFAULT;
         }
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return -1;
     }
 
@@ -165,21 +165,21 @@ int TcpStream::connect(const struct sockaddr_in &raddr, uint32_t conn_period) {
         log(LOG_WARNING,rstcpstreamzone,out.str().c_str());
     }
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return -1;
 }
 
 
 int TcpStream::listenfor(const struct sockaddr_in &raddr) {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     setRemoteAddress(raddr);
 
     /* check state */
     if (state != TCP_CLOSED) {
         if (state == TCP_ESTABLISHED) {
-            tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+            tcpMtx.unlock();
             return 0;
         } else if (state < TCP_ESTABLISHED) {
             errorState = EAGAIN;
@@ -187,28 +187,28 @@ int TcpStream::listenfor(const struct sockaddr_in &raddr) {
             // major issues!
             errorState = EFAULT;
         }
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return -1;
     }
 
     errorState = EAGAIN;
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return -1;
 }
 
 
 /* Stream Control! */
 int TcpStream::close() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     cleanup();
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return 0;
 }
 
 int TcpStream::closeWrite() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     /* check state */
     /* will always close socket.... */
@@ -254,7 +254,7 @@ int TcpStream::closeWrite() {
 #ifdef DEBUG_TCP_STREAM
         std::cerr << "TcpStream::close() Flag Set" << std::endl;
 #endif
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return 0;
     }
 
@@ -263,22 +263,22 @@ int TcpStream::closeWrite() {
 #endif
     errorState = EAGAIN;
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return -1;
 }
 
 bool    TcpStream::isConnected() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     bool isConn = (state == TCP_ESTABLISHED);
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return isConn;
 }
 
 int TcpStream::status(std::ostream &out) {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     int tmpstate = state;
 
@@ -304,13 +304,13 @@ int TcpStream::status(std::ostream &out) {
     out << std::endl;
     out << std::endl;
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return tmpstate;
 }
 
 int     TcpStream::write_allowed() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     int ret = 1;
     if (state == TCP_CLOSED) {
@@ -325,17 +325,17 @@ int     TcpStream::write_allowed() {
     }
 
     if (ret < 1) {
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return ret;
     }
 
     int maxwrite = (kMaxQueueSize -  inQueue.size()) * MAX_SEG;
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return maxwrite;
 }
 
 int     TcpStream::read_pending() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     /* error should be detected next time */
     int maxread = int_read_pending();
@@ -347,7 +347,7 @@ int     TcpStream::read_pending() {
         maxread = -1;
     }
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return maxread;
 }
@@ -360,7 +360,7 @@ int     TcpStream::int_read_pending() {
 
 /* stream Interface */
 int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
     int ret = 1; /* initial error checking */
 
 #ifdef DEBUG_TCP_STREAM_EXTRA
@@ -394,7 +394,7 @@ int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
     }
 
     if (ret < 1) { /* check for initial error */
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return ret;
     }
 
@@ -423,7 +423,7 @@ int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
         //std::cerr << "Small Packet - write to net:" << std::endl;
         //std::cerr << printPkt(dta, size) << std::endl;
 
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return size;
     }
 
@@ -485,12 +485,12 @@ int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
         inSize = 0;
     }
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return size;
 }
 
 int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
 #ifdef DEBUG_TCP_STREAM_EXTRA
     static  uint32 TMPtotalread = 0;
@@ -518,7 +518,7 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
     }
 
     if (ret < 1) { /* if ret has been changed */
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return ret;
     }
 
@@ -533,7 +533,7 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
             std::cerr << std::endl;
 #endif
             errorState = EAGAIN;
-            tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+            tcpMtx.unlock();
             return -1;
         }
 #endif /* TCP_NO_PARTIAL_READ */
@@ -568,7 +568,7 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
         /* can allow more in! - update inWinSize */
         UpdateInWinSize();
 
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return size;
     }
 
@@ -629,7 +629,7 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
             /* can allow more in! - update inWinSize */
             UpdateInWinSize();
 
-            tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+            tcpMtx.unlock();
             return size;
         }
 #ifdef DEBUG_TCP_STREAM_EXTRA
@@ -682,7 +682,7 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
         UpdateInWinSize();
 
 
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return size;
     }
 
@@ -700,7 +700,7 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
     /* can allow more in! - update inWinSize */
     UpdateInWinSize();
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return size;
 }
 
@@ -712,7 +712,7 @@ void    TcpStream::recvPkt(void *data, int size) {
     std::cerr << std::endl;
 #endif
 
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
     uint8 *input = (uint8 *) data;
 
 #ifdef DEBUG_TCP_STREAM
@@ -750,51 +750,51 @@ void    TcpStream::recvPkt(void *data, int size) {
 #endif
         delete pkt;
     }
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return;
 }
 
 
 int TcpStream::tick() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     //std::cerr << "TcpStream::tick()" << std::endl;
     recv_check(); /* recv is async */
     send();
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return 1;
 }
 
 bool TcpStream::getRemoteAddress(struct sockaddr_in &raddr) {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     if (peerKnown) {
         raddr = peeraddr;
     }
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return peerKnown;
 }
 
 uint8   TcpStream::TcpState() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     uint8 err = state;
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return err;
 }
 
 int     TcpStream::TcpErrorState() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
 
     int err = errorState;
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
 
     return err;
 }
@@ -806,66 +806,66 @@ int     TcpStream::TcpErrorState() {
 static int ilevel = 100;
 
 bool    TcpStream::widle() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
     /* init */
     if (!lastWriteTF) {
         lastWriteTF = int_wbytes();
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return false;
     }
 
     if ((lastWriteTF == int_wbytes()) && (inSize + inQueue.size() == 0)) {
         wcount++;
         if (wcount > ilevel) {
-            tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+            tcpMtx.unlock();
             return true;
         }
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return false;
     }
     wcount = 0;
     lastWriteTF = int_wbytes();
 
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return false;
 }
 
 
 bool    TcpStream::ridle() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
     /* init */
     if (!lastReadTF) {
         lastReadTF = int_rbytes();
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return false;
     }
 
     if ((lastReadTF == int_rbytes()) && (outSizeRead + outQueue.size() + outSizeNet== 0)) {
         rcount++;
         if (rcount > ilevel) {
-            tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+            tcpMtx.unlock();
             return true;
         }
-        tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+        tcpMtx.unlock();
         return false;
     }
     rcount = 0;
     lastReadTF = int_rbytes();
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return false;
 }
 
 uint32  TcpStream::wbytes() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
     uint32 wb = int_wbytes();
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return wb;
 }
 
 uint32  TcpStream::rbytes() {
-    tcpMtx.lock();   /********** LOCK MUTEX *********/
+    tcpMtx.lock();
     uint32 rb = int_rbytes();
-    tcpMtx.unlock(); /******** UNLOCK MUTEX *********/
+    tcpMtx.unlock();
     return rb;
 }
 

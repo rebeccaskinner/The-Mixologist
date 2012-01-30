@@ -25,7 +25,6 @@
 #define MRK_P3_UPNP_MANAGER_H
 
 /* platform independent networking... */
-#include "util/threads.h"
 #include "pqi/pqinetwork.h"
 
 class p3UpnpMgr: public pqiNetAssistFirewall {

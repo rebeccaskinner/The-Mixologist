@@ -636,14 +636,17 @@ int     pqissl::Basic_Connection_Complete() {
     // use select on the opened socket.
     // Interestingly - This code might be portable....
 
+    if (sockfd < 0) return -1;
+    unsigned int validSockfd = sockfd;
+
     fd_set ReadFDs, WriteFDs, ExceptFDs;
     FD_ZERO(&ReadFDs);
     FD_ZERO(&WriteFDs);
     FD_ZERO(&ExceptFDs);
 
-    FD_SET(sockfd, &ReadFDs);
-    FD_SET(sockfd, &WriteFDs);
-    FD_SET(sockfd, &ExceptFDs);
+    FD_SET(validSockfd, &ReadFDs);
+    FD_SET(validSockfd, &WriteFDs);
+    FD_SET(validSockfd, &ExceptFDs);
 
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -995,19 +998,6 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
     }
 
     if ((sockfd > -1) && (sockfd != fd)) {
-
-        /* This whole section used to be commented out, for the reasons stated in the historic comment below.
-           However, I believe this bug was fixed with the switch to OpenSSL 1.0.0a. */
-        /* Cannot for the life of me figure out this bug.
-           By commenting this out, am taking the memory leak on double connections instead of the connection
-           unreliability on double connections.
-           This simply resolves to a call to close the socket.
-           I have verified a million times in various ways that the correct socket is being closed.
-           Nonetheless, by closing this socket, even while our real socket (fd) remains open,
-           the real SSL connection that uses fd can no longer read, and dies and returns only SSL_ERROR_ZERO_RETURN errors.
-           At this point, the real socket is closed as well.
-           This behavior is only exhibited when there is both an inbound and outbound connection to the same friend,
-           and by commenting out closing the extra socket, this problem disappears. */
         QString tolog = "Closing old network socket: ";
         tolog.append(QString::number(sockfd));
         tolog.append(" current socket is: ");
@@ -1108,9 +1098,6 @@ int pqissl::accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr) { // initi
 int     pqissl::senddata(void *data, int len) {
     int tmppktlen ;
 
-#ifdef DEBUG_PQISSL
-    std::cout << "Sending data thread=" << pthread_self() << ", ssl=" << (void *)this << ", size=" << len << std::endl ;
-#endif
     tmppktlen = SSL_write(ssl_connection, data, len) ;
 
     if (len != tmppktlen) {
@@ -1158,9 +1145,6 @@ int     pqissl::senddata(void *data, int len) {
 }
 
 int     pqissl::readdata(void *data, int len) {
-#ifdef DEBUG_PQISSL
-    std::cout << "Reading data thread=" << pthread_self() << ", ssl=" << (void *)this << std::endl ;
-#endif
 
     // There is a do, because packets can be splitted into multiple ssl buffers
     // when they are larger than 16384 bytes. Such packets have to be read in
@@ -1295,14 +1279,17 @@ bool    pqissl::moretoread() {
         log(LOG_DEBUG_ALL, PQISSLZONE, out.str().c_str());
     }
 
+    if (sockfd < 0) return false;
+    unsigned int validSockfd = sockfd;
+
     fd_set ReadFDs, WriteFDs, ExceptFDs;
     FD_ZERO(&ReadFDs);
     FD_ZERO(&WriteFDs);
     FD_ZERO(&ExceptFDs);
 
-    FD_SET(sockfd, &ReadFDs);
-    FD_SET(sockfd, &WriteFDs);
-    FD_SET(sockfd, &ExceptFDs);
+    FD_SET(validSockfd, &ReadFDs);
+    FD_SET(validSockfd, &WriteFDs);
+    FD_SET(validSockfd, &ExceptFDs);
 
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -1352,15 +1339,17 @@ bool    pqissl::cansend() {
         "pqissl::cansend() polling socket!");
 
     // Interestingly - This code might be portable....
+    if (sockfd < 0) return false;
+    unsigned int validSockfd = sockfd;
 
     fd_set ReadFDs, WriteFDs, ExceptFDs;
     FD_ZERO(&ReadFDs);
     FD_ZERO(&WriteFDs);
     FD_ZERO(&ExceptFDs);
 
-    FD_SET(sockfd, &ReadFDs);
-    FD_SET(sockfd, &WriteFDs);
-    FD_SET(sockfd, &ExceptFDs);
+    FD_SET(validSockfd, &ReadFDs);
+    FD_SET(validSockfd, &WriteFDs);
+    FD_SET(validSockfd, &ExceptFDs);
 
     struct timeval timeout;
     timeout.tv_sec = 0;

@@ -25,6 +25,7 @@
 #include "services/p3service.h"
 #include <sstream>
 #include <iomanip>
+#include <time.h>
 
 /*****
  * #define SERV_DEBUG 1
@@ -35,10 +36,10 @@ void    p3Service::addSerialType(SerialType *st) {
 }
 
 NetItem *p3Service::recvItem() {
-    srvMtx.lock();   /*****   LOCK MUTEX *****/
+    srvMtx.lock();
 
     if (recv_queue.size() == 0) {
-        srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+        srvMtx.unlock();
         return NULL; /* nothing there! */
     }
 
@@ -46,35 +47,35 @@ NetItem *p3Service::recvItem() {
     NetItem *item = recv_queue.front();
     recv_queue.pop_front();
 
-    srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+    srvMtx.unlock();
     return item;
 }
 
 
 bool    p3Service::receivedItems() {
-    srvMtx.lock();   /*****   LOCK MUTEX *****/
+    srvMtx.lock();
 
     bool moreData = (recv_queue.size() != 0);
 
-    srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+    srvMtx.unlock();
 
     return moreData;
 }
 
 
 int p3Service::sendItem(NetItem *item) {
-    srvMtx.lock();   /*****   LOCK MUTEX *****/
+    srvMtx.lock();
 
     send_queue.push_back(item);
 
-    srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+    srvMtx.unlock();
 
     return 1;
 }
 
 // overloaded pqiService interface.
 int p3Service::receive(RawItem *raw) {
-    srvMtx.lock();   /*****   LOCK MUTEX *****/
+    srvMtx.lock();
 
 #ifdef SERV_DEBUG
     std::cerr << "p3Service::receive()";
@@ -121,16 +122,16 @@ int p3Service::receive(RawItem *raw) {
     /* cleanup input */
     delete raw;
 
-    srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+    srvMtx.unlock();
 
     return (item != NULL);
 }
 
 RawItem *p3Service::send() {
-    srvMtx.lock();   /*****   LOCK MUTEX *****/
+    srvMtx.lock();
 
     if (send_queue.size() == 0) {
-        srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+        srvMtx.unlock();
         return NULL; /* nothing there! */
     }
 
@@ -153,7 +154,7 @@ RawItem *p3Service::send() {
 
         /* can't convert! */
         delete si;
-        srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+        srvMtx.unlock();
         return NULL;
     }
 
@@ -180,33 +181,6 @@ RawItem *p3Service::send() {
     /* cleanup */
     delete si;
 
-    srvMtx.unlock(); /***** UNLOCK MUTEX *****/
+    srvMtx.unlock();
     return raw;
 }
-
-
-std::string generateRandomServiceId() {
-    std::ostringstream out;
-    out << std::hex;
-    /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
-#ifndef WINDOWS_SYS
-    /* 4 bytes per random number: 4 x 4 = 16 bytes */
-    for (int i = 0; i < 4; i++) {
-        out << std::setw(8) << std::setfill('0');
-        uint32_t rint = random();
-        out << rint;
-    }
-#else
-    srand(time(NULL));
-    /* 2 bytes per random number: 8 x 2 = 16 bytes */
-    for (int i = 0; i < 8; i++) {
-        out << std::setw(4) << std::setfill('0');
-        uint16_t rint = rand(); /* only gives 16 bits */
-        out << rint;
-    }
-#endif
-    /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
-    return out.str();
-}
-
-

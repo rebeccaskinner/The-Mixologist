@@ -26,9 +26,11 @@
 #include <QString>
 
 /*
+ * Convention:
  * All logging at or below LOG_DEBUG_ALERT should begin with the containing class and function.
  * All logging at or above LOG_WARNING should not include those, but rather be in plain text form suitable for end-users.
  */
+
 #define LOG_NONE        -1
 #define LOG_ALERT        1
 #define LOG_ERROR        3
@@ -45,23 +47,28 @@ int log(unsigned int lvl, int zone, QString msg);
 
 #define pqioutput log
 
-#define PQL_ALERT   LOG_ALERT
-#define PQL_ERROR   LOG_ERROR
+#define PQL_ALERT       LOG_ALERT
+#define PQL_ERROR       LOG_ERROR
 #define PQL_WARNING     LOG_WARNING
 #define PQL_DEBUG_ALERT LOG_DEBUG_ALERT
 #define PQL_DEBUG_BASIC LOG_DEBUG_BASIC
 #define PQL_DEBUG_ALL   LOG_DEBUG_ALL
 
 /* Zone constants for various files. */
+#define XMLUTILZONE 1500
+#define LMLIBRARYZONE 5001
 #define PQISTREAMERZONE 8221
+#define STATUSSERVICEZONE 12001
 #define MIXOLOGYSERVICEZONE 12409
 #define FTTRANSFERMODULEZONE 29384
 #define FTCONTROLLERZONE 29422
 #define FTDATADEMULTIPLEXZONE 29592
 #define FTFILEPROVIDERZONE 29800
 #define FTFILECREATORZONE 29801
+#define FTOFFLMLIST 29950
 #define PQIHANDLERZONE 34283
 #define PQISSLZONE 37714
 #define AUTHMGRZONE 38383
+#define CONNECTIONMANAGERZONE 90000
 #define UPNPHANDLERZONE 99283
 #endif

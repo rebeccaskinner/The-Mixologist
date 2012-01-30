@@ -28,7 +28,6 @@
 #include "util/net.h"
 #include "util/print.h"
 #include "util/debug.h"
-const int p3connectzone = 3431;
 
 #include "pqi/pqinotify.h"
 
@@ -52,11 +51,11 @@ const int p3connectzone = 3431;
 
 /* Network setup States */
 
-const uint32_t NET_UNKNOWN = 0x0001;
-const uint32_t NET_UPNP_INIT = 0x0002;
-const uint32_t NET_UPNP_SETUP = 0x0003;
-const uint32_t NET_UDP_SETUP = 0x0004;
-const uint32_t NET_DONE = 0x0005;
+const uint32_t NET_UNKNOWN = 0x0001; /* Initial startup */
+const uint32_t NET_UPNP_INIT = 0x0002; /* Initializing UPNP */
+const uint32_t NET_UPNP_SETUP = 0x0003; /* After UPNP init, when we are checking to see if UPNP has been setup, and handle success or failure and continue to UDP_SETUP */
+const uint32_t NET_UDP_SETUP = 0x0004; /* The state after UPNP_SETUP, where we set some class variables and move to DONE when the connection works. */
+const uint32_t NET_DONE = 0x0005; /* After we have a valid external address, either via UDP or UPNP. */
 
 
 /* Stun modes (TODO) */
@@ -160,7 +159,8 @@ void p3ConnectMgr::setOwnNetConfig(uint32_t netMode, uint32_t visState) {
 
     /* if we've started up - then tweak Dht On/Off */
     if (mNetStatus != NET_UNKNOWN) {
-        mDhtMgr->enable(!(ownState.visState & VIS_STATE_NODHT));
+        //mDhtMgr->enable(!(ownState.visState & VIS_STATE_NODHT));
+        mDhtMgr->enable(false);
     }
 }
 
@@ -195,6 +195,7 @@ void p3ConnectMgr::netStartup() {
      *
      * max 100 entries?
      */
+#ifdef false
     connMtx.lock();
     mDhtMgr->enableStun(true);
     /* push stun list to DHT */
@@ -206,7 +207,7 @@ void p3ConnectMgr::netStartup() {
     mStunFound = 0;
     mStunMoreRequired = true;
     connMtx.unlock();
-
+#endif
     //reset net status
     netFlagOk = true;
     netFlagUpnpOk = false;
@@ -218,7 +219,7 @@ void p3ConnectMgr::netStartup() {
 
     /* decide which net setup mode we're going into  */
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     mNetInitTS = time(NULL);
 
@@ -261,11 +262,11 @@ void p3ConnectMgr::netStartup() {
 
 
 bool p3ConnectMgr::shutdown() { /* blocking shutdown call */
-    connMtx.lock();   /*   LOCK MUTEX */
+    connMtx.lock();
 
     bool upnpActive = ownState.netMode & NET_MODE_UPNP;
 
-    connMtx.unlock(); /* UNLOCK MUTEX */
+    connMtx.unlock();
 
     if (upnpActive) mUpnpMgr->shutdown();
     mDhtMgr->shutdown();
@@ -288,11 +289,11 @@ void p3ConnectMgr::netTick() {
     if (isLoopbackNet(&(ownState.localaddr.sin_addr)))
         checkNetAddress() ;
 
-    connMtx.lock();   /*   LOCK MUTEX */
+    connMtx.lock();
 
     uint32_t netStatus = mNetStatus;
 
-    connMtx.unlock(); /* UNLOCK MUTEX */
+    connMtx.unlock();
 
     switch (netStatus) {
         case NET_UNKNOWN:
@@ -309,6 +310,7 @@ void p3ConnectMgr::netTick() {
             break;
         case NET_DONE:
             stunCheck(); /* Keep on stunning until its happy */
+            netUpnpMaintenance();
         default:
             break;
     }
@@ -325,7 +327,7 @@ void    p3ConnectMgr::statusTick() {
     time_t timeoutIfOlder = now - LAST_HEARD_TIMEOUT;
 
     {
-        MixStackMutex stack(connMtx);  /******   LOCK MUTEX ******/
+        QMutexLocker stack(&connMtx);  /******   LOCK MUTEX ******/
         std::map<int, peerConnectState>::iterator it;
         for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
             /* Do nothing for no cert peers */
@@ -338,7 +340,7 @@ void    p3ConnectMgr::statusTick() {
                     QString out("Connection with ");
                     out.append(it->second.name);
                     out.append(" has timed out");
-                    log(LOG_WARNING, p3connectzone, out);
+                    log(LOG_WARNING, CONNECTIONMANAGERZONE, out);
 
                     it->second.state &= (~PEER_S_CONNECTED);
                     it->second.actions |= PEER_TIMEOUT;
@@ -388,7 +390,7 @@ void p3ConnectMgr::tickMonitors() {
     std::map<int, peerConnectState>::iterator it;
 
     {
-        MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+        QMutexLocker stack(&connMtx);
 
         if (mStatusChanged) {
 #ifdef CONN_DEBUG
@@ -470,7 +472,7 @@ void p3ConnectMgr::netUpnpInit() {
 #endif
     uint16_t eport, iport;
 
-    connMtx.lock();   /*   LOCK MUTEX */
+    connMtx.lock();
 
     /* get the ports from the configuration */
 
@@ -481,7 +483,7 @@ void p3ConnectMgr::netUpnpInit() {
         eport = iport;
     }
 
-    connMtx.unlock(); /* UNLOCK MUTEX */
+    connMtx.unlock();
 
     mUpnpMgr->setInternalPort(iport);
     mUpnpMgr->setExternalPort(eport);
@@ -491,32 +493,31 @@ void p3ConnectMgr::netUpnpInit() {
 
 void p3ConnectMgr::netUpnpCheck() {
     /* grab timestamp */
-    connMtx.lock();   /*   LOCK MUTEX */
+    connMtx.lock();
 
-    time_t delta = time(NULL) - mNetInitTS;
+    time_t timeSpent = time(NULL) - mNetInitTS;
 
-    connMtx.unlock(); /* UNLOCK MUTEX */
+    connMtx.unlock();
 
     struct sockaddr_in extAddr;
-    int upnpState = mUpnpMgr->getActive();
+    bool upnpActive = mUpnpMgr->getActive();
 
-    if ((upnpState < 0) ||
-            ((upnpState == 0) && (delta > MAX_UPNP_INIT))) {
+    if (!upnpActive && (timeSpent > MAX_UPNP_INIT)) {
         /* fallback to UDP startup */
-        connMtx.lock();   /*   LOCK MUTEX */
+        connMtx.lock();
 
         /* UPnP Failed us! */
         mUpnpAddrValid = false;
         mNetStatus = NET_UDP_SETUP;
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::netUpnpCheck() enabling stunkeepalive() cos UDP" << std::endl;
-#endif
+
+        log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, "p3ConnectMgr::netUpnpCheck() enabling stunkeepalive() due to UPNP failure");
+
         tou_stunkeepalive(1);
 
-        connMtx.unlock(); /* UNLOCK MUTEX */
-    } else if ((upnpState > 0) && (mUpnpMgr->getActive() && mUpnpMgr->getExternalAddress(extAddr))) {
+        connMtx.unlock();
+    } else if (upnpActive && mUpnpMgr->getExternalAddress(extAddr)) {
         /* switch to UDP startup */
-        connMtx.lock();   /*   LOCK MUTEX */
+        connMtx.lock();
 
         /* Set Net Status flags ....
          * we now have external upnp address. Golden!
@@ -531,13 +532,13 @@ void p3ConnectMgr::netUpnpCheck() {
         mNetStatus = NET_UDP_SETUP;
         /* Fix netMode & Clear others! */
         ownState.netMode = NET_MODE_TRY_UPNP | NET_MODE_UPNP;
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::netUpnpCheck() disabling stunkeepalive() cos uPnP" << std::endl;
-#endif
+
+        log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, "p3ConnectMgr::netUpnpCheck() disabling stunkeepalive() due to UPNP success");
+
         tou_stunkeepalive(0);
         mStunMoreRequired = false; /* only need to validate address (UPNP) */
 
-        connMtx.unlock(); /* UNLOCK MUTEX */
+        connMtx.unlock();
     }
 }
 
@@ -548,7 +549,7 @@ void p3ConnectMgr::netUdpCheck() {
         struct sockaddr_in extAddr;
         uint32_t mode = 0;
 
-        connMtx.lock();   /*   LOCK MUTEX */
+        connMtx.lock();
 
         mNetStatus = NET_DONE;
 
@@ -618,7 +619,7 @@ void p3ConnectMgr::netUdpCheck() {
             }
         }
 
-        connMtx.unlock(); /* UNLOCK MUTEX */
+        connMtx.unlock();
 
         mDhtMgr->setExternalInterface(iaddr, extAddr, mode);
 
@@ -635,7 +636,7 @@ void p3ConnectMgr::netUnreachableCheck() {
 #endif
     std::map<int, peerConnectState>::iterator it;
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
         /* get last contact detail */
@@ -688,6 +689,22 @@ void p3ConnectMgr::netUnreachableCheck() {
 
 }
 
+void p3ConnectMgr::netUpnpMaintenance() {
+    /* We only need to maintain if we're using UPNP,
+       and this variable is only set true after UPNP is successfully configured. */
+    static time_t last_call;
+    bool notTooFrequent = (time(NULL) - last_call > 60);
+    if (mUpnpAddrValid && notTooFrequent) {
+        last_call = time(NULL);
+        if (!mUpnpMgr->getActive()) {
+            mUpnpMgr->restart();
+            /* Return netTick loop to waiting for connection to be setup.
+               Reset the clock so it has another full time-out to fix the connection. */
+            mNetStatus = NET_UPNP_SETUP;
+            mNetInitTS = time(NULL);
+        }
+    }
+}
 
 /*******************************  UDP MAINTAINANCE  ********************************
  * Interaction with the UDP is mainly for determining the External Port.
@@ -708,12 +725,8 @@ bool p3ConnectMgr::udpExtAddressCheck() {
     socklen_t len = sizeof(addr);
     uint8_t stable;
 
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::udpExtAddressCheck()" << std::endl;
-#endif
-
     if (0 < tou_extaddr((struct sockaddr *) &addr, &len, &stable)) {
-        MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+        QMutexLocker stack(&connMtx);
 
 
         /* update UDP information */
@@ -760,7 +773,7 @@ bool p3ConnectMgr::stunCheck() {
 #endif
 
     {
-        MixStackMutex stack(connMtx); /********* LOCK STACK MUTEX ******/
+        QMutexLocker stack(&connMtx);
 
         /* if DONE -> return */
         if (mStunStatus == STUN_DONE) {
@@ -778,7 +791,7 @@ bool p3ConnectMgr::stunCheck() {
         /* set external UDP address */
         mDhtMgr->enableStun(false);
 
-        MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+        QMutexLocker stack(&connMtx);
 
         mStunStatus = STUN_DONE;
 
@@ -795,18 +808,18 @@ void    p3ConnectMgr::stunStatus(std::string id, struct sockaddr_in raddr, uint3
     std::cerr << std::endl;
 #endif
 
-    connMtx.lock();   /*   LOCK MUTEX */
+    connMtx.lock();
 
     bool stillStunning = (mStunStatus == STUN_DHT);
 
-    connMtx.unlock(); /* UNLOCK MUTEX */
+    connMtx.unlock();
 
     /* only useful if they have an exposed TCP/UDP port */
     if (type & NET_CONN_TCP_EXTERNAL) {
         if (stillStunning) {
-            connMtx.lock();   /*   LOCK MUTEX */
+            connMtx.lock();
             mStunFound++;
-            connMtx.unlock(); /* UNLOCK MUTEX */
+            connMtx.unlock();
 
 #ifdef CONN_DEBUG
             std::cerr << "p3ConnectMgr::stunStatus() Sending to UDP" << std::endl;
@@ -834,7 +847,7 @@ OTHER
 */
 
 void p3ConnectMgr::stunCollect(std::string id, struct sockaddr_in, uint32_t flags) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
 #ifdef CONN_DEBUG
     std::cerr << "p3ConnectMgr::stunCollect() id: " << Util::BinToHex(id) << std::endl;
@@ -884,7 +897,7 @@ void p3ConnectMgr::stunCollect(std::string id, struct sockaddr_in, uint32_t flag
 
 
 void p3ConnectMgr::addMonitor(pqiMonitor *mon) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     std::list<pqiMonitor *>::iterator it;
     it = std::find(clients.begin(), clients.end(), mon);
@@ -904,13 +917,13 @@ const std::string p3ConnectMgr::getOwnCertId() {
     }
 }
 
-bool p3ConnectMgr::isFriend(int librarymixer_id) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool p3ConnectMgr::isFriend(unsigned int librarymixer_id) {
+    QMutexLocker stack(&connMtx);
     return (mFriendList.end() != mFriendList.find(librarymixer_id));
 }
 
-bool p3ConnectMgr::isOnline(int librarymixer_id) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool p3ConnectMgr::isOnline(unsigned int librarymixer_id) {
+    QMutexLocker stack(&connMtx);
 
     std::map<int, peerConnectState>::iterator it;
     if (mFriendList.end() != (it = mFriendList.find(librarymixer_id))) {
@@ -921,7 +934,7 @@ bool p3ConnectMgr::isOnline(int librarymixer_id) {
     }
 }
 
-QString p3ConnectMgr::getFriendName(int librarymixer_id) {
+QString p3ConnectMgr::getFriendName(unsigned int librarymixer_id) {
     std::map<int, peerConnectState>::iterator it;
     it = mFriendList.find(librarymixer_id);
     if (it == mFriendList.end()) return "";
@@ -936,8 +949,8 @@ QString p3ConnectMgr::getFriendName(std::string cert_id) {
     return "";
 }
 
-bool p3ConnectMgr::getPeerConnectState(int librarymixer_id, peerConnectState &state) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool p3ConnectMgr::getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state) {
+    QMutexLocker stack(&connMtx);
 
     if (librarymixer_id == ownState.librarymixer_id) {
         state = ownState;
@@ -959,7 +972,7 @@ QString p3ConnectMgr::getOwnName(){
 }
 
 void p3ConnectMgr::getOnlineList(std::list<int> &peers) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* check for existing */
     std::map<int, peerConnectState>::iterator it;
@@ -972,7 +985,7 @@ void p3ConnectMgr::getOnlineList(std::list<int> &peers) {
 }
 
 void p3ConnectMgr::getSignedUpList(std::list<int> &peers) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* check for existing */
     std::map<int, peerConnectState>::iterator it;
@@ -985,7 +998,7 @@ void p3ConnectMgr::getSignedUpList(std::list<int> &peers) {
 }
 
 void p3ConnectMgr::getFriendList(std::list<int> &peers) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* check for existing */
     std::map<int, peerConnectState>::iterator it;
@@ -995,22 +1008,22 @@ void p3ConnectMgr::getFriendList(std::list<int> &peers) {
     return;
 }
 
-bool p3ConnectMgr::connectAttempt(int librarymixer_id, struct sockaddr_in &addr,
+bool p3ConnectMgr::connectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr,
                                   uint32_t &delay, uint32_t &period, uint32_t &type)
 
 {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* check for existing */
     std::map<int, peerConnectState>::iterator it;
     it = mFriendList.find(librarymixer_id);
     if (it == mFriendList.end()) {
-        log(LOG_WARNING, p3connectzone, QString("Can't make attempt to connect to user, not in friends list, certificate id was: ").append(librarymixer_id));
+        log(LOG_WARNING, CONNECTIONMANAGERZONE, QString("Can't make attempt to connect to user, not in friends list, certificate id was: ").append(librarymixer_id));
         return false;
     }
 
     if (it->second.connAddrs.size() < 1) {
-        log(LOG_WARNING, p3connectzone, QString("Can't make attempt to connect to user, have no IP address: ").append(it->second.name));
+        log(LOG_WARNING, CONNECTIONMANAGERZONE, QString("Can't make attempt to connect to user, have no IP address: ").append(it->second.name));
         return false;
     }
 
@@ -1033,11 +1046,11 @@ bool p3ConnectMgr::connectAttempt(int librarymixer_id, struct sockaddr_in &addr,
             return false;
         } else {
             if (ipit->second == USED_IP_CONNECTED) {
-                log(LOG_DEBUG_ALERT, p3connectzone, "p3ConnectMgr::connectAttempt Can not connect to " + QString(address_to_string(address.addr).c_str()) + " due to existing connection.");
+                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, "p3ConnectMgr::connectAttempt Can not connect to " + QString(address_to_string(address.addr).c_str()) + " due to existing connection.");
                 return false;
             } else if (ipit->second == USED_IP_CONNECTING) {
                 it->second.schedulednexttry = time(NULL) + USED_IP_WAIT_TIME;
-                log(LOG_DEBUG_BASIC, p3connectzone, "p3ConnectMgr::connectAttempt Waiting to try to connect to " + QString(address_to_string(address.addr).c_str()) + " due to existing attempted connection.");
+                log(LOG_DEBUG_BASIC, CONNECTIONMANAGERZONE, "p3ConnectMgr::connectAttempt Waiting to try to connect to " + QString(address_to_string(address.addr).c_str()) + " due to existing attempted connection.");
                 return false;
             }
         }
@@ -1051,7 +1064,7 @@ bool p3ConnectMgr::connectAttempt(int librarymixer_id, struct sockaddr_in &addr,
     period = it->second.currentConnAddr.period;
     type = it->second.currentConnAddr.type;
 
-    log(LOG_DEBUG_BASIC, p3connectzone, QString("p3ConnectMgr::connectAttempt Returning information for connection attempt to user: ").append(it->second.name));
+    log(LOG_DEBUG_BASIC, CONNECTIONMANAGERZONE, QString("p3ConnectMgr::connectAttempt Returning information for connection attempt to user: ").append(it->second.name));
 
     return true;
 }
@@ -1065,14 +1078,14 @@ bool p3ConnectMgr::connectAttempt(int librarymixer_id, struct sockaddr_in &addr,
  *
  */
 
-bool p3ConnectMgr::connectResult(int librarymixer_id, bool success, uint32_t flags) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool p3ConnectMgr::connectResult(unsigned int librarymixer_id, bool success, uint32_t flags) {
+    QMutexLocker stack(&connMtx);
 
     /* check for existing */
     std::map<int, peerConnectState>::iterator it;
     it = mFriendList.find(librarymixer_id);
     if (it == mFriendList.end()) {
-        log(LOG_WARNING, p3connectzone, QString("Failed to connect to user, not in friends list, friend # was: ").append(QString::number(librarymixer_id)));
+        log(LOG_WARNING, CONNECTIONMANAGERZONE, QString("Failed to connect to user, not in friends list, friend number was: ").append(QString::number(librarymixer_id)));
         return false;
     }
 
@@ -1092,7 +1105,7 @@ bool p3ConnectMgr::connectResult(int librarymixer_id, bool success, uint32_t fla
             toLog.append(" (");
             toLog.append(inet_ntoa(it->second.currentConnAddr.addr.sin_addr));
             toLog.append(")");
-            log(LOG_DEBUG_BASIC, p3connectzone, toLog);
+            log(LOG_DEBUG_BASIC, CONNECTIONMANAGERZONE, toLog);
         }
 
         /* change state */
@@ -1106,7 +1119,7 @@ bool p3ConnectMgr::connectResult(int librarymixer_id, bool success, uint32_t fla
         return true;
     }
 
-    log(LOG_DEBUG_BASIC, p3connectzone, QString("Unable to connect to user: ").append(it->second.name).append(", flags: ").append(QString::number(flags)));
+    log(LOG_DEBUG_BASIC, CONNECTIONMANAGERZONE, QString("Unable to connect to user: ").append(it->second.name).append(", flags: ").append(QString::number(flags)));
 
     usedIps.erase(address_to_string(it->second.currentConnAddr.addr));
 
@@ -1144,11 +1157,11 @@ bool p3ConnectMgr::connectResult(int librarymixer_id, bool success, uint32_t fla
     return true;
 }
 
-void    p3ConnectMgr::heardFrom(int librarymixer_id) {
+void    p3ConnectMgr::heardFrom(unsigned int librarymixer_id) {
     std::map<int, peerConnectState>::iterator it;
     it = mFriendList.find(librarymixer_id);
     if (it == mFriendList.end()) {
-        log(LOG_ERROR, p3connectzone, QString("Somehow heard from someone that is not a friend: ").append(librarymixer_id));
+        log(LOG_ERROR, CONNECTIONMANAGERZONE, QString("Somehow heard from someone that is not a friend: ").append(librarymixer_id));
         return;
     }
     it->second.lastheard = time(NULL);
@@ -1177,7 +1190,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
 
     {
-        MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+        QMutexLocker stack(&connMtx);
 
 #ifdef CONN_DEBUG
         std::cerr << "p3ConnectMgr::peerStatus()";
@@ -1203,7 +1216,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
             out << " type: " << type;
             out << " flags: " << flags;
             out << " source: " << source;
-            log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
         }
 
         /* look up the id */
@@ -1306,7 +1319,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
                 /* Log */
                 std::ostringstream out;
                 out << "p3ConnectMgr::peerStatus() NO CONNECT (already connected!)";
-                log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
             }
 
             return;
@@ -1383,7 +1396,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
                 out << " period: " << pca.period;
                 out << " ts: " << pca.ts;
                 out << " source: " << source;
-                log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
             }
 
             it->second.connAddrs.push_back(pca);
@@ -1435,7 +1448,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
                 out << " period: " << pca.period;
                 out << " ts: " << pca.ts;
                 out << " source: " << source;
-                log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
             }
 
             it->second.connAddrs.push_back(pca);
@@ -1462,7 +1475,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
     } // P3CONNMGR_NO_AUTO_CONNECTION /****** STACK UNLOCK MUTEX *******/
 #endif  // P3CONNMGR_NO_AUTO_CONNECTION 
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     if (it->second.inConnAttempt) {
 #ifdef CONN_DEBUG
@@ -1515,7 +1528,7 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
         out << " raddr: " << inet_ntoa(raddr.sin_addr);
         out << ":" << ntohs(raddr.sin_port);
         out << " source: " << source;
-        log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+        log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
     }
 
     /******************** TCP PART *****************************/
@@ -1529,7 +1542,7 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
 
     /******************** UDP PART *****************************/
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     if (ownState.netMode & NET_MODE_UNREACHABLE) {
 #ifdef CONN_DEBUG
@@ -1609,7 +1622,7 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
             out << " delay: " << pca.delay;
             out << " period: " << pca.period;
             out << " ts: " << pca.ts;
-            log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
         }
 
         /* push to the back ... TCP ones should be tried first */
@@ -1645,8 +1658,8 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
 /*******************************************************************/
 /*******************************************************************/
 
-bool p3ConnectMgr::addUpdateFriend(int librarymixer_id, QString cert, QString name) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool p3ConnectMgr::addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name) {
+    QMutexLocker stack(&connMtx);
 
     //First try to insert the certificate
     int authResult = authMgr->addUpdateCertificate(cert, librarymixer_id);
@@ -1713,7 +1726,7 @@ bool p3ConnectMgr::removeFriend(std::string id) {
 
     mDhtMgr->dropPeer(id);
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* move to othersList */
     bool success = false;
@@ -1741,10 +1754,10 @@ bool p3ConnectMgr::removeFriend(std::string id) {
 /*******************************************************************/
 /*******************************************************************/
 /*************** External Control ****************/
-void    p3ConnectMgr::retryConnect(int librarymixer_id) {
+void    p3ConnectMgr::retryConnect(unsigned int librarymixer_id) {
     std::map<int, peerConnectState>::iterator it = mFriendList.find(librarymixer_id);
     if (it != mFriendList.end()) {
-        //Starting a new connection attempt so reset doubleTried
+        //Starting a new connection attempt, so reset doubleTried
         it->second.doubleTried = false;
         retryConnectTCP(librarymixer_id);
         retryConnectNotify(librarymixer_id);
@@ -1759,8 +1772,8 @@ void    p3ConnectMgr::retryConnectAll() {
 }
 
 
-bool   p3ConnectMgr::retryConnectTCP(int librarymixer_id) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
+    QMutexLocker stack(&connMtx);
 
     /* push addresses onto stack */
 #ifdef CONN_DEBUG
@@ -1847,7 +1860,7 @@ bool   p3ConnectMgr::retryConnectTCP(int librarymixer_id) {
                 out << it->second.librarymixer_id;
                 out << " with Local IP: " << inet_ntoa(pca.addr.sin_addr);
                 out << ":" << ntohs(pca.addr.sin_port);
-                log(LOG_WARNING, p3connectzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
             }
 
             it->second.connAddrs.push_back(pca);
@@ -1907,7 +1920,7 @@ bool   p3ConnectMgr::retryConnectTCP(int librarymixer_id) {
                 out << it->second.librarymixer_id;
                 out << " with Internet IP: " << inet_ntoa(pca.addr.sin_addr);
                 out << ":" << ntohs(pca.addr.sin_port);
-                log(LOG_WARNING, p3connectzone, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
             }
 
             it->second.connAddrs.push_back(pca);
@@ -1950,8 +1963,8 @@ bool   p3ConnectMgr::retryConnectTCP(int librarymixer_id) {
 }
 
 
-bool   p3ConnectMgr::retryConnectNotify(int librarymixer_id) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool   p3ConnectMgr::retryConnectNotify(unsigned int librarymixer_id) {
+    QMutexLocker stack(&connMtx);
 
     /* push addresses onto stack */
 #ifdef CONN_DEBUG
@@ -2000,7 +2013,7 @@ bool   p3ConnectMgr::retryConnectNotify(int librarymixer_id) {
             std::ostringstream out;
             out  << "p3ConnectMgr::retryConnectNotify() Notifying Peer";
             out  << " id: " << librarymixer_id;
-            log(LOG_DEBUG_ALERT, p3connectzone, out.str().c_str());
+            log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
         }
 
         /* attempt UDP connection */
@@ -2014,8 +2027,8 @@ bool   p3ConnectMgr::retryConnectNotify(int librarymixer_id) {
 
 
 
-bool    p3ConnectMgr::setLocalAddress(int librarymixer_id, struct sockaddr_in addr) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool    p3ConnectMgr::setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr) {
+    QMutexLocker stack(&connMtx);
 
     if (librarymixer_id == ownState.librarymixer_id) {
         ownState.localaddr = addr;
@@ -2032,8 +2045,8 @@ bool    p3ConnectMgr::setLocalAddress(int librarymixer_id, struct sockaddr_in ad
     return true;
 }
 
-bool    p3ConnectMgr::setExtAddress(int librarymixer_id, struct sockaddr_in addr) {
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+bool    p3ConnectMgr::setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr) {
+    QMutexLocker stack(&connMtx);
 
 
     if (librarymixer_id == ownState.librarymixer_id) {
@@ -2051,7 +2064,7 @@ bool    p3ConnectMgr::setExtAddress(int librarymixer_id, struct sockaddr_in addr
     return true;
 }
 
-bool    p3ConnectMgr::setNetworkMode(int librarymixer_id, uint32_t netMode) {
+bool    p3ConnectMgr::setNetworkMode(unsigned int librarymixer_id, uint32_t netMode) {
     if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
         uint32_t visState = ownState.visState;
         setOwnNetConfig(netMode, visState);
@@ -2059,7 +2072,7 @@ bool    p3ConnectMgr::setNetworkMode(int librarymixer_id, uint32_t netMode) {
         return true;
     }
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* check if it is a friend */
     std::map<int, peerConnectState>::iterator it;
@@ -2071,7 +2084,7 @@ bool    p3ConnectMgr::setNetworkMode(int librarymixer_id, uint32_t netMode) {
     return false;
 }
 
-bool    p3ConnectMgr::setVisState(int librarymixer_id, uint32_t visState) {
+bool    p3ConnectMgr::setVisState(unsigned int librarymixer_id, uint32_t visState) {
     if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
         uint32_t netMode = ownState.netMode;
         setOwnNetConfig(netMode, visState);
@@ -2079,7 +2092,7 @@ bool    p3ConnectMgr::setVisState(int librarymixer_id, uint32_t visState) {
         return true;
     }
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     /* check if it is a friend */
     std::map<int, peerConnectState>::iterator it;
@@ -2122,7 +2135,7 @@ bool    p3ConnectMgr::checkNetAddress() {
     std::list<std::string> addrs = getLocalInterfaces();
     std::list<std::string>::iterator it;
 
-    MixStackMutex stack(connMtx); /****** STACK LOCK MUTEX *******/
+    QMutexLocker stack(&connMtx);
 
     bool found = false;
     for (it = addrs.begin(); (!found) && (it != addrs.end()); it++) {

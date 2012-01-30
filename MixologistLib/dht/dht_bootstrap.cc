@@ -28,7 +28,6 @@
 #include "dht/opendhtmgr.h"
 
 #include "util/net.h"
-#include "util/threads.h"
 #include "util/print.h"
 
 #include "tcponudp/tou_net.h"
@@ -38,6 +37,8 @@
 #include <sstream>
 #include <iomanip>
 #include <unistd.h>
+
+#include <QMutex>
 
 #define BOOTSTRAP_DEBUG  1
 
@@ -97,7 +98,7 @@ public:
     virtual ~pqiConnectCbStun() {return;}
 
     void    addPeer(std::string id) {
-        MixStackMutex stack(peerMtx); /**** LOCK MUTEX ***/
+        QMutexLocker stack(&peerMtx);
         std::map<std::string, StunDetails>::iterator it;
         it = peerMap.find(id);
         if (it == peerMap.end()) {
@@ -113,7 +114,7 @@ public:
     }
 
     void    printPeerStatus() {
-        MixStackMutex stack(peerMtx); /**** LOCK MUTEX ***/
+        QMutexLocker stack(&peerMtx);
 
         time_t t = time(NULL);
         std::string timestr = ctime(&t);
@@ -173,17 +174,18 @@ public:
 
         std::cerr << std::endl;
 
+        //Wasn't working before, but after pthreads were removed, definitely not working now
         /* launch a publishThread */
-        pthread_t tid;
+        //pthread_t tid;
 
         dhtStunData *pub = new dhtStunData;
         pub->stunCb = this;
         pub->id = id;
         pub->toaddr = peeraddr;
 
-        void *data = (void *) pub;
-        pthread_create(&tid, 0, &doStunPeer, data);
-        pthread_detach(tid);
+        //void *data = (void *) pub;
+        //pthread_create(&tid, 0, &doStunPeer, data);
+        //pthread_detach(tid);
 
         return;
 
@@ -199,7 +201,7 @@ public:
     virtual void    stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t) {
         addPeer(id);
         {
-            MixStackMutex stack(peerMtx); /**** LOCK MUTEX ***/
+            QMutexLocker stack(&peerMtx);
 
             std::map<std::string, StunDetails>::iterator it;
             it = peerMap.find(id);
@@ -222,7 +224,7 @@ public:
 
     virtual void    stunSuccess(std::string id, struct sockaddr_in, struct sockaddr_in) {
         {
-            MixStackMutex stack(peerMtx); /**** LOCK MUTEX ***/
+            QMutexLocker stack(&peerMtx);
 
             std::map<std::string, StunDetails>::iterator it;
             it = peerMap.find(id);
@@ -243,7 +245,7 @@ public:
 
 private:
 
-    MixMutex peerMtx;
+    QMutex peerMtx;
     std::map<std::string, StunDetails> peerMap;
 };
 
@@ -252,7 +254,7 @@ private:
 extern "C" void *doStunPeer(void *p) {
     dhtStunData *data = (dhtStunData *) p;
     if ((!data) || (!data->stunCb)) {
-        pthread_exit(NULL);
+        //pthread_exit(NULL);
     }
 
     /* stun it! */
@@ -262,7 +264,7 @@ extern "C" void *doStunPeer(void *p) {
 
     delete data;
 
-    pthread_exit(NULL);
+    //pthread_exit(NULL);
 
     return NULL;
 }
@@ -297,7 +299,7 @@ int main(int argc, char **argv) {
     /* for static PThreads under windows... we need to init the library...
      */
 #ifdef PTW32_STATIC_LIB
-    pthread_win32_process_attach_np();
+    //pthread_win32_process_attach_np();
 #endif
 
     // Windows Networking Init.

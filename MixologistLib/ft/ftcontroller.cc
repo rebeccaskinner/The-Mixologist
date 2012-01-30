@@ -20,25 +20,26 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#include "ft/ftcontroller.h"
+#include <ft/ftcontroller.h>
 
-#include "ft/ftfilecreator.h"
-#include "ft/fttransfermodule.h"
-#include "ft/ftsearch.h"
-#include "ft/ftdatademultiplex.h"
-#include "ft/ftitemlist.h"
-#include "ft/ftserver.h"
+#include <ft/fttransfermodule.h>
+#include <ft/ftofflmlist.h>
+#include <ft/ftfilemethod.h>
+#include <ft/ftdatademultiplex.h>
+#include <ft/ftserver.h>
+#include <ft/ftborrower.h>
 
-#include "interface/peers.h"
+#include <server/librarymixer-library.h>
 
-#include "util/dir.h"
-#include "util/debug.h"
+#include <services/mixologyservice.h>
 
+#include <interface/peers.h>
 
-#include "pqi/p3connmgr.h"
-#include "pqi/pqinotify.h"
+#include <util/dir.h>
+#include <util/debug.h>
 
-#include <stdio.h>
+#include <pqi/p3connmgr.h>
+#include <pqi/pqinotify.h>
 
 #include <QSettings>
 #include <interface/settings.h>
@@ -47,551 +48,403 @@
  * #define CONTROL_DEBUG 1
  *****/
 
-ftController::ftController(ftDataDemultiplex *dm, ftSearch *fs, ftItemList *fil)
-    :mDataplex(dm), mSearch(fs), mItemList(fil), mFtActive(false) {
+ftController::ftController() :mFtActive(false), mInitialLoadDone(false) {}
 
-    /*
-    Restore the saved transfers.
-    No need for mutex protection because requestFile is protected,
-    and requestFile is the only time we touch class-level variables.
-
-    Format of the saved transfer settings
-    //a hash
-        Transfers
-            //iniEncode of (an orig_item_id with filename appended)
-                Orig_item_id = the item id
-                Librarymixer_name = a library mixer name
-                Filename = a file name (possibly including subdirectories)
-            //another orig_item_id
-        Sources
-            //a source id = ""
-            //another source = ""
-        Filesize = filesize
-    //another hash
-    */
-    QSettings saved(*savedTransfers, QSettings::IniFormat);
-    saved.beginGroup("Files");
-    QStringList fileTransfers = saved.childGroups();
-    for (int i = 0; i < fileTransfers.size(); i++) {
-        QList<int> orig_item_ids;
-        QStringList librarymixer_names;
-        QStringList filenames;
-        QList<int> sourceIds;
-
-        saved.beginGroup(fileTransfers[i]);
-
-        int filesize = saved.value("Filesize").toInt();
-
-        saved.beginGroup("Transfers");
-        QStringList librarymixerTransfers = saved.childGroups();
-        for (int j = 0; j < librarymixerTransfers.size(); j++) {
-            saved.beginGroup(librarymixerTransfers[j]);
-            orig_item_ids.append(saved.value("Orig_item_id").toInt());
-            librarymixer_names.append(saved.value("Librarymixer_name").toString());
-            filenames.append(saved.value("Filename").toString());
-            saved.endGroup(); //librarymixerTransfers[j]
-        }
-        saved.endGroup(); //Transfers
-
-        saved.beginGroup("Sources");
-        QStringList raw_sources = saved.childKeys();
-        //convert source ids to int
-        for (int j = 0; j < raw_sources.size(); j++) {
-            sourceIds.append(raw_sources[j].toInt());
-        }
-        saved.endGroup(); //sources
-
-        saved.endGroup(); //fileTransfers[i]
-
-        requestFile(librarymixer_names, orig_item_ids, filenames, fileTransfers[i].toStdString(), filesize, 0, sourceIds);
-    }
-}
+#define MAX_CONCURRENT_DOWNLOADS_IN_GROUP 2
 
 void ftController::run() {
-    /* check the queues */
     while (true) {
-#ifdef WIN32
-        Sleep(1000);
-#else
         sleep(1);
-#endif
 
-        //Initial items to load
-        bool initialLoad = false;
-        {
-            MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-            initialLoad = (mFtActive) && (!mFtInitialLoadDone);
-        }
+        if (!mInitialLoadDone) loadSavedTransfers();
 
-        if (initialLoad) {
-            if (!handleAPendingRequest()) {
-                MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-                mFtInitialLoadDone = true;
-            }
-        }
+        /* Check on our downloadGroups and see if any transfers need to be activated or finished. */
+        if (mFtActive) {
+            QMutexLocker stack(&ctrlMutex);
+            int waiting_to_download, downloading, completed, total;
+            foreach (int key, mDownloadGroups.keys()) {
+                mDownloadGroups[key].getStatus(&waiting_to_download, &downloading, &completed, &total);
 
-        /* tick the transferModules */
-        {
-            MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-            QMap<std::string, ftFileControl>::iterator it;
-            for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
-                if (it.value().mState == ftFileControl::DOWNLOADING) {
-                    it.value().mTransfer->tick();
-                } else if (it.value().mState == ftFileControl::COMPLETED_CHECK) {
-                    finishFile(&(it.value()));
-                    break;
+                if (downloading < MAX_CONCURRENT_DOWNLOADS_IN_GROUP && waiting_to_download > 0) {
+                    mDownloadGroups[key].startOneTransfer();
+                }
+
+                if (completed == total && !mDownloadGroups[key].downloadFinished) {
+                    finishGroup(key);
                 }
             }
         }
+
+        /* Tick the active transferModules, i.e. send the requests for downloads */
+        if (mFtActive) {
+            QMutexLocker stack(&ctrlMutex);
+            foreach (ftTransferModule* transfer, mDownloads.values()){
+                if (transfer->transferStatus() == ftTransferModule::FILE_DOWNLOADING) {
+                    transfer->tick();
+                }
+            }
+            if (offLMList) offLMList->tick();
+        }
     }
 }
 
-bool ftController::activate() {
-    MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-    mFtActive = true;
-    mFtInitialLoadDone = false;
-    return true;
+void ftController::loadSavedTransfers() {
+    QMutexLocker stack(&ctrlMutex);
+    QSettings saved(*savedTransfers, QSettings::IniFormat);
+    saved.beginGroup("Transfers");
+    foreach (QString key, saved.childGroups()) {
+
+        saved.beginGroup(key);
+
+        int friend_id = saved.value("friend_id").toInt();
+        QString title = saved.value("title").toString();
+
+        unsigned int source_type = saved.value("source_type").toInt();
+        QString source_id = saved.value("source_id").toString();
+        downloadGroup::DownloadType download_type = (downloadGroup::DownloadType) saved.value("download_type").toInt();
+
+        saved.beginGroup("Files");
+
+        QStringList paths;
+        QStringList hashes;
+        QList<qlonglong> filesizes;
+        foreach (QString hash, saved.childGroups()) {
+            saved.beginGroup(hash);
+            hashes.append(hash);
+            paths.append(saved.value("path").toString());
+            filesizes.append(saved.value("filesize").toLongLong());
+            saved.endGroup(); //hash
+        }
+        saved.endGroup(); //Files
+
+        saved.endGroup(); //key
+
+        internalDownloadFiles(friend_id, title, paths, hashes, filesizes, key.toInt(), download_type, source_type, source_id);
+    }
+    saved.endGroup(); //Transfers
+
+    mInitialLoadDone = true;
 }
 
-//Not mutex protected, called by transfer module's tick by our tick from within mutex
-void ftController::FlagFileComplete(std::string hash) {
-    mDownloads[hash].mState = ftFileControl::COMPLETED_CHECK;
+void ftController::finishGroup(int groupKey) {
+    mDownloadGroups[groupKey].downloadFinished = true;
+
+    bool success = false;
+    if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_NORMAL || mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_BORROW) {
+        success = moveFilesToDownloadPath(groupKey);
+    } else if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_RETURN) {
+        success = moveLentFilesToOriginalPaths(groupKey);
+    }
+
+    /* We leave the group in mDownloadGroups but remove from saved so that completed items continue to display until cleared but don't display on quit and restart. */
+    /* Note that we have left the ftTransferModules in place undeleted and linked in its downloadGroup in mDownloadGroups, so that we can continue to query them for display
+       (though these same ftTransferModule have already been removed from mDownloads where applicable) */
+    removeGroupFromSavedTransfers(groupKey);
+
+    if (success) {
+        if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_BORROW) {
+            borrowManager->addBorrowed(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_type, mDownloadGroups[groupKey].source_id, mDownloadGroups[groupKey].title);
+        } else if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_RETURN) {
+            mixologyService->sendBorrowedReturned(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_type, mDownloadGroups[groupKey].source_id);
+        }
+    }
+
+    getPqiNotify()->AddPopupMessage(POPUP_DOWNDONE, mDownloadGroups[groupKey].title, "has finished downloading");
+    log(LOG_WARNING, FTCONTROLLERZONE, "Finished downloading " + mDownloadGroups[groupKey].title);
 }
 
-//No mutex protection, call from within mutex
-void ftController::finishFile(ftFileControl *fc) {
-    log(LOG_DEBUG_ALERT, FTCONTROLLERZONE, "ftController.finishFile on " + fc->filenames.first());
-    if ((fc->mCreator && !fc->mCreator->finished()) ||
-            (fc->mTransfer && fc->mState == ftFileControl::DOWNLOADING)) {
-        log(LOG_ERROR, FTCONTROLLERZONE, "Tried to close out a transfer on a file that was not done! " +
-            QString::number(fc->mCreator->amountReceived()) + "/" + QString::number(fc->mCreator->getFileSize()));
-        return;
-    }
-    if (fc->mTransfer) {
-        delete fc->mTransfer;
-        fc->mTransfer = NULL;
+bool ftController::moveFilesToDownloadPath(int groupKey) {
+    /* First create the target directory where we will put the files. */
+    mDownloadGroups[groupKey].finalDestination = DirUtil::createUniqueDirectory(files->getDownloadDirectory() + QDir::separator() + mDownloadGroups[groupKey].title);
+    if (mDownloadGroups[groupKey].finalDestination.isEmpty()){
+        /* If the group's title has an illegal character for the local OS/filesystem, this should get around that problem. */
+        mDownloadGroups[groupKey].finalDestination = DirUtil::createUniqueDirectory(files->getDownloadDirectory() + QDir::separator() + "Incoming");
+        if (mDownloadGroups[groupKey].finalDestination.isEmpty()){
+            getPqiNotify()->AddSysMessage(0, SYS_WARNING, "Transfer Completion Error", "Unable to create folder to put downloaded files into");
+            log(LOG_ERROR, FTCONTROLLERZONE, "Unable to create folder to put downloaded files into");
+            return false;
+        }
     }
 
-    if (fc->mCreator) {
-        delete fc->mCreator;
-        fc->mCreator = NULL;
-    }
-    mDataplex->removeTransferModule(fc->mHash);
-
-    /* If all transfers with same orig_item_id are done, then complete them.
-       Otherwise, mark this one as completed and waiting for the rest to finish. */
-    /* We need to clone this, because if there is more than one item id, and an id
-       has completeTransfer called on it, completeTransfer will remove that id from
-       the fc->orig_item_ids list. */
-    QList<int> item_ids = fc->orig_item_ids;
-    for (int item_index = 0; item_index < item_ids.size(); item_index++) {
-        if (checkTransferComplete(item_ids[item_index])) {
-            completeTransfer(item_ids[item_index]);
+    /* Now move the files if they aren't being used as part of any other transfer, or copy them if they are. */
+    bool success;
+    for (int i = 0; i < mDownloadGroups[groupKey].filesInGroup.count(); i++) {
+        QString currentLocation = mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getPath();
+        QString finalLocation = mDownloadGroups[groupKey].finalDestination + QDir::separator() + mDownloadGroups[groupKey].filenames[i];
+        if (inActiveDownloadGroup(mDownloadGroups[groupKey].filesInGroup[i])) {
+            if (!DirUtil::copyFile(currentLocation, finalLocation)) {
+                getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File copy error", "Error while copying file " + finalLocation + " from temporary location " + currentLocation);
+                log(LOG_ERROR, FTCONTROLLERZONE, "Error while copying file " + finalLocation + " from temporary location " + currentLocation);
+                success = false;
+            }
         } else {
-            fc->mState = ftFileControl::COMPLETED_WAIT;
-        }
-    }
-}
-
-//No mutex protection, call from within mutex
-bool ftController::checkTransferComplete(int orig_item_id){
-    bool found = false;
-    QMap<std::string, ftFileControl>::const_iterator file_it;
-    for (file_it = mDownloads.begin(); file_it != mDownloads.end(); file_it++) {
-        if (file_it->orig_item_ids.contains(orig_item_id)){
-            found = true;
-            if (file_it->mState == ftFileControl::DOWNLOADING) return false;
-        }
-    }
-    return found;
-}
-
-//No mutex protection, call from within mutex
-void ftController::completeTransfer(int orig_item_id) {
-    QString notificationName(""); //The name of the transfer being completed, to be passed up to notify
-    QString finalDestination(""); //The root path to where the files will go
-    QString createdDirectory(""); //If a directory is created, it will be noted here
-
-    //These lists are needed if this item was lent in order to put the files back.
-    QStringList item_filenames;
-    QStringList item_hashes;
-    QList<unsigned long> item_filesizes;
-
-    QMap<std::string, ftFileControl>::iterator it = mDownloads.end();
-    while(it != mDownloads.begin()){
-        it--;
-        //Step through each file's list of places it needs to go
-        int index = it.value().orig_item_ids.size();
-        while (index > 0){
-            index--;
-            if (it.value().orig_item_ids[index] == orig_item_id) {
-
-                //If this is the first file we found for the Item, then we need to initialize notificationname and finalDestination
-                if (notificationName.isEmpty()){
-                    notificationName = it.value().librarymixer_names.at(index);
-                }
-                if (finalDestination.isEmpty()){
-                    finalDestination = DirUtil::createUniqueDirectory(files->getDownloadDirectory() + QDir::separator() +
-                                                                      it.value().librarymixer_names.at(index));
-                    if (finalDestination.isEmpty()){
-                        getPqiNotify()->AddSysMessage(0, SYS_WARNING, "Transfer Completion Error", "Unable to create folder to put downloaded files into");
-                        log(LOG_ERROR, FTCONTROLLERZONE, "Unable to create folder to put downloaded files into");
-                        it.value().mState = ftFileControl::COMPLETED_ERROR;
-                        //Does this need to look more like the file errors below? They do stuff after the error.
-                        //At any rate, this should be extraordinarily rare, so making this better can wait.
-                        continue;
-                    }
-                    createdDirectory = finalDestination;
-                }
-                QString fileDestination = finalDestination + it.value().filenames[index];
-
-                item_hashes.append(it.value().mHash.c_str());
-                item_filesizes.append(it.value().mSize);
-                item_filenames.append(fileDestination);
-
-                /* If we only have one set of destination information, then move from mDownloads, and move the file.*/
-                if (it.value().orig_item_ids.size() == 1) {
-                    it.value().mState = ftFileControl::COMPLETED;
-
-                    //Empty files are a special case, because we don't actually download anything, so there's nothing to copy.
-                    if (it.value().mSize == 0) DirUtil::createEmptyFile(fileDestination);
-                    //Otherwise, if not an empty file, move it over
-                    else {
-                        if (!DirUtil::moveFile(it.value().tempDestination(), fileDestination)) {
-                            getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File move error", "Error while moving file " + fileDestination + " from temporary location " + it.value().tempDestination());
-                            log(LOG_ERROR, FTCONTROLLERZONE, "Error while moving file " + fileDestination + " from temporary location " + it.value().tempDestination());
-                            it.value().mState = ftFileControl::COMPLETED_ERROR;
-                        }
-                    }
-
-                    if (mCompleted.contains(it.value().mHash)) {
-                        mCompleted[it.value().mHash].librarymixer_names.append(it.value().librarymixer_names.first());
-                        mCompleted[it.value().mHash].filenames.append(it.value().filenames.first());
-                        mCompleted[it.value().mHash].orig_item_ids.append(it.value().orig_item_ids.first());
-                    } else {
-                        mCompleted[it.value().mHash] = it.value();
-                    }
-
-                    QSettings saved(*savedTransfers, QSettings::IniFormat);
-                    saved.beginGroup("Files");
-                    saved.remove(it.value().mHash.c_str());
-                    saved.sync();
-
-                    it = mDownloads.erase(it);
-                    break; //Step out of the inner for loop and onto the next it
-                /* If we have more than one set, then move only one set of destination information from mDownloads, and copy the file. */
-                } else {
-                    //Empty files are a special case, because we don't actually download anything, so there's nothing to copy.
-                    if (it.value().mSize == 0) DirUtil::createEmptyFile(fileDestination);
-                    //Otherwise, if not an empty file, copy it over
-                    else {
-                        if (!DirUtil::copyFile(it.value().tempDestination(), fileDestination)) {
-                            getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File copy error", "Error while copying file " + fileDestination + " from temporary location " + it.value().tempDestination());
-                            log(LOG_ERROR, FTCONTROLLERZONE, "Error while copying file " + fileDestination + " from temporary location " + it.value().tempDestination());
-                        }
-                    }
-                    /* If mCompleted doesn't have this hash file yet, then add it in, but we clear out the transfer info,
-                       so that we cana add in just this one, since we are only marking one transfer done at this time */
-                    if (!mCompleted.contains(it.value().mHash)) {
-                        mCompleted[it.value().mHash] = it.value();
-                        mCompleted[it.value().mHash].mState = ftFileControl::COMPLETED;
-                        mCompleted[it.value().mHash].librarymixer_names.clear();
-                        mCompleted[it.value().mHash].filenames.clear();
-                        mCompleted[it.value().mHash].orig_item_ids.clear();
-                    }
-
-                    //Take care of updating saved transfers before we mess with variables.
-                    QSettings saved(*savedTransfers, QSettings::IniFormat);
-                    saved.beginGroup("Files");
-                    saved.beginGroup(it.value().mHash.c_str());
-                    saved.beginGroup("Transfers");
-                    saved.remove(iniEncode(QString::number(it.value().orig_item_ids[index]) + it.value().filenames[index]));
-                    saved.sync();
-
-                    mCompleted[it.value().mHash].librarymixer_names.append(it.value().librarymixer_names.takeAt(index));
-                    mCompleted[it.value().mHash].filenames.append(it.value().filenames.takeAt(index));
-                    mCompleted[it.value().mHash].orig_item_ids.append(it.value().orig_item_ids.takeAt(index));
-                }
+            if (!DirUtil::moveFile(currentLocation, finalLocation)) {
+                getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File move error", "Error while moving file " + finalLocation + " from temporary location " + currentLocation);
+                log(LOG_ERROR, FTCONTROLLERZONE, "Error while moving file " + finalLocation + " from temporary location " + currentLocation);
+                success = false;
             }
+            /* We only remove from mDownloads if no other downloadGroup needs it still. */
+            mDownloads.remove(mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getHash());
         }
     }
-    ftserver->completedDownload(orig_item_id, item_filenames, item_hashes, item_filesizes, createdDirectory);
-    pqiNotify *notify = getPqiNotify();
-    if (notify) notify->AddPopupMessage(POPUP_DOWNDONE, notificationName, "has finished downloading");
-    log(LOG_WARNING, FTCONTROLLERZONE, "Finished downloading " + notificationName);
+
+    return success;
+}
+
+bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
+    /* Build the argument lists for the returnBorrowedFiles functions. */
+    QStringList paths;
+    QStringList hashes;
+    QList<qlonglong> filesizes;
+    QList<bool> moveFile;
+
+    for (int i = 0; i < mDownloadGroups[groupKey].filesInGroup.count(); i++) {
+        paths.append(mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getPath());
+        hashes.append(mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getHash());
+        filesizes.append(mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getFileSize());
+        if (inActiveDownloadGroup(mDownloadGroups[groupKey].filesInGroup[i])) {
+            moveFile.append(false);
+        } else {
+            moveFile.append(true);
+            /* We only remove from mDownloads if no other downloadGroup needs it still. */
+            mDownloads.remove(mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getHash());
+        }
+    }
+
+    /* Delegate actual work to the file providers that know how to reset their own internal states. */
+    int result = 0;
+    if (mDownloadGroups[groupKey].source_type & FILE_HINTS_ITEM) {
+        result = librarymixermanager->returnBorrowedFiles(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_id,
+                                                          paths, hashes, filesizes, moveFile, mDownloadGroups[groupKey].finalDestination);
+    } else if (mDownloadGroups[groupKey].source_type & FILE_HINTS_OFF_LM) {
+        if (offLMList) result = offLMList->returnBorrowedFiles(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_id,
+                                                               paths, hashes, filesizes, moveFile, mDownloadGroups[groupKey].finalDestination);
+    }
+
+    if (result == 1) {
+        return true;
+    } else if (result == 0) {
+        /* This is the worst case scenario: returnBorrowedFiles will return this if some files were successfully returned and some were not.
+           The returnBorrowedFiles functions will already have notified the GUI of this problem, it's on the user to fix it now. */
+        return false;
+    }
+
+    /* All of these below are failure states that we will notify the user of, and then simply place the files in the downloads directory. */
+    if (result == -1) {
+        getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+                                      "The Mixologist",
+                                      "The number of files you were returned by " +
+                                      peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
+                                      " for " +
+                                      mDownloadGroups[groupKey].title +
+                                      " is not the same as the number of files you lent.\n" +
+                                      "All files have been left in your downloads folder.");
+    } else if (result == -2) {
+        bool plural = (mDownloadGroups[groupKey].filesInGroup.count() > 1);
+        if (plural) {
+            getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+                                          "The Mixologist",
+                                          "The files you were returned by " +
+                                          peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
+                                          " for " +
+                                          mDownloadGroups[groupKey].title +
+                                          " have been altered and are no longer exactly the same.\n" +
+                                          "All files have been left in your downloads folder.");
+        } else {
+            getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+                                          "The Mixologist",
+                                          "The file you were returned by " +
+                                          peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
+                                          " for " +
+                                          mDownloadGroups[groupKey].title +
+                                          " has been altered and is no longer exactly the same.\n" +
+                                          "The file has been left in your downloads folder.");
+        }
+    } else if (result == -3) {
+        getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+                                      "The Mixologist",
+                                      "You were returned " +
+                                      mDownloadGroups[groupKey].title +
+                                      " by " +
+                                      peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
+                                      " but you have recently removed it from your library.\n" +
+                                      "All files have been left in your downloads folder.");
+    } else {
+        getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+                                      "The Mixologist",
+                                      "You were returned " +
+                                      mDownloadGroups[groupKey].title +
+                                      " by " +
+                                      peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
+                                      " but it wasn't lent to " +
+                                      peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
+                                      ".\n\n" +
+                                      "All files have been left in your downloads folder.");
+    }
+
+    /* Even if the files were not moved into original location, as long as they were moved out of the temporary folder,
+       this is considered successful enough to return true. */
+    return moveFilesToDownloadPath(groupKey);
+}
+
+bool ftController::inMultipleDownloadGroups(ftTransferModule *file) const {
+    int found = 0;
+    foreach (downloadGroup group, mDownloadGroups.values()) {
+        if (group.filesInGroup.contains(file)) {
+            found++;
+            if (found >= 2) return true;
+        }
+    }
+    return false;
+}
+
+bool ftController::inActiveDownloadGroup(ftTransferModule *file) const {
+    foreach (downloadGroup group, mDownloadGroups.values()) {
+        if (!group.downloadFinished &&
+            group.filesInGroup.contains(file)) return true;
+    }
+    return false;
+}
+
+void ftController::activate() {
+    mFtActive = true;
 }
 
 /***************************************************************/
 /********************** Controller Access **********************/
 /***************************************************************/
 
-bool ftController::handleAPendingRequest() {
-    ftPendingRequest req;
-    {
-        MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-
-        if (mInitialToLoad.size() < 1) {
-            return false;
-        }
-        req = mInitialToLoad.front();
-        mInitialToLoad.pop_front();
-    }
-    requestFile(req.librarymixer_name, req.orig_item_id, req.filename, req.mHash, req.mSize, req.mFlags, req.sourceIds);
-    return true;
+bool ftController::downloadFiles(unsigned int friend_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes) {
+    QMutexLocker stack(&ctrlMutex);
+    return internalDownloadFiles(friend_id, title, paths, hashes, filesizes, -1, downloadGroup::DOWNLOAD_NORMAL, 0, "");
 }
 
-bool ftController::requestFile(QString librarymixer_name, int orig_item_id, QString fname, std::string hash,
-                                  uint64_t size, uint32_t flags, QList<int> &sourceIds) {
-
-    if (orig_item_id == 0 || fname.isEmpty() || hash.empty()) return false;
-
-    //If file transfer is not yet activated, save into a pending queue.
-    {
-        MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-        if (!mFtActive) {
-            /* store in pending queue */
-            ftPendingRequest req(librarymixer_name, orig_item_id, fname, hash, size, flags, sourceIds);
-            mInitialToLoad.push_back(req);
-            mFtInitialLoadDone = false;
-            return true;
-        }
-    }
-
-    {
-        MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-
-        QMap<std::string, ftFileControl>::iterator download_it;
-
-        /* First check if the file is already being downloaded */
-        download_it= mDownloads.find(hash);
-        if (download_it != mDownloads.end()) {
-            log(LOG_DEBUG_ALERT, FTCONTROLLERZONE, "ftcontroller::requestFile - Already downloading " + fname);
-
-            /* We're already downloading this file, but see if this is a new set of destination information,
-               and if it is, add it in, as well as the sources */
-            bool found = false;
-            for (int i = 0; i < download_it.value().orig_item_ids.size(); i++){
-                if (download_it.value().librarymixer_names[i] == librarymixer_name &&
-                    download_it.value().orig_item_ids[i] == orig_item_id &&
-                    download_it.value().filenames[i] == fname){
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                QSettings saved(*savedTransfers, QSettings::IniFormat);
-                saved.beginGroup("Files");
-                saved.beginGroup(hash.c_str());
-
-                saved.beginGroup("Transfers");
-                saved.beginGroup(iniEncode(QString::number(orig_item_id) + fname));
-                download_it.value().orig_item_ids.append(orig_item_id);
-                saved.setValue("Orig_item_id", orig_item_id);
-                download_it.value().librarymixer_names.append(librarymixer_name);
-                saved.setValue("Librarymixer_name", librarymixer_name);
-                download_it.value().filenames.append(fname);
-                saved.setValue("Filename", fname);
-                saved.endGroup(); //iniEncode
-                saved.endGroup(); //Transfers
-
-                saved.beginGroup("Sources");
-                for (int i = 0; i < sourceIds.size(); i++) {
-                    uint32_t unused1, unused2;
-                    if (download_it.value().mTransfer->getPeerState(sourceIds[i], unused1, unused2)) {
-                        continue; /* already added peer */
-                    }
-                    log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftcontroller::requestFile - Adding a new source " + QString::number(sourceIds[i]));
-                    download_it.value().mTransfer->addFileSource(sourceIds[i]);
-                    setPeerState(download_it.value().mTransfer, sourceIds[i], connMgr->isOnline(sourceIds[i]));
-                    saved.setValue(QString::number(sourceIds[i]), "");
-                }
-                saved.endGroup(); //Sources
-                saved.sync();
-
-                /* If this transfer is already done and waiting, the addition of
-                   a new transfer means we need to check it again. */
-                if (download_it.value().mState == ftFileControl::COMPLETED_WAIT)
-                    download_it.value().mState = ftFileControl::COMPLETED_CHECK;
-            }
-            return true;
-        }
-    } /******* UNLOCKED ********/
-
-    /* add in new item for download */
-
-    log(LOG_WARNING, FTCONTROLLERZONE, "Beginning request for " + fname);
-
-    MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
-    ftFileControl ftfc(size, hash, flags);
-    ftfc.librarymixer_names.append(librarymixer_name);
-    ftfc.orig_item_ids.append(orig_item_id);
-    ftfc.filenames.append(fname);
-
-    ftfc.mCreator = new ftFileCreator(ftfc.tempDestination(), size, hash);
-    ftfc.mTransfer = new ftTransferModule(ftfc.mCreator, mDataplex, this);
-
-    /* add to ClientModule */
-    mDataplex->addTransferModule(ftfc.mTransfer, ftfc.mCreator);
-
-    /* now add source peers (and their current state) */
-    ftfc.mTransfer->setFileSources(sourceIds);
-
-    /* get current state for transfer module */
-    for (int i = 0; i < sourceIds.size(); i++) {
-        log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftcontroller::requestFile - Adding a source to a new request " + QString::number(sourceIds[i]));
-        setPeerState(ftfc.mTransfer, sourceIds[i], connMgr->isOnline(sourceIds[i]));
-    }
-
-    mDownloads[hash] = ftfc;
-
-    QSettings saved(*savedTransfers, QSettings::IniFormat);
-    saved.beginGroup("Files");
-    saved.beginGroup(hash.c_str());
-    saved.setValue("Filesize", size);
-    saved.beginGroup("Transfers");
-    saved.beginGroup(iniEncode(QString::number(orig_item_id) + fname));
-    saved.setValue("Orig_item_id", orig_item_id);
-    saved.setValue("Librarymixer_name", librarymixer_name);
-    saved.setValue("Filename", fname);
-    saved.endGroup(); //QString::number(orig_item_id)
-    saved.endGroup(); //Transfers
-    saved.beginGroup("Sources");
-    for (int i = 0; i < sourceIds.size(); i++) {
-        saved.setValue(QString::number(sourceIds[i]), "");
-    }
-    saved.sync();
-    return true;
+bool ftController::borrowFiles(unsigned int friend_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes,
+                               uint32_t source_type, QString source_id) {
+    QMutexLocker stack(&ctrlMutex);
+    return internalDownloadFiles(friend_id, title, paths, hashes, filesizes, -1, downloadGroup::DOWNLOAD_BORROW, source_type, source_id);
 }
 
-bool ftController::requestFile(QStringList librarymixer_names, QList<int> orig_item_ids, QStringList filenames,
-                               std::string hash, uint64_t size, uint32_t flags, QList<int> &sourceIds) {
-    if (librarymixer_names.size() != orig_item_ids.size() ||
-            librarymixer_names.size() != filenames.size() ||
-            librarymixer_names.size() < 1)
-        return false;
-    for (int i = 0; i < orig_item_ids.size(); i++) {
-        requestFile(librarymixer_names[i], orig_item_ids[i], filenames[i], hash, size, flags, sourceIds);
-    }
-    return true;
+bool ftController::downloadBorrowedFiles(unsigned int friend_id, uint32_t source_type, QString source_id, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes) {
+    QString title;
+    if (source_type & FILE_HINTS_ITEM) {
+        LibraryMixerItem* originalItem = librarymixermanager->getLibraryMixerItem(source_id.toInt());
+        if (originalItem == NULL || originalItem->lentTo() != friend_id) return false;
+        title = originalItem->title();
+    } else if (source_type & FILE_HINTS_OFF_LM) {
+        if (!offLMList) return false;
+        OffLMShareItem* originalItem = offLMList->getOffLMShareItem(source_id);
+        if (!originalItem || originalItem->lent() != friend_id) return false;
+        title = originalItem->label();
+    } else return false;
+
+    QMutexLocker stack(&ctrlMutex);
+    return internalDownloadFiles(friend_id, "Return of " + title, paths, hashes, filesizes, -1, downloadGroup::DOWNLOAD_RETURN, source_type, source_id);
 }
 
-
-bool ftController::cancelFile(int orig_item_id, QString filename, std::string hash, bool checkComplete) {
-    /*check if the file in the download map*/
-    QMap<std::string,ftFileControl>::iterator mit;
-    MixStackMutex stack(ctrlMutex);
-    mit=mDownloads.find(hash);
-    if (mit==mDownloads.end() || !mit.value().orig_item_ids.contains(orig_item_id)) {
-        log(LOG_ERROR, FTCONTROLLERZONE, "Tried to cancel a file not being transferred!");
+bool ftController::internalDownloadFiles(unsigned int friend_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes,
+                                         int specificKey, downloadGroup::DownloadType download_type, unsigned int source_type, const QString &source_id) {
+    /* Basic check for well-formed request. */
+    if (paths.size() != hashes.size() || paths.size() != filesizes.size() || paths.size() < 1 ||
+        title.isEmpty() ||
+        friend_id < 1)
         return false;
+
+    downloadGroup newGroup;
+    newGroup.friend_id = friend_id;
+    newGroup.title = title;
+    newGroup.filenames = paths;
+    newGroup.downloadType = download_type;
+    newGroup.source_type = source_type;
+    newGroup.source_id = source_id;
+    /* Now we must construct an ftTransferModule for each of the files.
+       Note that the order is preserved between newGroup.filenames and newGroup.files. */
+    for (int i = 0; i < paths.size(); i++) {
+        ftTransferModule* file = internalRequestFile(friend_id, hashes[i], filesizes[i]);
+        /* If one of the file requests has failed, abort the whole thing and clear already created file requests. */
+        if (file == NULL) goto failureDeleteAllNewModules;
+        newGroup.filesInGroup.append(file);
     }
 
-    /* check if finished */
-    if (mit.value().mState == ftFileControl::COMPLETED) {
-        log(LOG_WARNING, FTCONTROLLERZONE, "Tried to cancel a file that was already done!");
-        return false;
-    }
+    /* The int that serves as the key to mDownloadGroups is arbitrary.
+       We only need it in order to provide a unique address for each downloadGroup.
+       Therefore, we start from 0 and we can safely just add one to the last key to get a new unique key.
+       The only potential duplication is caused by integer looping, which can't realistically happen. */
+    int newKey;
+    if (specificKey != -1) newKey = specificKey;
+    else if (mDownloadGroups.count() == 0) newKey = 0;
+    else newKey = mDownloadGroups.keys().last() + 1;
 
-    int index = -1;
-    for (int i = 0; i < mit.value().orig_item_ids.size(); i++){
-        if (mit.value().orig_item_ids[i] == orig_item_id &&
-            mit.value().filenames[i] == filename){
-            index = i;
-            break;
-        }
-    }
-    if (index < 0) {
-        log(LOG_WARNING, FTCONTROLLERZONE, "Tried to cancel a non-existent file!");
-        return false;
-    }
+    if (mDownloadGroups.contains(newKey)) goto failureDeleteAllNewModules;
+    mDownloadGroups.insert(newKey, newGroup);
+    addGroupToSavedTransfers(newKey, newGroup);
 
-    log(LOG_WARNING, FTCONTROLLERZONE, "Cancelling file: " + filename);
+    return true;
 
-    //If this file is being requested for more than one transfer
-    if (mit.value().orig_item_ids.size() > 1) {
-        mit.value().librarymixer_names.removeAt(index);
-        mit.value().filenames.removeAt(index);
-        mit.value().orig_item_ids.removeAt(index);
-        QSettings saved(*savedTransfers, QSettings::IniFormat);
-        saved.beginGroup("Files");
-        saved.beginGroup(hash.c_str());
-        saved.beginGroup("Transfers");
-        saved.remove(iniEncode(QString::number(orig_item_id) + filename));
-        saved.sync();
+    failureDeleteAllNewModules:
+    log(LOG_WARNING, FTCONTROLLERZONE, "Error initializing download of " + title);
+    foreach (ftTransferModule* currentFile, newGroup.filesInGroup) {
+        mDownloads.remove(currentFile->mFileCreator->getHash());
+        delete currentFile;
+    }
+    return false;
+}
+
+ftTransferModule* ftController::internalRequestFile(unsigned int friend_id, const QString &hash, uint64_t size) {
+    if (hash.isEmpty()) return false;
+
+    if (mDownloads.contains(hash)) return mDownloads[hash];
+
+    log(LOG_DEBUG_ALERT, FTCONTROLLERZONE, "Beginning download for " + hash);
+
+    ftTransferModule* file = new ftTransferModule(friend_id, size, hash);
+    setPeerState(file, friend_id, connMgr->isOnline(friend_id));
+
+    mDownloads[hash] = file;
+
+    return file;
+}
+
+void ftController::cancelDownloadGroup(int groupId) {
+    QMutexLocker stack(&ctrlMutex);
+    foreach(ftTransferModule* file, mDownloadGroups[groupId].filesInGroup) {
+        internalCancelFile(groupId, file);
+    }
+    mDownloadGroups.remove(groupId);
+    removeGroupFromSavedTransfers(groupId);
+}
+
+void ftController::cancelFile(int groupId, const QString &hash) {
+    QMutexLocker stack(&ctrlMutex);
+    internalCancelFile(groupId, mDownloads[hash]);
+    //If we just removed the last file from a group, the whole thing should be removed.
+    if (mDownloadGroups[groupId].filesInGroup.count() == 0) {
+        mDownloadGroups.remove(groupId);
+        removeGroupFromSavedTransfers(groupId);
     } else {
-        mDataplex->removeTransferModule(mit.value().mHash);
-
-        if (mit.value().mTransfer) {
-            mit.value().mTransfer->cancelTransfer();
-            delete mit.value().mTransfer;
-            mit.value().mTransfer = NULL;
-        }
-
-        if (mit.value().mCreator) {
-            delete mit.value().mCreator;
-            mit.value().mCreator = NULL;
-        }
-
-        /* delete the temporary file */
-        if (0 != QFile::remove(mit.value().tempDestination())) {
-            log(LOG_ERROR, FTCONTROLLERZONE, "Unable to remove temporary file " + mit.value().tempDestination() + "!");
-        }
-
-        mDownloads.erase(mit);
-
         QSettings saved(*savedTransfers, QSettings::IniFormat);
-        saved.beginGroup("Files");
-        saved.remove(hash.c_str());
-        saved.sync();
+        saved.remove("Transfers/" + QString::number(groupId) + "/Files/" + hash);
     }
-
-    /* It's possible this item was the last one remaining for a download item,
-       and now the whole item should be completed.*/
-    if (checkComplete && checkTransferComplete(orig_item_id)) completeTransfer(orig_item_id);
-
-    return true;
 }
 
-bool    ftController::LibraryMixerTransferCancel(int orig_item_id) {
-    //Need to clone because cancelFile can remove elements from mDownloads
-    //No need for mutex protection, because cancelFile is mutex protected, and we cloned mDownloads
-    QMap<std::string, ftFileControl> currentDownloads = mDownloads;
-    QMap<std::string, ftFileControl>::const_iterator it;
-    for (it = currentDownloads.begin(); it != currentDownloads.end(); it++) {
-        int i = it.value().orig_item_ids.size();
-        while(i > 0){
-            i--;
-            //If a given download is related to the orig_item_id being completed.
-            if (it.value().orig_item_ids[i] == orig_item_id) {
-                cancelFile(orig_item_id, it.value().filenames[i], it.value().mHash, false);
-            }
-        }
+void ftController::internalCancelFile(int groupId, ftTransferModule *file) {
+    /* If this file is still part of more than one transfer, we need to keep it around because cancellations only affect one downloadGroup.
+       Otherwise we clean it up by removing the partial file from the disk,
+       removing the ftTransferModule from mDownloads and its downloadGroup and freeing its memory. */
+    if (!inMultipleDownloadGroups(file)) {
+        file->mFileCreator->deleteFileFromDisk();
+
+        mDownloads.remove(file->mFileCreator->getHash());
+
+        int index = mDownloadGroups[groupId].filesInGroup.indexOf(file);
+        mDownloadGroups[groupId].filesInGroup.removeAt(index);
+        mDownloadGroups[groupId].filenames.removeAt(index);
+
+        delete file;
     }
-    return true;
 }
 
-bool ftController::controlFile(int orig_item_id, std::string hash, uint32_t flags) {
-#ifdef false
-    /*check if the file in the download map*/
-    std::map<std::string,ftFileControl>::iterator mit;
-    mit=mDownloads.find(hash);
-    if (mit==mDownloads.end()) {
-        return false;
-    }
-
-    /*find the point to transfer module*/
-    ftTransferModule *ft=(mit->second).mTransfer;
-    switch (flags) {
-        case FILE_CTRL_PAUSE:
-            ft->pauseTransfer();
-            break;
-        case FILE_CTRL_START:
-            ft->resumeTransfer();
-            break;
-        default:
-            return false;
-    }
-#endif
+bool ftController::controlFile(int orig_item_id, QString hash, uint32_t flags) {
     (void) orig_item_id;
     (void) hash;
     (void) flags;
@@ -600,104 +453,126 @@ bool ftController::controlFile(int orig_item_id, std::string hash, uint32_t flag
 
 void ftController::clearCompletedFiles() {
     log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftController.clearCompletedFiles - clearing all completed transfers");
-    mCompleted.clear();
+    QMutexLocker stack(&ctrlMutex);
+    //Find all downloadGroups that are fully completed
+    //Remove the ones that are from mDownloadGroups
+    foreach (int key, mDownloadGroups.keys()) {
+        if (mDownloadGroups[key].downloadFinished) {
+            foreach (ftTransferModule* file, mDownloadGroups[key].filesInGroup) {
+                if (!inMultipleDownloadGroups(file)) {
+                    mDownloads.remove(file->mFileCreator->getHash());
+                    delete file;
+                }
+            }
+
+            mDownloadGroups.remove(key);
+        }
+    }
 }
 
 /* get Details of File Transfers */
-bool ftController::FileDownloads(QList<FileInfo> &downloads) {
-    MixStackMutex stack(ctrlMutex); /******* LOCKED ********/
+void ftController::FileDownloads(QList<downloadGroupInfo> &downloads) {
+    QMutexLocker stack(&ctrlMutex);
 
-    QMap<std::string, ftFileControl>::const_iterator it;
-    for (it = mCompleted.begin(); it != mCompleted.end(); it++) {
-        FileInfo info;
-        FileDetails(it, info);
-        downloads.push_back(info);
+    foreach (int key, mDownloadGroups.keys()) {
+        downloadGroupInfo groupInfo;
+        groupInfo.title = mDownloadGroups[key].title;
+        groupInfo.groupId = key;
+        groupInfo.finalDestination = mDownloadGroups[key].finalDestination;
+        groupInfo.filenames = mDownloadGroups[key].filenames;
+        foreach (ftTransferModule* file, mDownloadGroups[key].filesInGroup) {
+            downloadFileInfo fileInfo;
+            fileDetails(file, fileInfo);
+            groupInfo.filesInGroup.append(fileInfo);
+        }
+        downloads.append(groupInfo);
     }
-    for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
-        FileInfo info;
-        FileDetails(it, info);
-        downloads.push_back(info);
-    }
-    return true;
 }
 
-bool ftController::FileDetails(QMap<std::string, ftFileControl>::const_iterator file, FileInfo &info) {
-    /* extract details */
-    info.hash = file.value().mHash;
-    info.paths = file.value().filenames;
-    info.librarymixer_names = file.value().librarymixer_names;
-    info.orig_item_ids = file.value().orig_item_ids;
-    info.flags = file.value().mFlags;
+void ftController::fileDetails(ftTransferModule* file, downloadFileInfo &info) {
+    info.hash = file->mFileCreator->getHash();
+    info.totalSize = file->mFileCreator->getFileSize();
+    info.downloadedSize = file->mFileCreator->amountReceived();
 
-    /* get list of sources from transferModule */
-    QList<int> sourceIds;
-    if (file.value().mState == ftFileControl::DOWNLOADING) file.value().mTransfer->getFileSources(sourceIds);
-
-    double totalRate = 0;
-    uint32_t tfRate = 0;
-    uint32_t state = 0;
-    bool isDownloading = false;
-    //bool isSuspended = false;
+    QList<unsigned int> sourceIds;
+    file->getFileSources(sourceIds);
+    info.totalTransferRate = 0;
+    uint32_t indivTransferRate = 0;
+    uint32_t indivState = 0;
 
     for (int i = 0; i < sourceIds.size(); i++) {
-        if (file.value().mTransfer->getPeerState(sourceIds[i], state, tfRate)) {
+        if (file->getPeerState(sourceIds[i], indivState, indivTransferRate)) {
             TransferInfo ti;
-            switch (state) {
-                case PQIPEER_INIT:
-                    ti.status = FT_STATE_INIT;
-                    break;
+            switch (indivState) {
                 case PQIPEER_NOT_ONLINE:
                     ti.status = FT_STATE_WAITING;
                     break;
                 case PQIPEER_DOWNLOADING:
-                    isDownloading = true;
-                    ti.status = FT_STATE_DOWNLOADING;
+                    ti.status = FT_STATE_TRANSFERRING;
                     break;
-                case PQIPEER_IDLE:
-                    ti.status = FT_STATE_IDLE;
+                case PQIPEER_ONLINE_IDLE:
+                    ti.status = FT_STATE_ONLINE_IDLE;
                     break;
                 default:
-                case PQIPEER_SUSPEND:
                     ti.status = FT_STATE_WAITING;
                     break;
             }
 
-            ti.tfRate = tfRate / 1024.0;
+            ti.transferRate = indivTransferRate / 1024.0;
             ti.librarymixer_id = sourceIds[i];
             info.peers.push_back(ti);
-            totalRate += tfRate / 1024.0;
+            info.totalTransferRate += indivTransferRate / 1024.0;
         }
     }
 
-    if (file.value().mState == ftFileControl::COMPLETED_ERROR) {
-        info.downloadStatus = FT_STATE_FAILED;
-    } else if (file.value().mState == ftFileControl::COMPLETED_CHECK || file.value().mState == ftFileControl::COMPLETED_WAIT){
-        info.downloadStatus = FT_STATE_COMPLETE_WAIT;
-    } else if (file.value().mState == ftFileControl::COMPLETED) {
-        info.downloadStatus = FT_STATE_COMPLETE;
-    } else if (isDownloading) {
-        info.downloadStatus = FT_STATE_DOWNLOADING;
-    } else {
+    switch (file->transferStatus()) {
+    case ftTransferModule::FILE_WAITING:
         info.downloadStatus = FT_STATE_WAITING;
-    }
-    info.tfRate = totalRate;
-    info.size = file.value().mSize;
-
-    if (file.value().mState == ftFileControl::DOWNLOADING) {
-        info.transfered  = file.value().mCreator->amountReceived();
-        info.avail = info.transfered;
-    } else {
-        info.transfered  = info.size;
-        info.avail = info.transfered;
+        break;
+    case ftTransferModule::FILE_COMPLETE:
+        info.downloadStatus = FT_STATE_COMPLETE;
+        break;
+    case ftTransferModule::FILE_DOWNLOADING:
+        info.downloadStatus = FT_STATE_TRANSFERRING;
+        break;
     }
 
-    return true;
+}
+
+void ftController::addGroupToSavedTransfers(int groupKey, const downloadGroup &group) {
+    removeGroupFromSavedTransfers(groupKey);
+
+    QSettings saved(*savedTransfers, QSettings::IniFormat);
+    saved.beginGroup("Transfers");
+    saved.beginGroup(QString::number(groupKey));
+    saved.setValue("friend_id", group.friend_id);
+    saved.setValue("title", group.title);
+    saved.setValue("download_type", group.downloadType);
+    saved.setValue("source_type", group.source_type);
+    saved.setValue("source_id", group.source_id);
+
+    saved.beginGroup("Files");
+    for (int i = 0; i < group.filesInGroup.count(); i++) {
+        saved.beginGroup(group.filesInGroup[i]->mFileCreator->getHash());
+        saved.setValue("path", group.filenames[i]);
+        saved.setValue("filesize", QString::number(group.filesInGroup[i]->mFileCreator->getFileSize()));
+        saved.endGroup(); //hashes[i]
+    }
+    saved.endGroup(); //Files
+    saved.endGroup(); //Transfers
+}
+
+void ftController::removeGroupFromSavedTransfers(int groupKey) {
+    QSettings saved(*savedTransfers, QSettings::IniFormat);
+    saved.beginGroup("Transfers");
+    saved.remove(QString::number(groupKey));
+    saved.endGroup(); //Transfers
 }
 
 /* Directory Handling */
 bool ftController::setDownloadDirectory(QString path) {
     if (DirUtil::checkCreateDirectory(path)) {
-        MixStackMutex stack(ctrlMutex);
+        QMutexLocker stack(&ctrlMutex);
         if (mDownloadPath != path){
             mDownloadPath = path;
             QSettings settings(*mainSettings, QSettings::IniFormat);
@@ -715,15 +590,15 @@ bool ftController::loadOrSetDownloadDirectory(QString path) {
 
 bool ftController::setPartialsDirectory(QString path) {
     if (DirUtil::checkCreateDirectory(path)) {
-        MixStackMutex stack(ctrlMutex);
+        QMutexLocker stack(&ctrlMutex);
         if (mPartialsPath != path){
             mPartialsPath = path;
             QSettings settings(*mainSettings, QSettings::IniFormat);
             settings.setValue("Transfers/PartialsDirectory", mPartialsPath);
+
             /* move all existing files! */
-            QMap<std::string, ftFileControl>::const_iterator it;
-            for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
-                it.value().mCreator->moveFile(mPartialsPath);
+            foreach (ftTransferModule* file, mDownloads.values()) {
+                file->mFileCreator->moveFile(mPartialsPath);
             }
         }
         return true;
@@ -736,38 +611,97 @@ bool ftController::loadOrSetPartialsDirectory(QString path) {
     return setPartialsDirectory(settings.value("Transfers/PartialsDirectory", path).toString());
 }
 
+QString ftController::getDownloadDirectory() const {
+    return mDownloadPath;
+}
+
+QString ftController::getPartialsDirectory() const {
+    return mPartialsPath;
+}
+
+bool ftController::handleReceiveData(const std::string &peerId, const QString &hash, uint64_t offset, uint32_t chunksize, void *data) {
+    QMutexLocker stack(&ctrlMutex);
+    QMap<QString, ftTransferModule*>::const_iterator it;
+    it = mDownloads.find(hash);
+    if (it != mDownloads.end()) {
+        it.value()->recvFileData(peerId, offset, chunksize, data);
+        return true;
+    } else if (offLMList) {
+        /* If it's not for any of our files, see if it might be for ftOffLMList's Xmls. */
+        return offLMList->handleReceiveData(peerId, hash, offset, chunksize, data);
+    }
+    return false;
+}
+
 /***************************************************************/
 /********************** Controller Access **********************/
 /***************************************************************/
 
 void ftController::statusChange(const std::list<pqipeer> &changeList) {
     log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftController.statusChange");
-    MixStackMutex stack(ctrlMutex);
+    QMutexLocker stack(&ctrlMutex);
 
     /* add online to all downloads */
-    QMap<std::string, ftFileControl>::const_iterator it;
+    QMap<QString, ftTransferModule*>::const_iterator it;
     std::list<pqipeer>::const_iterator changeListIt;
 
     for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
         for (changeListIt = changeList.begin(); changeListIt != changeList.end(); changeListIt++) {
             if (changeListIt->actions & PEER_CONNECTED) {
-                setPeerState(it.value().mTransfer, changeListIt->librarymixer_id, true);
+                setPeerState(it.value(), changeListIt->librarymixer_id, true);
             } else {
-                setPeerState(it.value().mTransfer, changeListIt->librarymixer_id, false);
+                setPeerState(it.value(), changeListIt->librarymixer_id, false);
             }
         }
     }
+
+    /* Also pass through information to the ftOffLMList for its XML transfer modules. */
+    if (offLMList) offLMList->statusChange(changeList);
 }
 
-bool ftController::setPeerState(ftTransferModule *tm, int librarymixer_id, bool online) {
+bool ftController::setPeerState(ftTransferModule *tm, unsigned int librarymixer_id, bool online) {
     if (tm != NULL){
         if (librarymixer_id == peers->getOwnLibraryMixerId()) {
-            tm->setPeerState(librarymixer_id, PQIPEER_IDLE);
+            tm->setPeerState(librarymixer_id, PQIPEER_ONLINE_IDLE);
         } else if (online) {
-            tm->setPeerState(librarymixer_id, PQIPEER_IDLE);
+            tm->setPeerState(librarymixer_id, PQIPEER_ONLINE_IDLE);
         } else {
             tm->setPeerState(librarymixer_id, PQIPEER_NOT_ONLINE);
         }
     }
     return true;
+}
+
+/***************************************************************/
+/********************** downloadGroup **************************/
+/***************************************************************/
+
+void downloadGroup::getStatus(int *waiting_to_download, int *downloading, int *completed, int *total) const {
+    *waiting_to_download = 0;
+    *downloading = 0;
+    *completed = 0;
+    *total = 0;
+    foreach (ftTransferModule* file, filesInGroup) {
+        (*total)++;
+        switch (file->transferStatus()) {
+        case ftTransferModule::FILE_WAITING:
+            (*waiting_to_download)++;
+            break;
+        case ftTransferModule::FILE_DOWNLOADING:
+            (*downloading)++;
+            break;
+        case ftTransferModule::FILE_COMPLETE:
+            (*completed)++;
+            break;
+        }
+    }
+}
+
+void downloadGroup::startOneTransfer() {
+    for (int i = 0; i < filesInGroup.count(); i++) {
+        if (filesInGroup[i]->transferStatus() == ftTransferModule::FILE_WAITING) {
+            filesInGroup[i]->transferStatus(ftTransferModule::FILE_DOWNLOADING);
+            return;
+        }
+    }
 }

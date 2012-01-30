@@ -60,11 +60,8 @@ TransfersPrefDialog::TransfersPrefDialog(QWidget *parent)
     // and every time the user changes the total transfer rate.
     setMaxIndivDownloadRate(settings.value("Transfers/MaxTotalDownloadRate", DEFAULT_MAX_TOTAL_DOWNLOAD).toInt());
     setMaxIndivUploadRate(settings.value("Transfers/MaxTotalUploadRate", DEFAULT_MAX_TOTAL_UPLOAD).toInt());
-    QObject::connect(ui.totalDownloadRate, SIGNAL(valueChanged(int)),
-                     this, SLOT(setMaxIndivDownloadRate(int)));
-    QObject::connect(ui.totalUploadRate, SIGNAL(valueChanged(int)),
-                     this, SLOT(setMaxIndivUploadRate(int)));
-
+    QObject::connect(ui.totalDownloadRate, SIGNAL(valueChanged(int)), this, SLOT(setMaxIndivDownloadRate(int)));
+    QObject::connect(ui.totalUploadRate, SIGNAL(valueChanged(int)), this, SLOT(setMaxIndivUploadRate(int)));
 
     ui.downloadsDir->setText(files->getDownloadDirectory());
     ui.partialsDir->setText(files->getPartialsDirectory());

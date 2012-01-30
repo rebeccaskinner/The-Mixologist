@@ -33,6 +33,7 @@ class NotifyBase;
 class Control;
 class Init;
 class LibraryMixerConnect;
+class LibraryMixerLibraryManager;
 
 extern Control *control;
 extern NotifyBase *notifyBase;
@@ -48,30 +49,40 @@ public:
 
     virtual ~Control() {return;}
 
-    //Starts all of MixologistLib's threads
+    /* Starts all of MixologistLib's threads. */
     virtual bool StartupMixologist() = 0;
-    //Shuts down connections
+    /* Shuts down connections. */
     virtual bool ShutdownMixologist() = 0;
-    //Reloads transfer limits set in settings.ini by the user
+
+    /* Reloads transfer limits set in settings.ini by the user. */
     virtual void ReloadTransferRates() = 0;
 
+    /* Used so that the GUI can inform the library of what version the client is, which is shared with friends on connect.
+       setVersion is not thread-safe but is only being called once on startup before any reading could happen, and then by the status service.
+       If any other thread is going to access these variables, make sure to update and make this thread-safe.
+       The clientName is the name of that client, and can be anything, but for the Mixologist is simply Mixologist.
+       The clientVersion is the version number with that client.
+       The latestKnownVersion indicates that the user has indicated he should not be informed about new versions equal to or lower than that version. */
+    virtual void setVersion(const QString &clientName, qulonglong clientVersion, qulonglong latestKnownVersion) = 0;
+    virtual QString clientName() = 0;
+    virtual qulonglong clientVersion() = 0;
+    virtual qulonglong latestKnownVersion() = 0;
 };
 
 
 /********************** Overload this Class for callback *****************/
 
-//Used with NotifyBase::notifyTransferEvent and NotifyBase::notifyRequestEvent
+/* Used with NotifyBase::notifyTransferEvent and NotifyBase::notifyRequestEvent. */
 enum transferEvent {
     NOTIFY_TRANSFER_CHAT, //Received a response to a request that a chat is needed
     NOTIFY_TRANSFER_MESSAGE, //Received a response to a request that is a message
-    NOTIFY_TRANSFER_LEND, //Received a response to a request that is an invitation to borrow
     NOTIFY_TRANSFER_LENT, //Received a response to a request that item is currently lent out
     NOTIFY_TRANSFER_UNMATCHED, //Received a response that the item has no auto response
     NOTIFY_TRANSFER_BROKEN_MATCH, //Recieved a response that the item has an auto file match, but the file is missing
     NOTIFY_TRANSFER_NO_SUCH_ITEM //Received a response that requested item isn't in recipient's library
 };
 
-//Used with NotifyBase::notifyUserOptional
+/* Used with NotifyBase::notifyUserOptional. */
 enum userOptionalCodes {
     NOTIFY_USER_REQUEST, //An outgoing request was made
     NOTIFY_USER_FILE_REQUEST, //A request was received, and file(s) are being auto sent
@@ -87,21 +98,20 @@ enum userOptionalCodes {
 /* The main class via which information is passed between MixologistLib and MixologistGui. */
 class NotifyBase {
 public:
-    //A connected friend has sent a notice of availability of a download
-    virtual void notifySuggestion(int librarymixer_id, int item_id, QString name) = 0;
-    //A request has been received for an item that requires a popup
-    virtual void notifyRequestEvent(transferEvent event, int librarymixer_id, int item_id = 0) = 0;
-    //A response has been received on a request for an item that requires a popup
-    virtual void notifyTransferEvent(transferEvent event, int librarymixer_id, QString transfer_name, QString extra_info = "") = 0;
-    //When library list updated
-    virtual void notifyLibraryUpdated() = 0;
-    //New chat status info
-    virtual void notifyChatStatus(int librarymixer_id, const QString &status_string) = 0;
-    //A file is being hashed, or "" if all hashing is complete
+    /* A connected friend has sent a notice of availability of a download. */
+    virtual void notifySuggestion(unsigned int librarymixer_id, const QString &title, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes) = 0;
+    /* A request has been received for an item that requires a popup. */
+    virtual void notifyRequestEvent(transferEvent event, unsigned int librarymixer_id, unsigned int item_id = 0) = 0;
+    /* A response has been received on a request for an item that requires a popup.
+       For NOTIFY_TRANSFER_MESSAGE, extra_info contains the message. */
+    virtual void notifyTransferEvent(transferEvent event, unsigned int librarymixer_id, QString transfer_name, QString extra_info = "") = 0;
+    /* New chat status info. */
+    virtual void notifyChatStatus(unsigned int librarymixer_id, const QString &status_string) = 0;
+    /* A file is being hashed, or "" if all hashing is complete. */
     virtual void notifyHashingInfo(QString fileinfo) = 0;
-    //A message can be added to the log
+    /* A message can be added to the log. */
     virtual void notifyLog(QString message) = 0;
-    //Something happened involving a user that is low priority, and only optionally should be displayed
-    virtual void notifyUserOptional(int librarymixer_id, userOptionalCodes code, QString message) = 0;
+    /* Something happened involving a user that is low priority, and only optionally should be displayed. */
+    virtual void notifyUserOptional(unsigned int librarymixer_id, userOptionalCodes code, QString message) = 0;
 };
 #endif //GUI_INTERFACE_H

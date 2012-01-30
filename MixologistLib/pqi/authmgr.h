@@ -23,16 +23,13 @@
 #ifndef GENERIC_AUTH_HEADER
 #define GENERIC_AUTH_HEADER
 
-#include <list>
 #include <map>
-#include <string>
 
 #include <openssl/ssl.h>
 #include <openssl/evp.h>
 #include <QString>
 
-#include "util/threads.h"
-
+#include <QMutex>
 
 /************** AUTHENTICATION MANAGER ***********
  * The master store house for all recognized certificates, including own
@@ -62,7 +59,7 @@ public:
     void initSSL();
     //Initializes the AuthMgr, generating the encryption keys
     //The new certificate will be written into cert in PEM format
-    int InitAuth(int librarymixer_id, QString &cert);
+    int InitAuth(unsigned int librarymixer_id, QString &cert);
     //Frees the memory of internal AuthMgr data and shutsdown AuthMgr
     bool CloseAuth();
 
@@ -74,7 +71,7 @@ public:
     std::string OwnCertId() {
         return mCertId;
     }
-    int OwnLibraryMixerId() {
+    unsigned int OwnLibraryMixerId() {
         return mLibraryMixerId;
     }
 
@@ -83,21 +80,21 @@ public:
     //message_digest must be at least long enough to hold a SHA1 Digest, i.e. 20
     bool getCertId(X509 *cert, unsigned char message_digest[]);
     //Returns the associated cert_id or "" if unable to find.
-    std::string findCertByLibraryMixerId(int librarymixer_id);
-    //Returns the associated librarymixer_id or -1 if unable to find.
-    int findLibraryMixerByCertId(std::string cert_id);
+    std::string findCertByLibraryMixerId(unsigned int librarymixer_id);
+    //Returns the associated librarymixer_id or 0 if unable to find.
+    unsigned int findLibraryMixerByCertId(std::string cert_id);
 
 
     /* Add/Remove certificates */
     //Adds a certificate to mCerts, or if there is already a certificate under that user, updates it
     //Returns 2 if a new user is added, 1 if a user is updated, 0 on no action or no cert, or -1 on error
-    int addUpdateCertificate(QString cert, int librarymixer_id) ;
+    int addUpdateCertificate(QString cert, unsigned int librarymixer_id) ;
     //Remove a user completely from the AuthMgr
-    bool RemoveCertificate(int librarymixer_id);
+    bool RemoveCertificate(unsigned int librarymixer_id);
 
 private:
     /* Data */
-    MixMutex authMtx;  /**** LOCKING */
+    mutable QMutex authMtx;
 
     int init;
 
@@ -105,9 +102,9 @@ private:
     SSL_CTX *sslctx;
 
     std::string mCertId;
-    int mLibraryMixerId;
+    unsigned int mLibraryMixerId;
 
-    std::map<int, X509 *> mCerts; //friends' librarymixer_ids, friends' certs map
+    std::map<unsigned int, X509 *> mCerts; //friends' librarymixer_ids, friends' certs map
 };
 
 /* Helper Functions */

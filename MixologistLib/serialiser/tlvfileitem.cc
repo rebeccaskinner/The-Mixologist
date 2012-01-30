@@ -47,7 +47,7 @@ void TlvFileItem::TlvClear() {
 uint16_t    TlvFileItem::TlvSize() {
     uint32_t s = 4; /* header */
     s += 8; /* filesize */
-    s += GetTlvStringSize(hash);
+    s += GetTlvQStringSize(hash);
 #ifdef TLV_FI_DEBUG
     std::cerr << "TlvFileItem::TlvSize() 8 + Hash: " << s << std::endl;
 #endif
@@ -130,7 +130,7 @@ bool     TlvFileItem::SetTlv(void *data, uint32_t size, uint32_t *offset) {
     std::cerr << std::endl;
 #endif
 
-    ok &= SetTlvString(data, tlvend, offset, TLV_TYPE_STR_HASH_SHA1, hash);
+    ok &= SetTlvQString(data, tlvend, offset, TLV_TYPE_STR_HASH_SHA1, hash);
 
 
 #ifdef TLV_FI_DEBUG
@@ -221,7 +221,7 @@ bool     TlvFileItem::GetTlv(void *data, uint32_t size, uint32_t *offset) {
 
     /* get mandatory parts first */
     ok &= getRawUInt64(data, tlvend, offset, &filesize);
-    ok &= GetTlvString(data, tlvend, offset, TLV_TYPE_STR_HASH_SHA1, hash);
+    ok &= GetTlvQString(data, tlvend, offset, TLV_TYPE_STR_HASH_SHA1, hash);
 
     /* while there is more TLV (optional part) */
     while ((*offset) + 2 < tlvend) {
@@ -258,7 +258,7 @@ std::ostream &TlvFileItem::print(std::ostream &out, uint16_t indent) {
 
 
     printIndent(out, int_Indent);
-    out << "Mandatory:  FileSize: " << filesize << " Hash: " << hash;
+    out << "Mandatory:  FileSize: " << filesize << " Hash: " << hash.toStdString();
     out << std::endl;
 
     printIndent(out, int_Indent);

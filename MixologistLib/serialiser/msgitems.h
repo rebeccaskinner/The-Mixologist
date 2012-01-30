@@ -39,8 +39,8 @@ const uint32_t CHAT_FLAG_REQUESTS_AVATAR    = 0x0002;
 const uint32_t CHAT_FLAG_CONTAINS_AVATAR    = 0x0004;
 const uint32_t CHAT_FLAG_AVATAR_AVAILABLE = 0x0008;
 
-const uint8_t PKT_SUBTYPE_CHAT_STATUS = 0x02 ;  // default is 0x01
-const uint8_t PKT_SUBTYPE_CHAT_AVATAR = 0x03 ;  // default is 0x01
+const uint8_t PKT_SUBTYPE_CHAT_STATUS = 0x02;  // default is 0x01
+const uint8_t PKT_SUBTYPE_CHAT_AVATAR = 0x03;  // default is 0x01
 
 class ChatItem: public NetItem {
 public:
@@ -48,28 +48,27 @@ public:
 
     virtual ~ChatItem() {}
     virtual void clear() {}
-    virtual std::ostream &print(std::ostream &out, uint16_t indent = 0) = 0 ;
+    virtual std::ostream &print(std::ostream &out, uint16_t indent = 0) = 0;
 
-    virtual bool serialise(void *data,uint32_t &size) = 0 ; // Isn't it better that items can serialize themselves ?
-    virtual uint32_t serial_size() = 0 ;                            // deserialise is handled using a constructor
+    virtual bool serialise(void *data,uint32_t &size) = 0; // Isn't it better that items can serialize themselves ?
+    virtual uint32_t serial_size() = 0;                            // deserialise is handled using a constructor
 };
 
 
 class ChatMsgItem: public ChatItem {
 public:
     ChatMsgItem() :ChatItem(PKT_SUBTYPE_DEFAULT) {}
-    ChatMsgItem(void *data,uint32_t size) ; // deserialization
+    ChatMsgItem(void *data,uint32_t size); // deserialization
 
     virtual ~ChatMsgItem() {}
     virtual void clear() {}
     virtual std::ostream &print(std::ostream &out, uint16_t indent = 0);
 
-    virtual bool serialise(void *data,uint32_t &size) ; // Isn't it better that items can serialize themselves ?
-    virtual uint32_t serial_size() ;                            // deserialise is handled using a constructor
+    virtual bool serialise(void *data,uint32_t &size); // Isn't it better that items can serialize themselves ?
+    virtual uint32_t serial_size();                            // deserialise is handled using a constructor
 
     uint32_t chatFlags;
     uint32_t sendTime;
-    //std::wstring message;
     QString message;
     /* not serialised */
     uint32_t recvTime;
@@ -80,13 +79,13 @@ public:
 class ChatStatusItem: public ChatItem {
 public:
     ChatStatusItem() :ChatItem(PKT_SUBTYPE_CHAT_STATUS) {}
-    ChatStatusItem(void *data,uint32_t size) ; // deserialization
+    ChatStatusItem(void *data,uint32_t size); // deserialization
 
     virtual ~ChatStatusItem() {}
     virtual std::ostream &print(std::ostream &out, uint16_t indent = 0);
 
-    virtual bool serialise(void *data,uint32_t &size) ; // Isn't it better that items can serialize themselves ?
-    virtual uint32_t serial_size() ;                            // deserialise is handled using a constructor
+    virtual bool serialise(void *data,uint32_t &size); // Isn't it better that items can serialize themselves ?
+    virtual uint32_t serial_size();                            // deserialise is handled using a constructor
 
     QString status_string;
 };
@@ -96,16 +95,16 @@ public:
 class ChatAvatarItem: public ChatItem {
 public:
     ChatAvatarItem() :ChatItem(PKT_SUBTYPE_CHAT_AVATAR) {}
-    ChatAvatarItem(void *data,uint32_t size) ; // deserialization
+    ChatAvatarItem(void *data,uint32_t size); // deserialization
 
-    virtual ~ChatAvatarItem() ;
+    virtual ~ChatAvatarItem();
     virtual std::ostream &print(std::ostream &out, uint16_t indent = 0);
 
-    virtual bool serialise(void *data,uint32_t &size) ; // Isn't it better that items can serialize themselves ?
-    virtual uint32_t serial_size() ;                            // deserialise is handled using a constructor
+    virtual bool serialise(void *data,uint32_t &size); // Isn't it better that items can serialize themselves ?
+    virtual uint32_t serial_size();                            // deserialise is handled using a constructor
 
-    uint32_t image_size ;               // size of data in bytes
-    unsigned char *image_data ;     // image
+    uint32_t image_size;               // size of data in bytes
+    unsigned char *image_data;     // image
 };
 
 
@@ -114,12 +113,12 @@ public:
     ChatSerialiser() :SerialType(PKT_VERSION_SERVICE, SERVICE_TYPE_CHAT) {}
 
     virtual uint32_t    size (NetItem *item) {
-        return static_cast<ChatItem *>(item)->serial_size() ;
+        return static_cast<ChatItem *>(item)->serial_size();
     }
     virtual bool serialise(NetItem *item, void *data, uint32_t *size) {
-        return static_cast<ChatItem *>(item)->serialise(data,*size) ;
+        return static_cast<ChatItem *>(item)->serialise(data,*size);
     }
-    virtual NetItem *deserialise (void *data, uint32_t *size) ;
+    virtual NetItem *deserialise (void *data, uint32_t *size);
 };
 
 /**************************************************************************/
