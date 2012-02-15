@@ -31,9 +31,16 @@
 WelcomeWizard::WelcomeWizard(QWidget *parent) :QWizard(parent) {
     setWindowFlags(windowFlags() & !Qt::WindowContextHelpButtonHint);
 
-    addPage(new IntroPage(this));
+    IntroPage* introPage = new IntroPage(this);
+    addPage(introPage);
     addPage(new MiddlePage(this));
-    addPage(new ConclusionPage(this));
+    ConclusionPage* conclusionPage = new ConclusionPage(this);
+    addPage(conclusionPage);
+
+    /* This is currently hard-coded for simplicity, but the conclusion page is the longest.
+       Therefore, we set the wizard size to be the size of the conclusion page. */
+    conclusionPage->adjustSize();
+    setFixedHeight(conclusionPage->height());
 
     setWindowTitle("Welcome to the Mixologist!");
     setOption(QWizard::IndependentPages, true);
@@ -82,6 +89,7 @@ IntroPage::IntroPage(QWidget *parent) :QWizardPage(parent) {
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(label);
+    layout->addSpacerItem(new QSpacerItem(0, 0));
     setLayout(layout);
 }
 
