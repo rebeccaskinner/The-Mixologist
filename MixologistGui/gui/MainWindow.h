@@ -116,6 +116,7 @@ private:
 
         bool tutorial_library_done;
         bool tutorial_friends_library_done;
+        bool offLM_enabled; //We read this to see if we need the tutorials
 };
 
 #endif

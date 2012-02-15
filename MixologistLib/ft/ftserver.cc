@@ -82,7 +82,7 @@ void ftServer::SetupFtServer() {
     connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryStateChanged(int)), this, SIGNAL(friendLibraryStateChanged(int)));
 
     QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Gui/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
+    if (settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
         offLMList = new ftOffLMList();
         mFtDataplex->addFileMethod(offLMList);
         connect(offLMList, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));

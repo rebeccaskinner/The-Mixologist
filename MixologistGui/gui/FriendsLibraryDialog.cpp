@@ -45,7 +45,7 @@ FriendsLibraryDialog::FriendsLibraryDialog(QWidget *parent)
 
     /* Setup OffLMFriendModel */
     QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Gui/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
+    if (settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
         OffLMFriendModel* friendModel = new OffLMFriendModel(ui.offLMList, this);
         OffLMSearchModel* searchableFriendModel = new OffLMSearchModel(ui.searchBar, this);
         searchableFriendModel->setSourceModel(friendModel);

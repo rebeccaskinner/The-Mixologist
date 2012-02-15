@@ -48,7 +48,7 @@ LibraryDialog::LibraryDialog(QWidget *parent)
 
     /* Setup Off-LM Model. */
     QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Gui/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
+    if (settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
         OffLMOwnModel* ownModel = new OffLMOwnModel(ui.offLMList, this);
         ui.offLMList->setModel(ownModel);
     } else {

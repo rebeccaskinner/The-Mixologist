@@ -68,7 +68,7 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     ui.startMinimized->setChecked(settings.value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool());
-    ui.offLM->setChecked(settings.value("Gui/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool());
+    ui.offLM->setChecked(settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool());
 
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
         ui.showAdvanced->setChecked(true);
@@ -80,7 +80,7 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 bool GeneralDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Gui/StartMinimized", ui.startMinimized->checkState());
-    settings.setValue("Gui/EnableOffLibraryMixer", ui.offLM->checkState());
+    settings.setValue("Transfers/EnableOffLibraryMixer", ui.offLM->checkState());
 
 
     if (canHandleRunOnBoot()) setRunOnBoot(ui.runOnBoot->isChecked());

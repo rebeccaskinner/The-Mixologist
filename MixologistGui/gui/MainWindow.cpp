@@ -49,6 +49,7 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
     /* Tutorials */
     tutorial_library_done = settings.value("Tutorial/Library", DEFAULT_TUTORIAL_DONE_LIBRARY).toBool();
     tutorial_friends_library_done = settings.value("Tutorial/FriendsLibrary", DEFAULT_TUTORIAL_DONE_FRIENDS_LIBRARY).toBool();
+    offLM_enabled = settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool();
 
     /* Toolbar and stack pages */
     //These toolbar buttons change the page in the stack page
@@ -168,7 +169,7 @@ void MainWindow::updateHashingInfo(const QString &s) {
 void MainWindow::showPreferencesWindow() {
     if (preferencesWindow == NULL) {
         preferencesWindow = new PreferencesWindow(this);
-        preferencesWindow->show();;
+        preferencesWindow->show();
     } else {
         preferencesWindow->activateWindow();
     }
@@ -225,7 +226,7 @@ void MainWindow::showPage(QAction *pageAction) {
 
     /* If this is our first time displaying one of the two library dialogs, and they've enabled the complex
        double libraries, pop-up a box explaining what they're seeing. */
-    if (ui.stackPages->currentWidget() == libraryDialog && !tutorial_library_done && friendsLibraryDialog) {
+    if (ui.stackPages->currentWidget() == libraryDialog && !tutorial_library_done && offLM_enabled) {
         QSettings settings(*mainSettings, QSettings::IniFormat, this);
         settings.setValue("Tutorial/Library", true);
         tutorial_library_done = true;
@@ -239,7 +240,7 @@ void MainWindow::showPage(QAction *pageAction) {
         helpBox.setText(info);
         helpBox.setTextFormat(Qt::RichText);
         helpBox.exec();
-    } else if (ui.stackPages->currentWidget() == friendsLibraryDialog && !tutorial_friends_library_done && friendsLibraryDialog) {
+    } else if (ui.stackPages->currentWidget() == friendsLibraryDialog && !tutorial_friends_library_done && offLM_enabled) {
         QSettings settings(*mainSettings, QSettings::IniFormat, this);
         settings.setValue("Tutorial/FriendsLibrary", true);
         tutorial_friends_library_done = true;

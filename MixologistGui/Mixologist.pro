@@ -111,6 +111,7 @@ HEADERS += version.h \
     interface/notifyqt.h \
     interface/settings.h \
     gui/StartDialog.h \
+    gui/WelcomeWizard.h \
     gui/NetworkDialog.h \
     gui/TransfersDialog.h \
     gui/MainWindow.h \
@@ -154,6 +155,7 @@ SOURCES += main.cpp \
     qtsingleapplication\mixologistapplication.cpp \
     interface/notifyqt.cpp \
     gui/StartDialog.cpp \
+    gui/WelcomeWizard.cpp \
     gui/NetworkDialog.cpp \
     gui/TransfersDialog.cpp \
     gui/MainWindow.cpp \
