@@ -461,6 +461,7 @@ libraryDownloadError:
 }
 
 void LibraryMixerConnect::handleErrorReceived(int error) {
+    std::cerr << "Error: " + http->errorString().toStdString() + "\n";
     buffer->deleteLater();
     if (httpGetId == info_upload_id) uploadBuffer->deleteLater(); //it seems like there should be a better way
     emit(errorReceived(error));
