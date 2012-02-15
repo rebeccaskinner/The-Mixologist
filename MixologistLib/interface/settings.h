@@ -57,5 +57,7 @@ const bool DEFAULT_TUTORIAL_DONE_FRIENDS_LIBRARY = false;
 
 #define DEFAULT_MIXOLOGY_SERVER "LibraryMixer"
 #define DEFAULT_MIXOLOGY_SERVER_VALUE "https://librarymixer.heroku.com"
+//This is a temporary hack, as it seems like the current QT version used (4.6) does not support SNI SSL used by LibraryMixer
+#define DEFAULT_MIXOLOGY_SERVER_FIXED_VALUE "https://www.librarymixer.com"
 
 #endif

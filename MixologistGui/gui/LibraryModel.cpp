@@ -273,7 +273,7 @@ void LibraryModel::openOnline() {
     QString host = settings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString();
 
     if (host.compare(DEFAULT_MIXOLOGY_SERVER, Qt::CaseInsensitive) == 0){
-        host = DEFAULT_MIXOLOGY_SERVER_VALUE;
+        host = DEFAULT_MIXOLOGY_SERVER_FIXED_VALUE;
     }
 
     QDesktopServices::openUrl(QUrl(host + "/redirect/item/" + QString::number(contextItemId)));
