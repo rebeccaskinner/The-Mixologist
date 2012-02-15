@@ -40,7 +40,7 @@ WelcomeWizard::WelcomeWizard(QWidget *parent) :QWizard(parent) {
     /* This is currently hard-coded for simplicity, but the conclusion page is the longest.
        Therefore, we set the wizard size to be the size of the conclusion page. */
     conclusionPage->adjustSize();
-    setFixedHeight(conclusionPage->height());
+    introPage->setMinimumHeight(conclusionPage->height());
 
     setWindowTitle("Welcome to the Mixologist!");
     setOption(QWizard::IndependentPages, true);
@@ -86,6 +86,8 @@ IntroPage::IntroPage(QWidget *parent) :QWizardPage(parent) {
                                "<p>The Mixologist integrates with LibraryMixer, downloading your friends list from the site, and also listing any items you marked on LibraryMixer as in your library and available for checkout.</p>"
                                "<p>When a friend clicks on a link in LibraryMixer to ask you for something, you can set up an automatic response such as lending or sending a file or message that the Mixologist will automatically use for all future requests.</p>");
     label->setWordWrap(true);
+    /* This is needed because when we resize the IntroPage in the constructor, the text floats in the middle without it. */
+    label->setAlignment(Qt::AlignTop);
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(label);
