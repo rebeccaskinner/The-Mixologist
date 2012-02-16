@@ -10,7 +10,6 @@ libcrypt32-cygwin.a
 libgdi32.a
 libiphlpapi.a
 libole32.a
-libpthreadGC2.a
 libuuid.a
 libwinmm.a
 libws2_32.a

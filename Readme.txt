@@ -1,7 +1,12 @@
 The Mixologist is a communications client that integrates with LibraryMixer.com to form a private network between LibraryMixer.com friends.
 
+
+
 To find out more, please visit:
-http://librarymixer.com/info/mixologist
+
+http://www.librarymixer.com/info/mixologist
+
+
 
 The Mixologist's sourcecode is split into two parts:
 (1) A library portion, which contains all of the actual networking and do-stuff code
