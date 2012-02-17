@@ -443,7 +443,6 @@ versionDownloadError:
     handleErrorReceived(version_download_error);
     return;
 infoDownloadError:
-    std::cerr << http->errorString().toStdString();
     handleErrorReceived(info_download_error);
     return;
 infoUploadError:
