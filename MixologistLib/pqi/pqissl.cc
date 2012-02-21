@@ -897,7 +897,7 @@ int     pqissl::SSL_Connection_Complete() {
 
         {
             std::ostringstream out;
-            out << "Unable to setup encrypted connection" << std::endl;
+            out << "Failure in setting up encrypted connection, possibly because friend needs to update encryption key list from server" << std::endl;
             log(LOG_WARNING, PQISSLZONE, out.str().c_str());
         }
 
