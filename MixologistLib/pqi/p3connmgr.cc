@@ -1362,7 +1362,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
         /* if address is same -> try local */
         if ((isValidNet(&(details.laddr.sin_addr))) &&
-                (sameNet(&(ownState.localaddr.sin_addr), &(details.laddr.sin_addr))))
+            (isSameAddress(&(ownState.localaddr), &(details.laddr))))
 
         {
             /* add the local address */
@@ -1801,31 +1801,21 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
         return true;
     }
 
-    /* are the addresses different? */
-
     time_t now = time(NULL);
     std::list<peerConnectAddress>::iterator cit;
-
-    /* add in attempts ... local(TCP), remote(TCP)
-     */
 
 #ifndef P3CONNMGR_NO_TCP_CONNECTIONS
 
     std::string local = inet_ntoa(it->second.localaddr.sin_addr);
     std::string ext = inet_ntoa(it->second.serveraddr.sin_addr);
-    /* if address is valid, on the same subnet, and not the same as external address try local */
+
+    /* If address is valid, on the same subnet, not the same as external address, and not the same as own addresses, try local. */
     if (isValidNet(&(it->second.localaddr.sin_addr)) &&
-            sameNet(&(ownState.localaddr.sin_addr), &(it->second.localaddr.sin_addr)) &&
-            (local != ext))
-
+       isSameSubnet(&(ownState.localaddr.sin_addr), &(it->second.localaddr.sin_addr)) &&
+       (local != ext) &&
+       (!isSameAddress(&ownState.localaddr, &it->second.localaddr)) &&
+       (!isSameAddress(&ownState.serveraddr, &it->second.localaddr)))
     {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectTCP() Local Address Valid: ";
-        std::cerr << inet_ntoa(it->second.localaddr.sin_addr);
-        std::cerr << ":" << ntohs(it->second.localaddr.sin_port);
-        std::cerr << std::endl;
-#endif
-
         /* check if there is a local one on there already */
 
         bool localExists = false;
@@ -1842,11 +1832,6 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
 
 
         if (!localExists) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::retryConnectTCP() Adding Local Addr to Queue";
-            std::cerr << std::endl;
-#endif
-
             /* add the local address */
             peerConnectAddress pca;
             pca.ts = now;
@@ -1864,33 +1849,18 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
             }
 
             it->second.connAddrs.push_back(pca);
-        } else {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::retryConnectTCP() Local Addr already in Queue";
-            std::cerr << std::endl;
-#endif
         }
     }
 
-    /* otherwise try external ... (should check flags) */
-    //if ((isValidNet(&(it->second.serveraddr.sin_addr))) &&
-    //      (it->second.netMode = NET_MODE_EXT))
-
-    /* always try external */
-    if (isValidNet(&(it->second.serveraddr.sin_addr))) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectTCP() Ext Address Valid: ";
-        std::cerr << inet_ntoa(it->second.serveraddr.sin_addr);
-        std::cerr << ":" << ntohs(it->second.serveraddr.sin_port);
-        std::cerr << std::endl;
-#endif
-
-
+    /* Always try external unless address is the same as one of ours. */
+    if (isValidNet(&(it->second.serveraddr.sin_addr)) &&
+        (!isSameAddress(&ownState.localaddr, &it->second.serveraddr)) &&
+        (!isSameAddress(&ownState.serveraddr, &it->second.serveraddr))) {
         /* check if there is a remote one on there already */
 
         bool remoteExists = false;
         if ((it->second.inConnAttempt) &&
-                (it->second.currentConnAddr.type == NET_CONN_TCP_EXTERNAL)) {
+            (it->second.currentConnAddr.type == NET_CONN_TCP_EXTERNAL)) {
             remoteExists = true;
         }
 
@@ -1902,11 +1872,6 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
         }
 
         if (!remoteExists) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::retryConnectTCP() Adding Ext Addr to Queue";
-            std::cerr << std::endl;
-#endif
-
             /* add the remote address */
             peerConnectAddress pca;
             pca.ts = now;
@@ -1924,11 +1889,6 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
             }
 
             it->second.connAddrs.push_back(pca);
-        } else {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::retryConnectTCP() Ext Addr already in Queue";
-            std::cerr << std::endl;
-#endif
         }
     }
 
