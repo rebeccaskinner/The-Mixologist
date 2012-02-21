@@ -48,6 +48,8 @@ WelcomeWizard::WelcomeWizard(QWidget *parent) :QWizard(parent) {
 }
 
 void WelcomeWizard::accept() {
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+
     if (field("manualConnection").toBool()) {
         settings.setValue("Network/RandomizePorts", false);
         QMessageBox::StandardButton result = QMessageBox::information(this,
@@ -68,7 +70,6 @@ void WelcomeWizard::accept() {
     if (field("DisableOffLM").toBool()) settings.setValue("Transfers/EnableOffLibraryMixer", false);
     else settings.setValue("Transfers/EnableOffLibraryMixer", true);
 
-    QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Tutorial/Initial", true);
 
     QDialog::accept();
