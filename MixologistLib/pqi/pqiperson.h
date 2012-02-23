@@ -39,14 +39,18 @@ static const int CONNECT_FAILED       = 5;
 
 class pqipersongrp;
 class pqiconnect;
+
 /*
-Each pqiperson belongs to a specific peer, and represents the
-aggregated various methods of communicating with the peer.
-Each method of communication is stored as a pqiconnect.
-More than one connection method is supported, with one active at
-any given time.  Passes on calls to the PQInterface through to the
-appropriate actual implementation.
-*/
+ * pqiperson
+ *
+ * Each pqiperson belongs to a specific peer, or more precisely, to a specific certificate.
+ * It represents the aggregated various methods of communicating with the peer represented by that certificate.
+ *
+ * Each method of communication is stored as a pqiconnect.
+ * More than one connection method is supported, with one active at any given time.
+ * Passes on calls to the PQInterface through to the appropriate actual implementation.
+ *
+ */
 
 class pqiperson: public PQInterface {
 public:
@@ -59,7 +63,7 @@ public:
     int stoplistening();
     int connect(uint32_t type, struct sockaddr_in raddr, uint32_t delay, uint32_t period, uint32_t timeout);
 
-    //Add in connection method to kids.
+    //Add in connection method to communicationMethods.
     //type is a constant from pqibase.h and include PQI_CONNECT_TCP and PQI_CONNECT_UDP
     int addChildInterface(uint32_t type, pqiconnect *pqi);
 
@@ -67,10 +71,9 @@ public:
     virtual int SendItem(NetItem *);
     virtual NetItem *GetItem();
 
-    virtual int status();
     virtual int tick();
 
-    // Called by kids to notify the pqiperson of a connection event.
+    // Called by communicationMethods to notify the pqiperson of a connection event.
     int notifyEvent(NetInterface *ni, int event);
 
     // PQInterface for rate control overloaded....
@@ -79,7 +82,7 @@ public:
 
 private:
 
-    std::map<uint32_t, pqiconnect *> kids; //A type-of-connection/pqiconnect map.  The methods of communication.
+    std::map<uint32_t, pqiconnect *> communicationMethods; //A type-of-connection/pqiconnect map.  The methods of communication.
     bool active;
     pqiconnect *activepqi;
     bool inConnectAttempt;
@@ -118,14 +121,11 @@ public:
     virtual int stoplistening() {
         return ni -> stoplistening();
     }
-    virtual int reset() {
-        return ni -> reset();
+    virtual void reset() {
+        ni -> reset();
     }
-    virtual int disconnect() {
-        return ni -> reset();
-    }
-    virtual bool connect_parameter(uint32_t type, uint32_t value) {
-        return ni -> connect_parameter(type, value);
+    virtual bool setConnectionParameter(netParameters type, uint32_t value) {
+        return ni -> setConnectionParameter(type, value);
     }
 
     // get the contact from the net side.

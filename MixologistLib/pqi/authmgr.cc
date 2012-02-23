@@ -21,7 +21,6 @@
  ****************************************************************/
 
 #include "authmgr.h"
-#include "pqinetwork.h"
 #include "util/debug.h"
 
 #include <openssl/err.h>
@@ -29,7 +28,6 @@
 #include <openssl/pem.h>
 
 #include <sstream>
-#include <iomanip>
 
 //100 is an arbitrary number, but should be large enough for any LibraryMixer ids for long to come
 #define ID_BUF_SIZE 100
@@ -51,9 +49,7 @@ int OpenSSLVerifyCB(X509_STORE_CTX *store, void *unused) {
     return 0;
 }
 
-/********AuthMgr*************/
-
-void AuthMgr::initSSL() {
+int AuthMgr::InitAuth(unsigned int librarymixer_id, QString &cert) {
     SSL_load_error_strings();
     SSL_library_init();
 
@@ -66,17 +62,12 @@ void AuthMgr::initSSL() {
                 MUTEX_SETUP(mutex_buf[i]);
             CRYPTO_set_id_callback(id_function);
             CRYPTO_set_locking_callback(locking_function);*/
-}
 
-// args: server cert, server private key, trusted certificates.
-int AuthMgr::InitAuth(unsigned int librarymixer_id, QString &cert) {
     authMtx.lock();
 
-    if (init == 1) {
-        return 1;
-    }
+    if (authMgrInitialized) return true;
 
-    mLibraryMixerId = librarymixer_id;
+    ownLibraryMixerID = librarymixer_id;
 
     //Call OpenSSL to create own keys and cert
     EVP_PKEY *pkey = EVP_PKEY_new();
@@ -103,7 +94,7 @@ int AuthMgr::InitAuth(unsigned int librarymixer_id, QString &cert) {
 
     unsigned char cert_id[20];
     if (!getCertId(x509, cert_id)) return false;
-    mCertId = std::string((char *)cert_id, 20);
+    ownCertificateID = std::string((char *)cert_id, 20);
 
     //Call OpenSSL to output the new certificate to the cert variable
     BIO *bp = BIO_new(BIO_s_mem());
@@ -129,31 +120,11 @@ int AuthMgr::InitAuth(unsigned int librarymixer_id, QString &cert) {
 
     EVP_PKEY_free(pkey); //This also frees rsa
     X509_free(x509);
-    init = 1;
+    authMgrInitialized = true;
 
     authMtx.unlock();
 
     return true;
-}
-
-bool    AuthMgr::CloseAuth() {
-    authMtx.lock();
-    SSL_CTX_free(sslctx);
-    // clean up private key....
-    // remove certificates etc -> opposite of initssl.
-    init = 0;
-    authMtx.unlock();
-
-    //OpenSSL thread shutdown
-    /*        int i;
-            if (!mutex_buf) return 0;
-            CRYPTO_set_id_callback(NULL);
-            CRYPTO_set_locking_callback(NULL);
-            for (i = 0; i < CRYPTO_num_locks(); i++)
-                MUTEX_CLEANUP(mutex_buf[i]);
-            free(mutex_buf);
-            mutex_buf = NULL;*/
-    return 1;
 }
 
 bool AuthMgr::getCertId(X509 *cert, unsigned char message_digest[]) {
@@ -164,9 +135,9 @@ bool AuthMgr::getCertId(X509 *cert, unsigned char message_digest[]) {
 std::string AuthMgr::findCertByLibraryMixerId(unsigned int librarymixer_id) {
     std::map<uint, X509 *>::iterator it;
     authMtx.lock();
-    it = mCerts.find(librarymixer_id);
+    it = friendsCertificates.find(librarymixer_id);
 
-    if (it == mCerts.end()) {
+    if (it == friendsCertificates.end()) {
         authMtx.unlock();
         return "";
     }
@@ -183,7 +154,7 @@ unsigned int AuthMgr::findLibraryMixerByCertId(std::string cert_id) {
         log(LOG_ERROR, AUTHMGRZONE, "findLibraryMixerByCertId called with empty string!\n");
     }
 
-    for(it = mCerts.begin(); it != mCerts.end(); it++) {
+    for(it = friendsCertificates.begin(); it != friendsCertificates.end(); it++) {
         if (cert_id == std::string(reinterpret_cast<char *>(it->second->sha1_hash), sizeof(it->second->sha1_hash))) {
             unsigned int librarymixer_id = it->first;
             authMtx.unlock();
@@ -270,8 +241,8 @@ int AuthMgr::addUpdateCertificate(QString cert, unsigned int librarymixer_id) {
     //Check if we are updating or adding a new entry or doing nothing
     authMtx.lock();
     //If this is a new user
-    it = mCerts.find(librarymixer_id);
-    if (it == mCerts.end()) {
+    it = friendsCertificates.find(librarymixer_id);
+    if (it == friendsCertificates.end()) {
         retint = 2;
     } else {
         //existing user with same information
@@ -284,20 +255,13 @@ int AuthMgr::addUpdateCertificate(QString cert, unsigned int librarymixer_id) {
     }
 
     //Actually add the new x509 certificate
-    mCerts[librarymixer_id] = x509;
+    friendsCertificates[librarymixer_id] = x509;
     authMtx.unlock();
 
 end:
     if (certificate != NULL) free(certificate);
     if (bp != NULL) BIO_free(bp);
     return retint;
-}
-
-bool AuthMgr::RemoveCertificate(unsigned int librarymixer_id) {
-    authMtx.lock();
-    mCerts.erase(librarymixer_id);
-    authMtx.unlock();
-    return true;
 }
 
 /********** SSL ERROR STUFF ******************************************/
@@ -329,3 +293,36 @@ int printSSLError(SSL *, int retval, int err, unsigned long err2,
     out << "\t + ERR Error: " << ERR_error_string(err2, NULL) << std::endl;
     return 1;
 }
+
+#ifdef false
+Currently unused
+bool AuthMgr::RemoveCertificate(unsigned int librarymixer_id) {
+    authMtx.lock();
+    friendsCertificates.erase(librarymixer_id);
+    authMtx.unlock();
+    return true;
+}
+#endif
+
+#ifdef false
+Why would we ever do this before shutdown, when it will be closed anyway?
+bool AuthMgr::CloseAuth() {
+    authMtx.lock();
+    SSL_CTX_free(sslctx);
+    // clean up private key....
+    // remove certificates etc
+    authMgrInitialized = false;
+    authMtx.unlock();
+
+    //OpenSSL thread shutdown
+    /*        int i;
+            if (!mutex_buf) return 0;
+            CRYPTO_set_id_callback(NULL);
+            CRYPTO_set_locking_callback(NULL);
+            for (i = 0; i < CRYPTO_num_locks(); i++)
+                MUTEX_CLEANUP(mutex_buf[i]);
+            free(mutex_buf);
+            mutex_buf = NULL;*/
+    return 1;
+}
+#endif

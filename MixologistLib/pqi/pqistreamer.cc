@@ -282,22 +282,6 @@ int pqistreamer::tick() {
     return 0;
 }
 
-int pqistreamer::status() {
-    {
-        std::ostringstream out;
-        out << "pqistreamer::status()";
-        pqioutput(PQL_DEBUG_ALL, PQISTREAMERZONE, out.str().c_str());
-    }
-
-    if (bio->isactive()) {
-        std::ostringstream out;
-        out << "Data in:" << totalRead << " out:" << totalSent;
-        pqioutput(PQL_DEBUG_BASIC, PQISTREAMERZONE, out.str().c_str());
-    }
-
-    return 0;
-}
-
 /**************** HANDLE OUTGOING TRANSLATION + TRANSMISSION ******/
 
 int pqistreamer::handleoutgoing() {

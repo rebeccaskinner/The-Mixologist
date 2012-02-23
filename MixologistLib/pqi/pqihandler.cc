@@ -59,40 +59,9 @@ int pqihandler::tick() {
     return moreToTick;
 }
 
-
-int pqihandler::status() {
-    std::map<std::string, PQInterface *>::iterator it;
-    QMutexLocker stack(&coreMtx);
-
-    {
-        // for output
-        std::ostringstream out;
-        out  << "pqihandler::status() Active PQI:" << std::endl;
-
-        // display all interfaces...
-        for (it = pqis.begin(); it != pqis.end(); it++) {
-            out << "\tPQI [" << it -> first << "] Pointer <";
-            out << (void *) (it -> second) << ">" << std::endl;
-        }
-
-        log(LOG_DEBUG_BASIC, PQIHANDLERZONE, out.str().c_str());
-
-    } // end of output.
-
-
-    // status all interfaces...
-    for (it = pqis.begin(); it != pqis.end(); it++) {
-        it -> second -> status();
-    }
-    return 1;
-}
-
-
-
 bool    pqihandler::AddPQI(PQInterface *pqi) {
     QMutexLocker stack(&coreMtx);
 
-    std::map<std::string, PQInterface *>::iterator it;
     if (pqi->PeerId() == "") {
         // ERROR!
         std::ostringstream out;

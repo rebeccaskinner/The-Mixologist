@@ -39,183 +39,196 @@
 
 #include <QMutex>
 
-//Used for variable waiting to indicate state of connection
-#define WAITING_NOT            0 //Uninitialized
-#define WAITING_DELAY          1 //Has been set by Init_Or_Delay_Connection()
-#define WAITING_SOCK_CONNECT   2
-#define WAITING_SSL_CONNECTION 3
-#define WAITING_SSL_AUTHORISE  4
-#define WAITING_FAIL_INTERFACE 5
-
-#define PQISSL_PASSIVE  0x00
-#define PQISSL_ACTIVE   0x01
-
-const int PQISSL_LOCAL_FLAG = 0x01;
-const int PQISSL_REMOTE_FLAG = 0x02;
-const int PQISSL_DNS_FLAG = 0x04;
-
-/* not sure about the value? */
-const int PQISSL_UDP_FLAG = 0x02;
-
-
-/***************************** pqi Net SSL Interface *********************************
- * This provides the base SSL interface class,
- * and handles most of the required functionality.
+/*
+ * pqissl
  *
- * there are a series of small fn's that can be overloaded
- * to provide alternative behaviour....
+ * This provides the base OpenSSL-wrapping interface class for an individual connection
+ * (AuthMgr wraps some other non-individual connection OpenSSL functions.)
  *
- * Classes expected to inherit from this are:
+ * Each certificate has a pqissl, created in pqisslpersongrp when a friend is added,
+ * which represents the SSL TCP connection to the friend represented by that certificate.
+ * A pqissl isn't updated when a friend gets a new certificate, instead a new one is created for that friend.
  *
- * pqissllistener   -> pqissllistener  (tcp only)
- *          -> pqixpgplistener (tcp only)
+ * A pqissl also isn't tied to any particular address, and can be called with different addresses to attempt to connect.
  *
- * pqissl       -> pqissltcp
- *          -> pqissludp
- *          -> pqixpgptcp
- *          -> pqixpgpudp
+ * This is subclassed by pqissludp.
  *
  */
-
-class pqissl;
-class cert;
 
 class pqissllistener;
 
 class pqissl: public NetBinInterface {
+    friend class pqissllistener;
+
 public:
     pqissl(pqissllistener *l, PQInterface *parent);
     virtual ~pqissl();
 
-    // NetInterface
+    /**********************************************************************************
+     * NetInterface
+     **********************************************************************************/
+
+    /* Attempt a connection to the friend at the specified address.
+       Returns 1 on success, 0 on failure (may be temporary, in which case can simply try again), -1 on error. */
     virtual int connect(struct sockaddr_in raddr);
+
+    /* Begin listening for connections from this friend.
+       Returns 1 on success, 0 on not ready, and -1 on error. */
     virtual int listen();
+
+    /* Stops listening for connections from this friend.
+       Returns 1 on success or if already not listening, and -1 on error. */
     virtual int stoplistening();
-    virtual int reset();
-    virtual int disconnect();
 
-    virtual bool connect_parameter(uint32_t type, uint32_t value);
+    /* Closes any existing connection with the friend, and resets to initial condition.
+       Can be called even if not currently connected. */
+    virtual void reset();
 
-    // BinInterface
+    /* Sets the specified parameter to value.
+       Returns false if no such parameter applies to the NetInterface. */
+    virtual bool setConnectionParameter(netParameters type, uint32_t value);
+
+    /**********************************************************************************
+     * BinInterface
+     **********************************************************************************/
+    /* Ticked by the containing pqiperson.
+       Attempts to connect */
     virtual int tick();
-    virtual int status();
 
-    virtual int senddata(void *, int);
-    virtual int readdata(void *, int);
-    virtual int netstatus();
-    virtual int isactive();
+    /* Sends data with length.
+       Returns the amount of data sent, or -1 on error. */
+    virtual int senddata(void *data, int length);
+
+    /* Returns -1 on errors, otherwise returns the size in bytes of the packet this is read. */
+    virtual int readdata(void *data, int length);
+
+    /* Returns true when connected. */
+    virtual bool isactive();
+
+    /* Returns true when there is more data available to be read by the connection. */
     virtual bool moretoread();
+
+    /* Returns true when more data is ready to be sent by the connection. */
     virtual bool cansend();
 
-    virtual int close(); /* BinInterface version of reset() */
-    virtual std::string gethash(); /* not used here */
-    virtual bool bandwidthLimited() {
-        return true ;    // replace by !sameLAN to avoid bandwidth limiting on lAN
-    }
+    /* Closes any existing connection with the friend, and resets to initial condition.
+       Can be called even if not currently connected. */
+    virtual void close();
+
+    /* If a connection is with a friend on the same LAN, then we'll let that connection be excused from bandwidth balancing in pqistreamer. */
+    virtual bool bandwidthLimited() {return sameLAN;}
 
 protected:
-    // A little bit of information to describe
-    // the SSL state, this is needed
-    // to allow full Non-Blocking Connect behaviour.
+    /**********************************************************************************
+     * Internals of the SSL connection
+     **********************************************************************************/
+    /* Variable that indicates state of the connection in progress.
+       A completed connection and an idle connection are both STATE_IDLE. */
+    enum connectionStates {
+        STATE_IDLE = 0,
+        STATE_INITIALIZED = 1,
+        STATE_WAITING_FOR_SOCKET_CONNECT = 2,
+        STATE_WAITING_FOR_SSL_CONNECT = 3,
+        STATE_WAITING_FOR_SSL_AUTHORIZE = 4,
+        STATE_FAILED = 5
+    };
+    connectionStates connectionState;
 
-    //Variable that indicates state of the connection.
-    int waiting;
-
-    //This loops through the following functions based on the variable waiting to complete a connection.
+    /* This looks at the connectionState and calls other functions to handle based upon that. */
     int ConnectAttempt();
 
-    virtual int Failed_Connection();
-
-    //If variable waiting indicates connection WAITING_NOT (uninitialized),
-    //sets it to WAITING_DELAY (initialized).  If mConnectDelay is 0, calls
-    //Initiate_Connection(), otherwise sets mConnectTS to the appropriate
-    //amount of delay.
-    //If waiting is already WAITING_DELAY, then if mConnectTS delay has been
-    //met, calls Initiate_Connect().
+    /* Looks at whether we have been requested to delay connecting.
+       If we have, then sets the appropriate state and delay.
+       If we haven't, or if we've fulfilled the delay request, immediately calls Initiate_Connection().
+       Returns 0 while delayed, -1 on errors. */
     int Init_Or_Delay_Connection();
 
-    /*These two fns are overloaded for udp/etc connections.
-      Opens a socket, makes it non-blocking, then calls pqi_network::unix_connect which calls some external connect
-      If it's in progress, sets waiting to WAITING_SOCK_CONNECT,
-      if it fails sets waiting to WAITING_FAIL_INTERFACE and closes the socket */
+    /* Opens a socket, makes it non-blocking, then connects it to the target address.
+       Returns 1 on success, 0 if not ready, -1 on errors. */
     virtual int Initiate_Connection();
+
+    /* Completes the basic TCP connection by calling Basic_Connection_Complete().
+       Then initiates the SSL connection.
+       Returns 1 on success, -1 on errors. */
+    int Initiate_SSL_Connection();
+    /* Completes the basic TCP connection to the target address.
+       Returns 1 on success, 0 if not ready, -1 on errors. */
     virtual int Basic_Connection_Complete();
 
-    // These should be identical for all cases,
-    // differences are achieved via the net_internal_* fns.
-    int Initiate_SSL_Connection();
+    /* Completes the SSL connection by calling SSL_Connection_Complete().
+       Then calls accept() to finalize the connection.
+       Returns 1 on success, 0 if not ready, -1 on errors. */
+    int Authorize_SSL_Connection();
+    /* Completes the basic SSL connection over the already created connection.
+       Returns 1 on success, 0 if not ready, -1 on errors. */
     int SSL_Connection_Complete();
-    int Authorise_SSL_Connection();
 
-public:
-
-    /* Completion of the SSL connection,
-     * this is public, so it can be called by
-     * the listener (should make friends??)
-     */
-
+    /* Final internal processing of the SSL connection.
+       By the time this is called, the connection is already set up.
+       This performs all the necessary actions to internally mark the connection as completed,
+       as well as informed the parent pqiperson that the connection is complete.
+       Called both by pqissl from Authorize_SSL_Connection() and also by pqissllistener from acceptInbound() to finalize connections. */
     int accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr);
+    /* Simply calls accept() but wraps it in a mutex.
+       Designed so that pqissllistener can safely call accept. */
+    int acceptInbound(SSL *ssl, int fd, struct sockaddr_in foreign_addr);
 
-protected:
+    /* Informs the parent that the connection attempt ended in failure. */
+    virtual int Failed_Connection();
 
-    //protected internal fns that are overloaded for udp case.
-    virtual int net_internal_close(int fd_to_close) {
-        return unix_close(fd_to_close);
-    }
-    virtual int net_internal_SSL_set_fd(SSL *ssl, int fd) {
-        return SSL_set_fd(ssl, fd);
-    }
-    virtual int net_internal_fcntl_nonblock(int fd) {
-        return unix_fcntl_nonblock(fd);
-    }
+    /* protected internal fns that are overloaded for udp case. */
+    virtual int net_internal_close(int fd_to_close) {return unix_close(fd_to_close);}
+    virtual int net_internal_SSL_set_fd(SSL *ssl, int fd) {return SSL_set_fd(ssl, fd);}
+    virtual int net_internal_fcntl_nonblock(int fd) {return unix_fcntl_nonblock(fd);}
 
+    /* Whether this connection has already been fully set up. */
+    bool currentlyConnected;
 
-    /* data */
-    bool active;
-    bool certvalid;
+    /* Whether this is a passive UDP connection or an active TCP connection. */
+    enum SSLModes {
+        PQISSL_PASSIVE = 0x00, //UDP Connection
+        PQISSL_ACTIVE = 0x01 //TCP Connection
+    };
+    SSLModes sslmode;
 
-    // addition for udp (tcp version == ACTIVE).
-    int sslmode;
-
+    /* Attributes of the connection (or connection in progress). */
     SSL *ssl_connection;
-    int sockfd;
-
-    pqissllistener *pqil;
+    int mOpenSocket;
     struct sockaddr_in remote_addr;
 
-    void *readpkt;
-    int pktlen;
-    int total_len ; // saves the reading state accross successive calls.
+    /* Pointer to the global sslListener that we'll need to register with. */
+    pqissllistener *sslListener;
 
-    int attempt_ts;
+    /* Reading in packets may require multiple calls to readdata().
+       This stores how far in we've made it into our read so far. */
+    int readSoFar;
 
-    // Some flags to indicate
-    // the status of the various interfaces
-    // (local), (server)
+    /* Some flags that indicate the status of the various interfaces (local), (server).
+       Unused by TCP, only used by UDP. */
     unsigned int net_attempt;
     unsigned int net_failure;
     unsigned int net_unreachable;
 
-    bool sameLAN; /* flag use to allow high-speed transfers */
+    bool sameLAN; //Whether we are on the same subnet as this friend. Used to exempt from bandwidth balancing.
 
-    int n_read_zero; /* a counter to determine if the connection is really dead */
+    /* SSL will throw an error called zero return when the connection is closed.
+       If this repeatedly occurs, the connection should be marked dead, so this tracks the number of occurrences. */
+    int errorZeroReturnCount;
 
-    int ssl_connect_timeout; /* timeout to ensure that we don't get stuck (can happen on udp!) */
+    /* Variables for the delay set by setConnectionParameter. */
+    uint32_t mRequestedConnectionDelay;
+    time_t mConnectionDelayedUntil;
 
-    uint32_t mConnectDelay;
-    time_t mConnectTS;
-    uint32_t mConnectTimeout;
-    time_t mTimeoutTS;
+    /* Variables for the connection attempt timeout set by setConnectionParameter. */
+    uint32_t mConnectionAttemptTimeout;
+    time_t mConnectionAttemptTimeoutAt;
+
+    /* When the SSL connection on top of the basic connection should timeout.
+       Ensures that we don't get stuck (can happen on udp!) */
+    time_t mSSLConnectionAttemptTimeoutAt;
 
 private:
-    // ssl only fns.
-    int connectInterface(sockaddr_in &);
-
     mutable QMutex pqisslMtx; /* accept can be called from a separate thread, so we need mutex protection */
-
 };
-
-
-
 
 #endif // MRK_PQI_SSL_HEADER

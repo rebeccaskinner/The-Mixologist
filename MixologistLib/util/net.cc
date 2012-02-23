@@ -62,7 +62,7 @@ void sockaddr_clear(struct sockaddr_in *addr) {
 }
 
 
-bool    isValidNet(struct in_addr *addr) {
+bool isValidNet(struct in_addr *addr) {
     // invalid address.
     if ((*addr).s_addr == INADDR_NONE)
         return false;
@@ -73,12 +73,12 @@ bool    isValidNet(struct in_addr *addr) {
 }
 
 
-bool    isLoopbackNet(struct in_addr *addr) {
+bool isLoopbackNet(struct in_addr *addr) {
     in_addr_t taddr = ntohl(addr->s_addr);
     return (taddr == (127 << 24 | 1));
 }
 
-bool    isPrivateNet(struct in_addr *addr) {
+bool isPrivateNet(struct in_addr *addr) {
     in_addr_t taddr = ntohl(addr->s_addr);
 
     // 10.0.0.0/8
@@ -95,7 +95,7 @@ bool    isPrivateNet(struct in_addr *addr) {
     }
 }
 
-bool    isExternalNet(struct in_addr *addr) {
+bool isExternalNet(struct in_addr *addr) {
     if (!isValidNet(addr)) {
         return false;
     }

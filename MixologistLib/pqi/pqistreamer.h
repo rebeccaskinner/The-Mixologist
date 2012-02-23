@@ -48,7 +48,6 @@ public:
     virtual NetItem *GetItem();
 
     virtual int tick();
-    virtual int status();
 
 private:
     /* Implementation */

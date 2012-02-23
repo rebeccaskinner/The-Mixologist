@@ -39,9 +39,6 @@
 #include <interface/settings.h>
 
 /****
- * #define CONN_DEBUG 1
- ***/
-/****
  * #define P3CONNMGR_NO_TCP_CONNECTIONS 1
  ***/
 /****
@@ -70,10 +67,10 @@ const uint32_t P3CONNMGR_TCP_DEFAULT_DELAY = 2; /* 2 Seconds? is it be enough! *
 const uint32_t P3CONNMGR_UDP_DHT_DELAY = DHT_NOTIFY_PERIOD + 60; /* + 1 minute for DHT POST */
 const uint32_t P3CONNMGR_UDP_PROXY_DELAY = 30;  /* 30 seconds (NOT IMPLEMENTED YET!) */
 
-#define MIN_RETRY_PERIOD 600 //10 minute wait between connection retries
-#define USED_IP_WAIT_TIME 5 //5 second wait if tried to connect to an IP that was used
+#define MIN_RETRY_PERIOD 600 //10 minute wait between automatic connection retries
+#define USED_IP_WAIT_TIME 5 //5 second wait if tried to connect to an IP that was already in use in a connection attempt
 #define DOUBLE_TRY_DELAY 10 //10 second wait for friend to have updated his friends list before second try
-#define LAST_HEARD_TIMEOUT 300 //5 minute wait if haven't heard from friend
+#define LAST_HEARD_TIMEOUT 300 //5 minute wait if haven't heard from a friend before we mark them as disconnected
 
 peerConnectAddress::peerConnectAddress()
     :delay(0), period(0), type(0), ts(0) {
@@ -122,20 +119,7 @@ p3ConnectMgr::p3ConnectMgr(QString name)
 
 void p3ConnectMgr::setOwnNetConfig(uint32_t netMode, uint32_t visState) {
     /* only change TRY flags */
-
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::setOwnNetConfig()" << std::endl;
-    std::cerr << "Existing netMode: " << ownState.netMode << " vis: " << ownState.visState;
-    std::cerr << std::endl;
-    std::cerr << "Input netMode: " << netMode << " vis: " << visState;
-    std::cerr << std::endl;
-#endif
     ownState.netMode &= ~(NET_MODE_TRYMODE);
-
-#ifdef CONN_DEBUG
-    std::cerr << "After Clear netMode: " << ownState.netMode << " vis: " << ownState.visState;
-    std::cerr << std::endl;
-#endif
 
     switch (netMode & NET_MODE_ACTUAL) {
         case NET_MODE_EXT:
@@ -152,11 +136,6 @@ void p3ConnectMgr::setOwnNetConfig(uint32_t netMode, uint32_t visState) {
 
     ownState.visState = visState;
 
-#ifdef CONN_DEBUG
-    std::cerr << "Final netMode: " << ownState.netMode << " vis: " << ownState.visState;
-    std::cerr << std::endl;
-#endif
-
     /* if we've started up - then tweak Dht On/Off */
     if (mNetStatus != NET_UNKNOWN) {
         //mDhtMgr->enable(!(ownState.visState & VIS_STATE_NODHT));
@@ -170,9 +149,6 @@ void p3ConnectMgr::netStartup() {
     /* StunInit gets a list of peers, and asks the DHT to find them...
      * This is needed for all systems so startup straight away
      */
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::netStartup()" << std::endl;
-#endif
     //dht init
     connMtx.lock();
     uint32_t vs = ownState.visState;
@@ -223,9 +199,6 @@ void p3ConnectMgr::netStartup() {
 
     mNetInitTS = time(NULL);
 
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::netStartup() tou_stunkeepalive() enabled" << std::endl;
-#endif
     //tou_stunkeepalive(1); move into switch statement seems more logical right?
 
     ownState.netMode &= ~(NET_MODE_ACTUAL); //mask the actual state bits, we want to see the netMode try bits
@@ -235,9 +208,6 @@ void p3ConnectMgr::netStartup() {
         case NET_MODE_TRY_EXT:  /* v similar to UDP */
             ownState.netMode |= NET_MODE_EXT;
             mNetStatus = NET_UDP_SETUP;
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::netStartup() disabling stunkeepalive() cos EXT" << std::endl;
-#endif
             tou_stunkeepalive(0);
             mStunMoreRequired = false; /* only need to validate address (EXT) */
 
@@ -318,7 +288,7 @@ void p3ConnectMgr::netTick() {
     return;
 }
 
-void    p3ConnectMgr::statusTick() {
+void p3ConnectMgr::statusTick() {
     std::list<int> retryIds;
     std::list<int>::iterator retryIdsIt;
 
@@ -371,12 +341,6 @@ void    p3ConnectMgr::statusTick() {
 #ifndef P3CONNMGR_NO_AUTO_CONNECTION
 
     for (retryIdsIt = retryIds.begin(); retryIdsIt != retryIds.end(); retryIdsIt++) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::statusTick() RETRY TIMEOUT for: ";
-        std::cerr << *it2;
-        std::cerr << std::endl;
-#endif
-        /* retry it! */
         retryConnectTCP(*retryIdsIt);
     }
 
@@ -393,9 +357,6 @@ void p3ConnectMgr::tickMonitors() {
         QMutexLocker stack(&connMtx);
 
         if (mStatusChanged) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::tickMonitors() StatusChanged! List:" << std::endl;
-#endif
             /* assemble list */
             for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
                 if (it->second.actions) {
@@ -411,25 +372,6 @@ void p3ConnectMgr::tickMonitors() {
                     it->second.actions = 0;
 
                     actionList.push_back(peer);
-
-#ifdef CONN_DEBUG
-                    std::cerr << "Friend: " << peer.name.toStdString();
-                    std::cerr << " Id: " << peer.id;
-                    std::cerr << " State: " << peer.state;
-                    if (peer.state & PEER_S_CONNECTED)
-                        std::cerr << " S:PEER_S_CONNECTED";
-                    std::cerr << " Actions: " << peer.actions;
-                    if (peer.actions & PEER_NEW)
-                        std::cerr << " A:PEER_NEW";
-                    if (peer.actions & PEER_CONNECTED)
-                        std::cerr << " A:PEER_CONNECTED";
-                    if (peer.actions & PEER_DISCONNECTED)
-                        std::cerr << " A:PEER_DISCONNECTED";
-                    if (peer.actions & PEER_CONNECT_REQ)
-                        std::cerr << " A:PEER_CONNECT_REQ";
-
-                    std::cerr << std::endl;
-#endif
 
                     /* notify GUI */
                     if (peer.actions & PEER_CONNECTED) {
@@ -453,11 +395,6 @@ void p3ConnectMgr::tickMonitors() {
      */
 
     if (doStatusChange) {
-#ifdef CONN_DEBUG
-        std::cerr << "Sending to " << clients.size() << " monitorClients";
-        std::cerr << std::endl;
-#endif
-
         /* send to all monitors */
         std::list<pqiMonitor *>::iterator mit;
         for (mit = clients.begin(); mit != clients.end(); mit++) {
@@ -467,9 +404,6 @@ void p3ConnectMgr::tickMonitors() {
 }
 
 void p3ConnectMgr::netUpnpInit() {
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::netUpnpInit()" << std::endl;
-#endif
     uint16_t eport, iport;
 
     connMtx.lock();
@@ -571,14 +505,6 @@ void p3ConnectMgr::netUdpCheck() {
             mode = NET_CONN_TCP_LOCAL;
 
             if (!extAddrStable) {
-#ifdef CONN_DEBUG
-                std::cerr << "p3ConnectMgr::netUdpCheck() UDP Unstable :( ";
-                std::cerr <<  std::endl;
-                std::cerr << "p3ConnectMgr::netUdpCheck() We are unreachable";
-                std::cerr <<  std::endl;
-                std::cerr << "netMode =>  NET_MODE_UNREACHABLE";
-                std::cerr <<  std::endl;
-#endif
                 ownState.netMode &= ~(NET_MODE_ACTUAL);
                 ownState.netMode |= NET_MODE_UNREACHABLE;
                 tou_stunkeepalive(0);
@@ -631,9 +557,6 @@ void p3ConnectMgr::netUdpCheck() {
 }
 
 void p3ConnectMgr::netUnreachableCheck() {
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::netUnreachableCheck()" << std::endl;
-#endif
     std::map<int, peerConnectState>::iterator it;
 
     QMutexLocker stack(&connMtx);
@@ -641,9 +564,6 @@ void p3ConnectMgr::netUnreachableCheck() {
     for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
         /* get last contact detail */
         if (it->second.state & PEER_S_CONNECTED) {
-#ifdef CONN_DEBUG
-            std::cerr << "NUC() Ignoring Connected Peer" << std::endl;
-#endif
             continue;
         }
 
@@ -651,15 +571,9 @@ void p3ConnectMgr::netUnreachableCheck() {
         switch (it->second.source) {
             case CB_DHT:
                 details = it->second.dht;
-#ifdef CONN_DEBUG
-                std::cerr << "NUC() Using DHT data" << std::endl;
-#endif
                 break;
             case CB_PERSON:
                 details = it->second.peer;
-#ifdef CONN_DEBUG
-                std::cerr << "NUC() Using PEER data" << std::endl;
-#endif
                 break;
             default:
                 continue;
@@ -674,15 +588,9 @@ void p3ConnectMgr::netUnreachableCheck() {
             if (details.type & NET_CONN_TCP_EXTERNAL) {
                 /* reachable! */
                 it->second.state &= (~PEER_S_UNREACHABLE);
-#ifdef CONN_DEBUG
-                std::cerr << "NUC() Peer EXT TCP - reachable" << std::endl;
-#endif
             } else {
                 /* unreachable */
                 it->second.state |= PEER_S_UNREACHABLE;
-#ifdef CONN_DEBUG
-                std::cerr << "NUC() Peer !EXT TCP - unreachable" << std::endl;
-#endif
             }
         }
     }
@@ -734,14 +642,6 @@ bool p3ConnectMgr::udpExtAddressCheck() {
         mStunAddrValid = true;
         mStunAddrStable = (stable != 0);
 
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::udpExtAddressCheck() Got ";
-        std::cerr << " addr: " << inet_ntoa(mStunExtAddr.sin_addr);
-        std::cerr << ":" << ntohs(mStunExtAddr.sin_port);
-        std::cerr << " stable: " << mStunAddrStable;
-        std::cerr << std::endl;
-#endif
-
         /* update net Status flags ....
          * we've got stun information via udp...
          * so up is okay, and ext address is known stable or not.
@@ -757,9 +657,6 @@ bool p3ConnectMgr::udpExtAddressCheck() {
 }
 
 void p3ConnectMgr::udpStunPeer(std::string id, struct sockaddr_in &addr) {
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::udpStunPeer()" << std::endl;
-#endif
     /* add it into udp stun list */
     tou_stunpeer((struct sockaddr *) &addr, sizeof(addr), id.c_str());
 }
@@ -767,10 +664,6 @@ void p3ConnectMgr::udpStunPeer(std::string id, struct sockaddr_in &addr) {
 bool p3ConnectMgr::stunCheck() {
     /* check if we've got a Stun result */
     bool stunOk = false;
-
-#ifdef CONN_DEBUG
-    //std::cerr << "p3ConnectMgr::stunCheck()" << std::endl;
-#endif
 
     {
         QMutexLocker stack(&connMtx);
@@ -800,14 +693,7 @@ bool p3ConnectMgr::stunCheck() {
     return false;
 }
 
-void    p3ConnectMgr::stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags) {
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::stunStatus()";
-    std::cerr << " id: " << Util::BinToHex(id) << " raddr: " << inet_ntoa(raddr.sin_addr);
-    std::cerr << ":" << ntohs(raddr.sin_port);
-    std::cerr << std::endl;
-#endif
-
+void p3ConnectMgr::stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags) {
     connMtx.lock();
 
     bool stillStunning = (mStunStatus == STUN_DHT);
@@ -821,9 +707,6 @@ void    p3ConnectMgr::stunStatus(std::string id, struct sockaddr_in raddr, uint3
             mStunFound++;
             connMtx.unlock();
 
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::stunStatus() Sending to UDP" << std::endl;
-#endif
             /* push to the UDP */
             udpStunPeer(id, raddr);
 
@@ -849,30 +732,17 @@ OTHER
 void p3ConnectMgr::stunCollect(std::string id, struct sockaddr_in, uint32_t flags) {
     QMutexLocker stack(&connMtx);
 
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::stunCollect() id: " << Util::BinToHex(id) << std::endl;
-#endif
-
     std::list<std::string>::iterator it;
     it = std::find(mStunList.begin(), mStunList.end(), id);
     if (it == mStunList.end()) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::stunCollect() Id not in List" << std::endl;
-#endif
         /* add it in:
          * if FRIEND / ONLINE or if list is short.
          */
         if ((flags & STUN_ONLINE) || (flags & STUN_FRIEND)) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::stunCollect() Id added to Front" << std::endl;
-#endif
             /* push to the front */
             mStunList.push_front(id);
 
         } else if (mStunList.size() < STUN_LIST_MIN) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::stunCollect() Id added to Back" << std::endl;
-#endif
             /* push to the front */
             mStunList.push_back(id);
         }
@@ -880,9 +750,6 @@ void p3ConnectMgr::stunCollect(std::string id, struct sockaddr_in, uint32_t flag
         /* if they're online ... move to the front
          */
         if (flags & STUN_ONLINE) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::stunCollect() Id moved to Front" << std::endl;
-#endif
             /* move to front */
             mStunList.erase(it);
             mStunList.push_front(id);
@@ -1157,7 +1024,7 @@ bool p3ConnectMgr::connectResult(unsigned int librarymixer_id, bool success, uin
     return true;
 }
 
-void    p3ConnectMgr::heardFrom(unsigned int librarymixer_id) {
+void p3ConnectMgr::heardFrom(unsigned int librarymixer_id) {
     std::map<int, peerConnectState>::iterator it;
     it = mFriendList.find(librarymixer_id);
     if (it == mFriendList.end()) {
@@ -1174,7 +1041,7 @@ void    p3ConnectMgr::heardFrom(unsigned int librarymixer_id) {
  */
 
 
-void    p3ConnectMgr::peerStatus(std::string cert_id,
+void p3ConnectMgr::peerStatus(std::string cert_id,
                                  struct sockaddr_in laddr, struct sockaddr_in raddr,
                                  uint32_t type, uint32_t flags, uint32_t source) {
     std::map<int, peerConnectState>::iterator it;
@@ -1191,19 +1058,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
     {
         QMutexLocker stack(&connMtx);
-
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerStatus()";
-        std::cerr << " id: " << id;
-        std::cerr << " laddr: " << inet_ntoa(laddr.sin_addr);
-        std::cerr << " lport: " << ntohs(laddr.sin_port);
-        std::cerr << " raddr: " << inet_ntoa(raddr.sin_addr);
-        std::cerr << " rport: " << ntohs(raddr.sin_port);
-        std::cerr << " type: " << type;
-        std::cerr << " flags: " << flags;
-        std::cerr << " source: " << source;
-        std::cerr << std::endl;
-#endif
         {
             /* Log */
             std::ostringstream out;
@@ -1223,10 +1077,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
         it = mFriendList.find(authMgr->findLibraryMixerByCertId(cert_id));
         if (it == mFriendList.end()) {
             /* not found - ignore */
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerStatus() Peer Not Found - Ignore";
-            std::cerr << std::endl;
-#endif
             return;
         }
 
@@ -1310,11 +1160,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
         /* if already connected -> done */
         if (it->second.state & PEER_S_CONNECTED) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerStatus() PEER ONLINE ALREADY ";
-            std::cerr << " id: " << id;
-            std::cerr << std::endl;
-#endif
             {
                 /* Log */
                 std::ostringstream out;
@@ -1327,19 +1172,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
 
         /* are the addresses different? */
-
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerStatus()";
-        std::cerr << " id: " << id;
-        std::cerr << " laddr: " << inet_ntoa(laddr.sin_addr);
-        std::cerr << " lport: " << ntohs(laddr.sin_port);
-        std::cerr << " raddr: " << inet_ntoa(raddr.sin_addr);
-        std::cerr << " rport: " << ntohs(raddr.sin_port);
-        std::cerr << " type: " << type;
-        std::cerr << " flags: " << flags;
-        std::cerr << " source: " << source;
-        std::cerr << std::endl;
-#endif
 
 #ifndef P3CONNMGR_NO_AUTO_CONNECTION
 
@@ -1373,17 +1205,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
             pca.type = NET_CONN_TCP_LOCAL;
             pca.addr = details.laddr;
 
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerStatus() ADDING TCP_LOCAL ADDR: ";
-            std::cerr << " id: " << id;
-            std::cerr << " laddr: " << inet_ntoa(pca.addr.sin_addr);
-            std::cerr << " lport: " << ntohs(pca.addr.sin_port);
-            std::cerr << " delay: " << pca.delay;
-            std::cerr << " period: " << pca.period;
-            std::cerr << " type: " << pca.type;
-            std::cerr << " source: " << source;
-            std::cerr << std::endl;
-#endif
             {
                 /* Log */
                 std::ostringstream out;
@@ -1400,18 +1221,7 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
             }
 
             it->second.connAddrs.push_back(pca);
-        } else {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerStatus() Not adding Local Connect (Diff Network)";
-            std::cerr << " id: " << id;
-            std::cerr << " laddr: " << inet_ntoa(details.laddr.sin_addr);
-            std::cerr << ": " << ntohs(details.laddr.sin_port);
-            std::cerr << " own.laddr: " << inet_ntoa(ownState.localaddr.sin_addr);
-            std::cerr << ": " << ntohs(ownState.localaddr.sin_port);
-            std::cerr << std::endl;
-#endif
         }
-
 
         if ((details.type & NET_CONN_TCP_EXTERNAL) &&
                 (isValidNet(&(details.raddr.sin_addr))))
@@ -1425,17 +1235,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
             pca.type = NET_CONN_TCP_EXTERNAL;
             pca.addr = details.raddr;
 
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerStatus() ADDING TCP_REMOTE ADDR: ";
-            std::cerr << " id: " << id;
-            std::cerr << " raddr: " << inet_ntoa(pca.addr.sin_addr);
-            std::cerr << " rport: " << ntohs(pca.addr.sin_port);
-            std::cerr << " delay: " << pca.delay;
-            std::cerr << " period: " << pca.period;
-            std::cerr << " type: " << pca.type;
-            std::cerr << " source: " << source;
-            std::cerr << std::endl;
-#endif
             {
                 /* Log */
                 std::ostringstream out;
@@ -1452,15 +1251,6 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
             }
 
             it->second.connAddrs.push_back(pca);
-        } else {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerStatus() Not adding Remote Connect (Type != E or Invalid Network)";
-            std::cerr << " id: " << id;
-            std::cerr << " raddr: " << inet_ntoa(details.raddr.sin_addr);
-            std::cerr << ": " << ntohs(details.raddr.sin_port);
-            std::cerr << " type: " << details.type;
-            std::cerr << std::endl;
-#endif
         }
 
 #endif  // P3CONNMGR_NO_TCP_CONNECTIONS
@@ -1477,49 +1267,17 @@ void    p3ConnectMgr::peerStatus(std::string cert_id,
 
     QMutexLocker stack(&connMtx);
 
-    if (it->second.inConnAttempt) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerStatus() ALREADY IN CONNECT ATTEMPT: ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-
-        /*  -> it'll automatically use the addresses */
-#endif
-
-        return;
-    }
-
+    if (it->second.inConnAttempt) return;
 
     /* start a connection attempt */
     if (it->second.connAddrs.size() > 0) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerStatus() Started CONNECT ATTEMPT! ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
-
         it->second.actions |= PEER_CONNECT_REQ;
         mStatusChanged = true;
-    } else {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerStatus() No addr suitable for CONNECT ATTEMPT! ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
     }
-
 }
 
-void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in raddr,
+void p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in raddr,
         uint32_t source) {
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::peerConnectRequest()";
-    std::cerr << " id: " << id;
-    std::cerr << " raddr: " << inet_ntoa(raddr.sin_addr);
-    std::cerr << ":" << ntohs(raddr.sin_port);
-    std::cerr << " source: " << source;
-    std::cerr << std::endl;
-#endif
     {
         /* Log */
         std::ostringstream out;
@@ -1532,47 +1290,21 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
     }
 
     /******************** TCP PART *****************************/
-
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::peerConnectRequest() Try TCP first";
-    std::cerr << std::endl;
-#endif
-
     retryConnectTCP(authMgr->findLibraryMixerByCertId(id));
 
     /******************** UDP PART *****************************/
 
     QMutexLocker stack(&connMtx);
 
-    if (ownState.netMode & NET_MODE_UNREACHABLE) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerConnectRequest() Unreachable - no UDP connection";
-        std::cerr << std::endl;
-#endif
-        return;
-    }
+    if (ownState.netMode & NET_MODE_UNREACHABLE) return;
 
     /* look up the id */
     std::map<int, peerConnectState>::iterator it;
     it = mFriendList.find(authMgr->findLibraryMixerByCertId(id));
-    if (it == mFriendList.end()) {
-        /* not found - ignore */
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerConnectRequest() Peer Not Found - Ignore";
-        std::cerr << std::endl;
-#endif
-        return;
-    }
+    if (it == mFriendList.end()) return;
 
     /* if already connected -> done */
-    if (it->second.state & PEER_S_CONNECTED) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerConnectRequest() Already connected - Ignore";
-        std::cerr << std::endl;
-#endif
-        return;
-    }
-
+    if (it->second.state & PEER_S_CONNECTED) return;
 
     time_t now = time(NULL);
     /* this is a UDP connection request (DHT only for the moment!) */
@@ -1585,29 +1317,12 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
 
         if (source == CB_DHT) {
             pca.period = P3CONNMGR_UDP_DHT_DELAY;
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerConnectRequest() source = DHT ";
-            std::cerr << std::endl;
-#endif
         } else if (source == CB_PROXY) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerConnectRequest() source = PROXY ";
-            std::cerr << std::endl;
-#endif
             pca.period = P3CONNMGR_UDP_PROXY_DELAY;
         } else {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::peerConnectRequest() source = UNKNOWN ";
-            std::cerr << std::endl;
-#endif
             /* error! */
             pca.period = P3CONNMGR_UDP_PROXY_DELAY;
         }
-
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerConnectRequest() period = " << pca.period;
-        std::cerr << std::endl;
-#endif
 
         pca.addr = raddr;
 
@@ -1636,20 +1351,8 @@ void    p3ConnectMgr::peerConnectRequest(std::string id, struct sockaddr_in radd
 
     /* start a connection attempt */
     if (it->second.connAddrs.size() > 0) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerConnectRequest() Started CONNECT ATTEMPT! ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
-
         it->second.actions |= PEER_CONNECT_REQ;
         mStatusChanged = true;
-    } else {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::peerConnectRequest() No addr suitable for CONNECT ATTEMPT! ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
     }
 }
 
@@ -1675,17 +1378,14 @@ bool p3ConnectMgr::addUpdateFriend(unsigned int librarymixer_id, QString cert, Q
             if (it->second.state == PEER_S_NO_CERT) {
                 it->second.state = 0;
             }
-            /*Note that we are simply updating the peer, and creating a new pqiperson while
-              not removing its old pqiperson.
-              This is because we would need to signal to pqipersongrp that the old one needs
-              to be removed and a new one created simultaneously, and we don't have a convenient
-              way to do that yet.*/
+            /* Note that when we update the peer, we are creating a new pqiperson while not removing its old pqiperson.
+               This is because we would need to signal to pqipersongrp that the old one needs to be removed and a new one
+               created simultaneously, and we don't have a convenient way to do that yet. */
             it->second.actions = PEER_NEW;
             mStatusChanged = true;
         }
         return true;
     } else { //New friend
-
         /* create a new entry */
         peerConnectState pstate;
 
@@ -1699,8 +1399,7 @@ bool p3ConnectMgr::addUpdateFriend(unsigned int librarymixer_id, QString cert, Q
             pstate.actions = 0;
         } else { //If cert was added
             //Should not be able to reach here with a null Cert
-            if ((pstate.id = authMgr->findCertByLibraryMixerId(librarymixer_id)).empty())
-                return false;
+            if ((pstate.id = authMgr->findCertByLibraryMixerId(librarymixer_id)).empty()) return false;
             pstate.state = 0;
             //Only have pqiperson built if we actually got a key
             pstate.actions = PEER_NEW;
@@ -1754,7 +1453,7 @@ bool p3ConnectMgr::removeFriend(std::string id) {
 /*******************************************************************/
 /*******************************************************************/
 /*************** External Control ****************/
-void    p3ConnectMgr::retryConnect(unsigned int librarymixer_id) {
+void p3ConnectMgr::retryConnect(unsigned int librarymixer_id) {
     std::map<int, peerConnectState>::iterator it = mFriendList.find(librarymixer_id);
     if (it != mFriendList.end()) {
         //Starting a new connection attempt, so reset doubleTried
@@ -1764,7 +1463,7 @@ void    p3ConnectMgr::retryConnect(unsigned int librarymixer_id) {
     }
 }
 
-void    p3ConnectMgr::retryConnectAll() {
+void p3ConnectMgr::retryConnectAll() {
     std::map<int, peerConnectState>::iterator it;
     for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
         retryConnect(it->second.librarymixer_id);
@@ -1776,28 +1475,15 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
     QMutexLocker stack(&connMtx);
 
     /* push addresses onto stack */
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::retryConnectTCP()";
-    std::cerr << " id: " << id;
-    std::cerr << std::endl;
-#endif
 
     /* look up the id */
     std::map<int, peerConnectState>::iterator it;
     if (mFriendList.end() == (it = mFriendList.find(librarymixer_id))) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectTCP() Peer is not Friend";
-        std::cerr << std::endl;
-#endif
         return false;
     }
 
     /* if already connected -> done */
     if (it->second.state & PEER_S_CONNECTED) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectTCP() Peer Already Connected";
-        std::cerr << std::endl;
-#endif
         return true;
     }
 
@@ -1904,20 +1590,8 @@ bool   p3ConnectMgr::retryConnectTCP(unsigned int librarymixer_id) {
 
     /* start a connection attempt */
     if (it->second.connAddrs.size() > 0) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectTCP() Started CONNECT ATTEMPT! ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
-
         it->second.actions |= PEER_CONNECT_REQ;
         mStatusChanged = true;
-    } else {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectTCP() No addr suitable for CONNECT ATTEMPT! ";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
     }
     return true;
 }
@@ -1927,47 +1601,19 @@ bool   p3ConnectMgr::retryConnectNotify(unsigned int librarymixer_id) {
     QMutexLocker stack(&connMtx);
 
     /* push addresses onto stack */
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::retryConnectNotify()";
-    std::cerr << " id: " << id;
-    std::cerr << std::endl;
-#endif
 
     /* look up the id */
     std::map<int, peerConnectState>::iterator it;
 
-    if (mFriendList.end() == (it = mFriendList.find(librarymixer_id))) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectNotify() Peer is not Friend";
-        std::cerr << std::endl;
-#endif
-        return false;
-    }
+    if (mFriendList.end() == (it = mFriendList.find(librarymixer_id))) return false;
 
     /* if already connected -> done */
-    if (it->second.state & PEER_S_CONNECTED) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectNotify() Peer Already Connected";
-        std::cerr << std::endl;
-#endif
-        return true;
-    }
+    if (it->second.state & PEER_S_CONNECTED) return true;
 
     /* flag as last attempt to prevent loop */
     it->second.lastattempt = time(NULL);
 
-    if (ownState.netMode & NET_MODE_UNREACHABLE) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectNotify() UNREACHABLE so no Notify!";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
-    } else {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::retryConnectNotify() Notifying Peer";
-        std::cerr << " id: " << id;
-        std::cerr << std::endl;
-#endif
+    if (!(ownState.netMode & NET_MODE_UNREACHABLE)) {
         {
             /* Log */
             std::ostringstream out;
@@ -1983,11 +1629,7 @@ bool   p3ConnectMgr::retryConnectNotify(unsigned int librarymixer_id) {
     return true;
 }
 
-
-
-
-
-bool    p3ConnectMgr::setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr) {
+bool p3ConnectMgr::setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr) {
     QMutexLocker stack(&connMtx);
 
     if (librarymixer_id == ownState.librarymixer_id) {
@@ -2005,7 +1647,7 @@ bool    p3ConnectMgr::setLocalAddress(unsigned int librarymixer_id, struct socka
     return true;
 }
 
-bool    p3ConnectMgr::setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr) {
+bool p3ConnectMgr::setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr) {
     QMutexLocker stack(&connMtx);
 
 
@@ -2024,7 +1666,7 @@ bool    p3ConnectMgr::setExtAddress(unsigned int librarymixer_id, struct sockadd
     return true;
 }
 
-bool    p3ConnectMgr::setNetworkMode(unsigned int librarymixer_id, uint32_t netMode) {
+bool p3ConnectMgr::setNetworkMode(unsigned int librarymixer_id, uint32_t netMode) {
     if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
         uint32_t visState = ownState.visState;
         setOwnNetConfig(netMode, visState);
@@ -2044,7 +1686,7 @@ bool    p3ConnectMgr::setNetworkMode(unsigned int librarymixer_id, uint32_t netM
     return false;
 }
 
-bool    p3ConnectMgr::setVisState(unsigned int librarymixer_id, uint32_t visState) {
+bool p3ConnectMgr::setVisState(unsigned int librarymixer_id, uint32_t visState) {
     if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
         uint32_t netMode = ownState.netMode;
         setOwnNetConfig(netMode, visState);
@@ -2075,7 +1717,7 @@ bool    p3ConnectMgr::setVisState(unsigned int librarymixer_id, uint32_t visStat
 
 /*******************************************************************/
 
-int     p3ConnectMgr::getDefaultPort() {
+int p3ConnectMgr::getDefaultPort() {
     QSettings settings(*mainSettings, QSettings::IniFormat);
     if (settings.value("Network/RandomizePorts", DEFAULT_RANDOM_PORTS).toBool()) {
         srand(time(NULL));
@@ -2086,12 +1728,7 @@ int     p3ConnectMgr::getDefaultPort() {
 
 }
 
-bool    p3ConnectMgr::checkNetAddress() {
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::checkNetAddress()";
-    std::cerr << std::endl;
-#endif
-
+bool p3ConnectMgr::checkNetAddress() {
     std::list<std::string> addrs = getLocalInterfaces();
     std::list<std::string>::iterator it;
 
@@ -2099,20 +1736,11 @@ bool    p3ConnectMgr::checkNetAddress() {
 
     bool found = false;
     for (it = addrs.begin(); (!found) && (it != addrs.end()); it++) {
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::checkNetAddress() Local Interface: " << *it;
-        std::cerr << std::endl;
-#endif
-
         // Ive added the 'isNotLoopbackNet' to prevent re-using the lo address if this was saved in the
         // configuration. In such a case, lo should only be chosen from getPreferredInterface as a last resort
         // fallback solution.
         //
         if ((!isLoopbackNet(&ownState.localaddr.sin_addr)) && (*it) == inet_ntoa(ownState.localaddr.sin_addr)) {
-#ifdef CONN_DEBUG
-            std::cerr << "p3ConnectMgr::checkNetAddress() Matches Existing Address! FOUND = true";
-            std::cerr << std::endl;
-#endif
             found = true;
         }
     }
@@ -2123,13 +1751,6 @@ bool    p3ConnectMgr::checkNetAddress() {
 
     if (!found) {
         ownState.localaddr.sin_addr = getPreferredInterface();
-
-#ifdef CONN_DEBUG
-        std::cerr << "p3ConnectMgr::checkNetAddress() Local Address Not Found: Using Preferred Interface: ";
-        std::cerr << inet_ntoa(ownState.localaddr.sin_addr);
-        std::cerr << std::endl;
-#endif
-
     }
     if ((isPrivateNet(&(ownState.localaddr.sin_addr))) ||
             (isLoopbackNet(&(ownState.localaddr.sin_addr)))) {
@@ -2158,13 +1779,6 @@ bool    p3ConnectMgr::checkNetAddress() {
     // ensure that address family is set, otherwise windows Barfs.
     ownState.localaddr.sin_family = AF_INET;
     ownState.serveraddr.sin_family = AF_INET;
-
-#ifdef CONN_DEBUG
-    std::cerr << "p3ConnectMgr::checkNetAddress() Final Local Address: ";
-    std::cerr << inet_ntoa(ownState.localaddr.sin_addr);
-    std::cerr << ":" << ntohs(ownState.localaddr.sin_port);
-    std::cerr << std::endl;
-#endif
 
     return 1;
 }

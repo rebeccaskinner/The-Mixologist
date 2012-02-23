@@ -116,18 +116,6 @@ int pqipersongrp::tick() {
     return i;
 }
 
-int pqipersongrp::status() {
-    {
-        QMutexLocker stack(&coreMtx);
-        if (pqil) {
-            pqil -> status();
-        }
-    } /* UNLOCKED */
-
-    return pqihandler::status();
-}
-
-
 /* Initialise pqilistener */
 int pqipersongrp::init_listener() {
     /* extract our information from the p3ConnectMgr */
@@ -236,9 +224,6 @@ int     pqipersongrp::removePeer(std::string id) {
 
 int     pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer_id) {
     /* get status from p3connectMgr */
-#ifdef PGRP_DEBUG
-    std::cerr << " pqipersongrp::connectPeer() id: " << id  << std::endl;
-#endif
 
     {
         QMutexLocker stack(&coreMtx);
@@ -256,38 +241,16 @@ int     pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer
         uint32_t delay, period, type;
 
         if (!connMgr->connectAttempt(librarymixer_id, addr, delay, period, type)) {
-#ifdef PGRP_DEBUG
-            std::cerr << " pqipersongrp::connectPeer() No Net Address";
-            std::cerr << std::endl;
-#endif
             return 0;
         }
-
-#ifdef PGRP_DEBUG
-        std::cerr << " pqipersongrp::connectPeer() connectAttempt data id: " << id;
-        std::cerr << " addr: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port);
-        std::cerr << " delay: " << delay;
-        std::cerr << " period: " << period;
-        std::cerr << " type: " << type;
-        std::cerr << std::endl;
-#endif
-
 
         uint32_t ptype, timeout;
         if (type & NET_CONN_TCP_ALL) {
             ptype = PQI_CONNECT_TCP;
             timeout = TCP_STD_TIMEOUT_PERIOD;
-#ifdef PGRP_DEBUG
-            std::cerr << " pqipersongrp::connectPeer() connecting with TCP: Timeout :" << timeout;
-            std::cerr << std::endl;
-#endif
         } else if (type & NET_CONN_UDP_ALL) {
             ptype = PQI_CONNECT_UDP;
             timeout = period * 2;
-#ifdef PGRP_DEBUG
-            std::cerr << " pqipersongrp::connectPeer() connecting with UDP: Timeout :" << timeout;
-            std::cerr << std::endl;
-#endif
         } else
             return 0;
 

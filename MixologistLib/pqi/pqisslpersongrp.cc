@@ -56,7 +56,7 @@ pqiperson *pqisslpersongrp::createPerson(std::string id, unsigned int librarymix
     }
 
     pqiperson *pqip = new pqiperson(id, librarymixer_id, this);
-    pqissl *pqis   = new pqissl((pqissllistener *) listener, pqip);
+    pqissl *pqis = new pqissl((pqissllistener *) listener, pqip);
 
     /* construct the serialiser ....
      * Needs:

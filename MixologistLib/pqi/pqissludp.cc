@@ -73,9 +73,9 @@ pqissludp::~pqissludp() {
     return;
 }
 
-int pqissludp::reset() {
+void pqissludp::reset() {
     /* reset for next time.*/
-    return pqissl::reset();
+    pqissl::reset();
 }
 
 
@@ -87,8 +87,8 @@ int pqissludp::reset() {
 /* <===================== UDP Difference *******************/
 
 int pqissludp::attach() {
-    sockfd = tou_socket(0,0,0);
-    if (0 > sockfd) {
+    mOpenSocket = tou_socket(0,0,0);
+    if (0 > mOpenSocket) {
         log(LOG_WARNING, pqissludpzone,
             "pqissludp::attach() failed to create a socket");
         return -1;
@@ -119,16 +119,16 @@ int     pqissludp::Initiate_Connection() {
         sslmode = PQISSL_PASSIVE;
     }
 
-    if (waiting != WAITING_DELAY) {
+    if (connectionState != STATE_INITIALIZED) {
         log(LOG_WARNING, pqissludpzone,
             "pqissludp::Initiate_Connection() Already Attempt in Progress!");
         return -1;
     }
 
-    if (sockfd < 0) {
+    if (mOpenSocket < 0) {
         log(LOG_ALERT, pqissludpzone,
             "pqissludp::Initiate_Connection() Socket Creation Failed!");
-        waiting = WAITING_FAIL_INTERFACE;
+        connectionState = STATE_FAILED;
         return -1;
     }
 
@@ -141,7 +141,7 @@ int     pqissludp::Initiate_Connection() {
         out << "Connecting To: " << PeerId();
         out << " via: " << inet_ntoa(remote_addr.sin_addr) << ":";
         out << ntohs(remote_addr.sin_port) << " ";
-        if (sslmode) {
+        if (sslmode == PQISSL_ACTIVE) {
             out << "ACTIVE Connect (SSL_Connect)";
         } else {
             out << "PASSIVE Connect (SSL_Accept)";
@@ -156,29 +156,29 @@ int     pqissludp::Initiate_Connection() {
         out << " Aborting Connect.";
         out << std::endl;
         log(LOG_WARNING, pqissludpzone, out.str().c_str());
-        waiting = WAITING_FAIL_INTERFACE;
+        connectionState = STATE_FAILED;
 
         reset();
         return -1;
     }
 
-    mTimeoutTS = time(NULL) + mConnectTimeout;
-    //std::cerr << "Setting Connect Timeout " << mConnectTimeout << " Seconds into Future " << std::endl;
+    mConnectionAttemptTimeoutAt = time(NULL) + mConnectionAttemptTimeout;
+    //std::cerr << "Setting Connect Timeout " << mConnectionAttemptTimeout << " Seconds into Future " << std::endl;
     //std::cerr << " Connect Period is:" << mConnectPeriod <<  std::endl;
 
     /* <===================== UDP Difference *******************/
-    if (0 != (err = tou_connect(sockfd, (struct sockaddr *) &remote_addr,
+    if (0 != (err = tou_connect(mOpenSocket, (struct sockaddr *) &remote_addr,
                                 sizeof(remote_addr), mConnectPeriod)))
         /* <===================== UDP Difference *******************/
     {
-        int tou_err = tou_errno(sockfd);
+        int tou_err = tou_errno(mOpenSocket);
 
         std::ostringstream out;
         out << "pqissludp::Initiate_Connection()";
 
         if ((tou_err == EINPROGRESS) || (tou_err == EAGAIN)) {
             // set state to waiting.....
-            waiting = WAITING_SOCK_CONNECT;
+            connectionState = STATE_WAITING_FOR_SOCKET_CONNECT;
 
             out << " EINPROGRESS Waiting for Socket Connection";
             log(LOG_WARNING, pqissludpzone, out.str().c_str());
@@ -189,7 +189,7 @@ int     pqissludp::Initiate_Connection() {
             out << std::endl;
 
             // Then send unreachable message.
-            waiting = WAITING_FAIL_INTERFACE;
+            connectionState = STATE_FAILED;
             net_unreachable |= net_attempt;
         }
 
@@ -206,7 +206,7 @@ int     pqissludp::Initiate_Connection() {
             "pqissludp::Init_Connection() connect returned 0");
     }
 
-    waiting = WAITING_SOCK_CONNECT;
+    connectionState = STATE_WAITING_FOR_SOCKET_CONNECT;
 
     log(LOG_DEBUG_BASIC, pqissludpzone,
         "pqissludp::Initiate_Connection() Waiting for Socket Connect");
@@ -220,22 +220,22 @@ int     pqissludp::Basic_Connection_Complete() {
         "pqissludp::Basic_Connection_Complete()...");
 
 
-    if (time(NULL) > mTimeoutTS) {
+    if (time(NULL) > mConnectionAttemptTimeoutAt) {
         std::ostringstream out;
         out << "pqissludp::Basic_Connection_Complete() Connection Timed Out. ";
         out << "Peer: " << PeerId() << " Period: ";
-        out << mConnectTimeout;
+        out << mConnectionAttemptTimeout;
 
         log(LOG_WARNING, pqissludpzone, out.str().c_str());
 
-        /* as sockfd is valid, this should close it all up */
+        /* as mOpenSocket is valid, this should close it all up */
 
         reset();
         return -1;
     }
 
 
-    if (waiting != WAITING_SOCK_CONNECT) {
+    if (connectionState != STATE_WAITING_FOR_SOCKET_CONNECT) {
         log(LOG_DEBUG_BASIC, pqissludpzone,
             "pqissludp::Basic_Connection_Complete() Wrong Mode");
         return -1;
@@ -245,7 +245,7 @@ int     pqissludp::Basic_Connection_Complete() {
     /* new approach is to check for an error */
     /* check for an error */
     int err;
-    if (0 != (err = tou_errno(sockfd))) {
+    if (0 != (err = tou_errno(mOpenSocket))) {
         if (err == EINPROGRESS) {
 
             std::ostringstream out;
@@ -272,14 +272,14 @@ int     pqissludp::Basic_Connection_Complete() {
             reset();
 
             // Then send unreachable message.
-            waiting = WAITING_FAIL_INTERFACE;
+            connectionState = STATE_FAILED;
 
             return -1;
         }
     }
 
     /* <===================== UDP Difference *******************/
-    if (tou_connected(sockfd))
+    if (tou_connected(mOpenSocket))
         /* <===================== UDP Difference *******************/
     {
         std::ostringstream out;
@@ -333,8 +333,6 @@ int pqissludp::net_internal_fcntl_nonblock(int) {
 
 
 /* These are identical to pqinetssl version */
-//int   pqissludp::status()
-
 int pqissludp::tick() {
     pqissl::tick();
     return 1;
@@ -360,17 +358,17 @@ int pqissludp::stoplistening() {
 }
 
 
-bool    pqissludp::connect_parameter(uint32_t type, uint32_t value) {
-    //std::cerr << "pqissludp::connect_parameter() type: " << type << "value: " << value << std::endl;
+bool    pqissludp::setConnectionParameter(netParameters type, uint32_t value) {
+    //std::cerr << "pqissludp::setConnectionParameter() type: " << type << "value: " << value << std::endl;
     if (type == NET_PARAM_CONNECT_PERIOD) {
         std::ostringstream out;
-        out << "pqissludp::connect_parameter() Peer: " << PeerId() << " PERIOD: " << value;
+        out << "pqissludp::setConnectionParameter() Peer: " << PeerId() << " PERIOD: " << value;
         log(LOG_WARNING, pqissludpzone, out.str().c_str());
 
         mConnectPeriod = value;
         return true;
     }
-    return pqissl::connect_parameter(type, value);
+    return pqissl::setConnectionParameter(type, value);
 }
 
 /********** PQI STREAMER OVERLOADING *********************************/
@@ -379,14 +377,14 @@ bool    pqissludp::moretoread() {
     {
         std::ostringstream out;
         out << "pqissludp::moretoread()";
-        out << "  polling socket (" << sockfd << ")";
+        out << "  polling socket (" << mOpenSocket << ")";
         log(LOG_DEBUG_ALL, pqissludpzone, out.str().c_str());
     }
 
     /* check for more to read first ... if nothing... check error
      */
     /* <===================== UDP Difference *******************/
-    if (tou_maxread(sockfd))
+    if (tou_maxread(mOpenSocket))
         /* <===================== UDP Difference *******************/
     {
         log(LOG_DEBUG_BASIC, pqissludpzone,
@@ -399,7 +397,7 @@ bool    pqissludp::moretoread() {
         "pqissludp::moretoread() No Data to Read!");
 
     int err;
-    if (0 != (err = tou_errno(sockfd))) {
+    if (0 != (err = tou_errno(mOpenSocket))) {
         if ((err == EAGAIN) || (err == EINPROGRESS)) {
 
             std::ostringstream out;
@@ -449,7 +447,7 @@ bool    pqissludp::cansend() {
         "pqissludp::cansend() polling socket!");
 
     /* <===================== UDP Difference *******************/
-    return (0 < tou_maxwrite(sockfd));
+    return (0 < tou_maxwrite(mOpenSocket));
     /* <===================== UDP Difference *******************/
 
 }

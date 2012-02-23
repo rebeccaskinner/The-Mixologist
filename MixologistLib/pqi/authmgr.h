@@ -31,80 +31,90 @@
 
 #include <QMutex>
 
-/************** AUTHENTICATION MANAGER ***********
+/*
+ * AuthMgr
+ *
  * The master store house for all recognized certificates, including own
  * Can be queried to manage and check validity of certificates.
+ *
+ * Also responsible for letting OpenSSL know whether or not we accept their certificates.
+ *
  */
 
 class AuthMgr;
 extern AuthMgr *authMgr;
 
-//Not called directly, this function is attached to OpenSSL by InitAuth.
-//Verifies validity of certificates of friends attempting to connect.
+/* Not called directly, this function is passed to OpenSSL by InitAuth for use in verifying certificates.
+   This takes the place of checking a chain of trusted certificates in a more classic usage,
+   instead we accept only certificates that are within the limited universe of certificates downloaded from the LibraryMixer. */
 int OpenSSLVerifyCB(X509_STORE_CTX *store, void *unused);
 
 class AuthMgr {
 public:
-    AuthMgr() :init(0), sslctx(NULL) {}
-    ~AuthMgr() {
-        return;
-    }
+    AuthMgr() :authMgrInitialized(false), sslctx(NULL) {}
+    ~AuthMgr() {}
 
-    /* initialisation -> done by derived classes */
-    //True if initAuth has been called
-    bool active() {
-        return init;
-    }
-    //Initializes SSL systems
-    void initSSL();
-    //Initializes the AuthMgr, generating the encryption keys
-    //The new certificate will be written into cert in PEM format
+    /**********************************************************************************
+     * Initialization
+     **********************************************************************************/
+    /* True if initAuth has been called. */
+    bool active() {return authMgrInitialized;}
+
+    /* Initializes the AuthMgr, generating the encryption keys
+       The new certificate will be written into cert in PEM format. */
     int InitAuth(unsigned int librarymixer_id, QString &cert);
-    //Frees the memory of internal AuthMgr data and shutsdown AuthMgr
-    bool CloseAuth();
 
-    //Returns the SSL_CTX object shared for all the application
-    SSL_CTX *getCTX() {
-        return sslctx;
-    }
+    /* Why would we ever do this before shutdown, when it'll be closed anyway? Disabled.
+    Frees the memory of internal AuthMgr data and shutsdown AuthMgr
+    bool CloseAuth(); */
 
-    std::string OwnCertId() {
-        return mCertId;
-    }
-    unsigned int OwnLibraryMixerId() {
-        return mLibraryMixerId;
-    }
+    /**********************************************************************************
+     * SSL Utility Methods.
+     **********************************************************************************/
+    /* Returns the SSL_CTX object shared for all the application. */
+    SSL_CTX *getCTX() {return sslctx;}
 
-    //Utility functions
-    //Calculates an X509 certificates message digest, which is used as its ID.
-    //message_digest must be at least long enough to hold a SHA1 Digest, i.e. 20
+    /* Calculates an X509 certificates message digest, which is used as its ID.
+       message_digest must be at least long enough to hold a SHA1 Digest, i.e. 20 */
     bool getCertId(X509 *cert, unsigned char message_digest[]);
-    //Returns the associated cert_id or "" if unable to find.
+
+    /* Adds a certificate to the list, or if there is already a certificate under that user, updates it.
+       Returns 2 if a new user is added, 1 if a user is updated, 0 on no action or no cert, or -1 on error. */
+    int addUpdateCertificate(QString cert, unsigned int librarymixer_id) ;
+
+    /* Currently unused, as we aren't currently removing friends ever.
+       Remove a user completely.
+    bool RemoveCertificate(unsigned int librarymixer_id); */
+
+    /**********************************************************************************
+     * Implementations for some of peers's functions.
+     **********************************************************************************/
+    /* Used by the entire application to get own certificate. */
+    std::string OwnCertId() {return ownCertificateID;}
+
+    /* Used by the entire application to get own LibraryMixer ID. */
+    unsigned int OwnLibraryMixerId() {return ownLibraryMixerID;}
+
+    /* Returns the associated cert_id or "" if unable to find. */
     std::string findCertByLibraryMixerId(unsigned int librarymixer_id);
-    //Returns the associated librarymixer_id or 0 if unable to find.
+
+    /* Returns the associated librarymixer_id or 0 if unable to find. */
     unsigned int findLibraryMixerByCertId(std::string cert_id);
 
-
-    /* Add/Remove certificates */
-    //Adds a certificate to mCerts, or if there is already a certificate under that user, updates it
-    //Returns 2 if a new user is added, 1 if a user is updated, 0 on no action or no cert, or -1 on error
-    int addUpdateCertificate(QString cert, unsigned int librarymixer_id) ;
-    //Remove a user completely from the AuthMgr
-    bool RemoveCertificate(unsigned int librarymixer_id);
-
 private:
-    /* Data */
     mutable QMutex authMtx;
 
-    int init;
+    /* Whether AuthMgr has been initializd. */
+    bool authMgrInitialized;
 
-    //This OpenSSL structure stores our own keys, among other things, and will use them automatically
+    /* This OpenSSL structure stores our own keys, among other things, and will use them automatically. */
     SSL_CTX *sslctx;
 
-    std::string mCertId;
-    unsigned int mLibraryMixerId;
+    /* Master storage of a user's own certificate and LibraryMixer ID. */
+    std::string ownCertificateID;
+    unsigned int ownLibraryMixerID;
 
-    std::map<unsigned int, X509 *> mCerts; //friends' librarymixer_ids, friends' certs map
+    std::map<unsigned int, X509 *> friendsCertificates; //friends' librarymixer_ids, friends' certs map
 };
 
 /* Helper Functions */

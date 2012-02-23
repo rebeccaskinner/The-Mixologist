@@ -71,9 +71,6 @@ public:
     virtual int tick() {
         return 1;
     }
-    virtual int status() {
-        return 1;
-    }
 
     virtual int SendRawItem(RawItem *) = 0;
     virtual RawItem *GetRawItem() = 0;

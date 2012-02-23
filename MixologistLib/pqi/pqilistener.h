@@ -35,32 +35,24 @@ Implementations include pqissllistener.
 
 class pqilistener {
 public:
+    pqilistener() {}
 
-    pqilistener()       {
-        return;
-    }
-    virtual ~pqilistener()      {
-        return;
-    }
+    virtual ~pqilistener() {}
 
-    virtual int     tick()                  {
-        return 1;
-    }
-    virtual int     status()                {
-        return 1;
-    }
-    virtual int     setListenAddr(struct sockaddr_in addr)  {
+    /* Handles listening for connections and accepting incoming connections. */
+    virtual int tick() {return 1;}
+
+    /* Sets the address on which the listener will be listening. */
+    virtual int setListenAddr(struct sockaddr_in addr)  {
         (void) addr;
         return 1;
     }
-    virtual int setuplisten()               {
-        return 1;
-    }
-    virtual int     resetlisten()               {
-        return 1;
-    }
 
+    /* Begins listening on the set listen address. */
+    virtual int setuplisten() {return 1;}
+
+    /* Stops listening and restarts to a default state. */
+    virtual int resetlisten() {return 1;}
 };
-
 
 #endif // MRK_PQI_GENERIC_LISTEN_HEADER

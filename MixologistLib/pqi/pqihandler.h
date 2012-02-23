@@ -51,7 +51,6 @@ public:
     // Rest of P3Interface
     /* In practice, this tick is called from pqipersongrp, which implemented pqihandler */
     virtual int tick();
-    virtual int status();
 
     // Service Data Interface
     virtual int  SendRawItem(RawItem *);

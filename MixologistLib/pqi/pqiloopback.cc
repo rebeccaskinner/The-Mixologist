@@ -73,8 +73,3 @@ int     pqiloopback::tick() {
     return 0;
 }
 
-int     pqiloopback::status() {
-    return 0;
-}
-
-

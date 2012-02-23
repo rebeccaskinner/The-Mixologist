@@ -70,10 +70,8 @@ public:
     /*** callback from children ****/
     bool notifyConnect(std::string id, uint32_t type, bool success);
 
-    // tick interfaces.
-    /* This tick is called from ftserver */
+    /* This tick is called from ftserver, which perhaps should be revisited. */
     virtual int tick();
-    virtual int status();
 
 protected:
 

@@ -319,8 +319,8 @@ void Init::loadUserDir(unsigned int librarymixer_id) {
 
 QString Init::InitEncryption(unsigned int _librarymixer_id) {
     authMgr = new AuthMgr();
-    authMgr->initSSL(); //first time using SSL system is here
 
+    //First time using SSL system is here
     QString cert;
     if (!authMgr->InitAuth(_librarymixer_id, cert)) return "";
 

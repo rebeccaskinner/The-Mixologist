@@ -41,7 +41,6 @@ public:
 
     // PQI interface.
     virtual int tick();
-    virtual int status();
 
     virtual int     notifyEvent(NetInterface *ni, int event) {
         (void) ni;    /* Not used */

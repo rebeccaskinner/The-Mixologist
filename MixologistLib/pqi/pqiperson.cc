@@ -28,10 +28,6 @@ const int pqipersonzone = 82371;
 #include "util/debug.h"
 #include <sstream>
 
-/****
- * #define PERSON_DEBUG
- ****/
-
 pqiperson::pqiperson(std::string id, unsigned int librarymixer_id, pqipersongrp *pg)
     :PQInterface(id, librarymixer_id), active(false), activepqi(NULL),
      inConnectAttempt(false), waittimes(0),
@@ -45,16 +41,16 @@ pqiperson::pqiperson(std::string id, unsigned int librarymixer_id, pqipersongrp 
 pqiperson::~pqiperson() {
     // clean up the children.
     std::map<uint32_t, pqiconnect *>::iterator it;
-    for (it = kids.begin(); it != kids.end(); it++) {
+    for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
         pqiconnect *pc = (it->second);
         delete pc;
     }
-    kids.clear();
+    communicationMethods.clear();
 }
 
 
 // The PQInterface interface.
-int     pqiperson::SendItem(NetItem *i) {
+int pqiperson::SendItem(NetItem *i) {
     std::ostringstream out;
     out << "pqiperson::SendItem()";
     if (active) {
@@ -76,13 +72,6 @@ NetItem *pqiperson::GetItem() {
     return NULL;
 }
 
-int     pqiperson::status() {
-    if (active)
-        return activepqi -> status();
-    return -1;
-}
-
-// tick......
 int pqiperson::tick() {
     int activeTick = 0;
 
@@ -103,7 +92,7 @@ int pqiperson::tick() {
 
         // tick the children.
         std::map<uint32_t, pqiconnect *>::iterator it;
-        for (it = kids.begin(); it != kids.end(); it++) {
+        for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
             if (0 < (it->second) -> tick()) {
                 activeTick = 1;
             }
@@ -119,7 +108,7 @@ int pqiperson::tick() {
 // callback function for the child - notify of a change.
 // This is only used for out-of-band info....
 // otherwise could get dangerous loops.
-int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
+int pqiperson::notifyEvent(NetInterface *ni, int newState) {
     {
         std::ostringstream out;
         out << "pqiperson::notifyEvent() Id: " << LibraryMixerId();
@@ -136,11 +125,11 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
 
     /* start again */
     int i = 0;
-    for (it = kids.begin(); it != kids.end(); it++) {
+    for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
         {
             std::ostringstream out;
             out << "pqiperson::notifyEvent() Kid# ";
-            out << (i + 1) << " of " << kids.size();
+            out << (i + 1) << " of " << communicationMethods.size();
             out << std::endl;
             out << " type: " << (it->first);
             out << " ni: " << (it->second)->ni;
@@ -164,10 +153,8 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
     switch (newState) {
         case CONNECT_RECEIVED:
         case CONNECT_SUCCESS:
-
             /* notify */
-            if (pqipg)
-                pqipg->notifyConnect(PeerId(), type, true);
+            if (pqipg) pqipg->notifyConnect(PeerId(), type, true);
 
             if ((active) && (activepqi != pqi)) {
                 pqioutput(PQL_DEBUG_ALERT, pqipersonzone,
@@ -187,7 +174,7 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
 
                 /* reset all other children? (clear up long UDP attempt) */
 
-                for (it = kids.begin(); it != kids.end(); it++) {
+                for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
                     if (it->second != activepqi) {
                         {
                             std::ostringstream out;
@@ -225,8 +212,7 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
             }
 
             /* notify up (But not if we are actually active: rtn -1 case above) */
-            if (pqipg)
-                pqipg->notifyConnect(PeerId(), type, false);
+            if (pqipg) pqipg->notifyConnect(PeerId(), type, false);
 
             return 1;
 
@@ -239,7 +225,7 @@ int     pqiperson::notifyEvent(NetInterface *ni, int newState) {
 
 /***************** Not PQInterface Fns ***********************/
 
-int     pqiperson::reset() {
+int pqiperson::reset() {
     {
         std::ostringstream out;
         out << "pqiperson::reset() Id: " << PeerId();
@@ -248,7 +234,7 @@ int     pqiperson::reset() {
     }
 
     std::map<uint32_t, pqiconnect *>::iterator it;
-    for (it = kids.begin(); it != kids.end(); it++) {
+    for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
         (it->second) -> reset();
     }
 
@@ -266,7 +252,7 @@ int pqiperson::addChildInterface(uint32_t type, pqiconnect *pqi) {
         pqioutput(PQL_DEBUG_BASIC, pqipersonzone, out.str().c_str());
     }
 
-    kids[type] = pqi;
+    communicationMethods[type] = pqi;
     return 1;
 }
 
@@ -274,7 +260,7 @@ int pqiperson::addChildInterface(uint32_t type, pqiconnect *pqi) {
 // functions to iterate over the connects and change state.
 
 
-int     pqiperson::listen() {
+int pqiperson::listen() {
     {
         std::ostringstream out;
         out << "pqiperson::listen() Id: " << PeerId();
@@ -284,7 +270,7 @@ int     pqiperson::listen() {
 
     if (!active) {
         std::map<uint32_t, pqiconnect *>::iterator it;
-        for (it = kids.begin(); it != kids.end(); it++) {
+        for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
             // set them all listening.
             (it->second) -> listen();
         }
@@ -293,7 +279,7 @@ int     pqiperson::listen() {
 }
 
 
-int     pqiperson::stoplistening() {
+int pqiperson::stoplistening() {
     {
         std::ostringstream out;
         out << "pqiperson::stoplistening() Id: " << PeerId();
@@ -302,7 +288,7 @@ int     pqiperson::stoplistening() {
     }
 
     std::map<uint32_t, pqiconnect *>::iterator it;
-    for (it = kids.begin(); it != kids.end(); it++) {
+    for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
         // set them all listening.
         (it->second) -> stoplistening();
     }
@@ -310,46 +296,19 @@ int     pqiperson::stoplistening() {
 }
 
 int pqiperson::connect(uint32_t type, struct sockaddr_in raddr, uint32_t delay, uint32_t period, uint32_t timeout) {
-#ifdef PERSON_DEBUG
-    {
-        std::ostringstream out;
-        out << "pqiperson::connect() Id: " << PeerId();
-        out << " type: " << type;
-        out << " addr: " << inet_ntoa(raddr.sin_addr);
-        out << ":" << ntohs(raddr.sin_port);
-        out << " delay: " << delay;
-        out << " period: " << period;
-        out << " timeout: " << timeout;
-        out << std::endl;
-        std::cerr << out.str();
-        //pqioutput(PQL_DEBUG_BASIC, pqipersonzone, out.str());
-    }
-#endif
-
     std::map<uint32_t, pqiconnect *>::iterator it;
 
-    it = kids.find(type);
-    if (it == kids.end()) {
-#ifdef PERSON_DEBUG
-        std::ostringstream out;
-        out << "pqiperson::connect()";
-        out << " missing pqiconnect";
-        out << std::endl;
-        std::cerr << out.str();
-        //pqioutput(PQL_DEBUG_BASIC, pqipersonzone, out.str());
-#endif
+    it = communicationMethods.find(type);
+    if (it == communicationMethods.end()) {
         return 0;
     }
 
     /* set the parameters */
     (it->second)->reset();
 
-#ifdef PERSON_DEBUG
-    std::cerr << "pqiperson::connect() setting connect_parameters" << std::endl;
-#endif
-    (it->second)->connect_parameter(NET_PARAM_CONNECT_DELAY, delay);
-    (it->second)->connect_parameter(NET_PARAM_CONNECT_PERIOD, period);
-    (it->second)->connect_parameter(NET_PARAM_CONNECT_TIMEOUT, timeout);
+    (it->second)->setConnectionParameter(NetInterface::NET_PARAM_CONNECT_DELAY, delay);
+    (it->second)->setConnectionParameter(NetInterface::NET_PARAM_CONNECT_PERIOD, period);
+    (it->second)->setConnectionParameter(NetInterface::NET_PARAM_CONNECT_TIMEOUT, timeout);
 
     (it->second)->connect(raddr);
 
@@ -360,19 +319,19 @@ int pqiperson::connect(uint32_t type, struct sockaddr_in raddr, uint32_t delay, 
 }
 
 
-float   pqiperson::getRate(bool in) {
+float pqiperson::getRate(bool in) {
     // get the rate from the active one.
     if ((!active) || (activepqi == NULL))
         return 0;
     return activepqi -> getRate(in);
 }
 
-void    pqiperson::setMaxRate(bool in, float val) {
+void pqiperson::setMaxRate(bool in, float val) {
     // set to all of them. (and us)
     PQInterface::setMaxRate(in, val);
     // clean up the children.
     std::map<uint32_t, pqiconnect *>::iterator it;
-    for (it = kids.begin(); it != kids.end(); it++) {
+    for (it = communicationMethods.begin(); it != communicationMethods.end(); it++) {
         (it->second) -> setMaxRate(in, val);
     }
 }
