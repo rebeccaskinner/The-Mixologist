@@ -485,12 +485,6 @@
     </disabled>
    </palette>
   </property>
-  <property name="font">
-   <font>
-    <family>Arial</family>
-    <pointsize>8</pointsize>
-   </font>
-  </property>
   <property name="contextMenuPolicy">
    <enum>Qt::NoContextMenu</enum>
   </property>
@@ -575,13 +569,6 @@
        </item>
        <item>
         <widget class="QLabel" name="libraryListLabel">
-         <property name="font">
-          <font>
-           <pointsize>9</pointsize>
-           <weight>75</weight>
-           <bold>true</bold>
-          </font>
-         </property>
          <property name="text">
           <string>This section shows the stuff your friends have listed on LibraryMixer.com</string>
          </property>
@@ -654,13 +641,6 @@
        </item>
        <item>
         <widget class="QLabel" name="offLMListLabel">
-         <property name="font">
-          <font>
-           <pointsize>9</pointsize>
-           <weight>75</weight>
-           <bold>true</bold>
-          </font>
-         </property>
          <property name="text">
           <string>This section shows the vast seas of files that your friends have shared (without listing on LibraryMixer.com)</string>
          </property>

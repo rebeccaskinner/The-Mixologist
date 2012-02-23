@@ -91,7 +91,6 @@ PopupChatDialog::PopupChatDialog(int _librarymixer_id, QWidget *parent, Qt::WFla
     ui.requestButton->setMenu(requestMenu);
     connect(ui.requestButton, SIGNAL(clicked()), ui.requestButton, SLOT(showMenu()));
 
-    //
     time_stamp_timer = new QTimer(this);
     connect(time_stamp_timer, SIGNAL(timeout()), this, SLOT(addTimeStamp()));
 
@@ -115,6 +114,20 @@ PopupChatDialog::PopupChatDialog(int _librarymixer_id, QWidget *parent, Qt::WFla
     ui.avatarFrameButton->hide();
     //updateAvatar();
     //updatePeerAvatar();
+
+#if defined(Q_WS_WIN)
+    /* Due to QT's horrible handling of cross-platform fonts, we as much as possible try to use the default font.
+       This in general selects a font that works well on each platform.
+       However, the default font for the QTextBrowser and QPlainTextEdit are only 8 point on Windows, which is too small.
+       Default font on OS X and Linux look fine.
+       Therefore, we make Windows a special-case and make the fonts bigger. */
+    QFont chattextEditFont = ui.chattextEdit->font();
+    chattextEditFont.setPointSize(10);
+    ui.chattextEdit->setFont(chattextEditFont);
+    QFont textBrowserFont = ui.textBrowser->font();
+    textBrowserFont.setPointSize(10);
+    ui.textBrowser->setFont(textBrowserFont);
+#endif
 }
 
 void PopupChatDialog::resetStatusBar() {

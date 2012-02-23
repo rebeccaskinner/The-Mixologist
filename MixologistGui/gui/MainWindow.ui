@@ -986,12 +986,6 @@
         </disabled>
        </palette>
       </property>
-      <property name="font">
-       <font>
-        <weight>50</weight>
-        <bold>false</bold>
-       </font>
-      </property>
       <property name="contextMenuPolicy">
        <enum>Qt::NoContextMenu</enum>
       </property>
@@ -1001,12 +995,6 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="leftToolbar">
-   <property name="font">
-    <font>
-     <family>Arial</family>
-     <pointsize>9</pointsize>
-    </font>
-   </property>
    <property name="contextMenuPolicy">
     <enum>Qt::NoContextMenu</enum>
    </property>
@@ -1051,12 +1039,6 @@
      <width>16777215</width>
      <height>16777215</height>
     </size>
-   </property>
-   <property name="font">
-    <font>
-     <family>Arial</family>
-     <pointsize>9</pointsize>
-    </font>
    </property>
    <property name="contextMenuPolicy">
     <enum>Qt::NoContextMenu</enum>

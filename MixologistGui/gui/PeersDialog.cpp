@@ -329,7 +329,7 @@ void PeersDialog::insertChat() {
             if (isNewChat) {
                 pcd->show();
             }
-            QApplication::alert(pcd, 0);
+            QApplication::alert(pcd, 3000);
             pcd->addMsgFromFriend(&(*it));
             continue;
         }
