@@ -41,12 +41,8 @@ win32 {
 	QMAKE_CC = g++
 	OBJECTS_DIR = temp/obj
 	MOC_DIR = temp/moc
-	DEFINES = WINDOWS_SYS WIN32 STATICLIB MINGW PTW32_STATIC_LIB
+	DEFINES = WINDOWS_SYS WIN32 STATICLIB
 	DESTDIR = lib
-	  
-	ZLIB_DIR = ../ThirdParty/src/zlib-1.2.3
-        
-	INCLUDEPATH += . $${ZLIB_DIR}
 }
 
 # #################################### MacOS ######################################
