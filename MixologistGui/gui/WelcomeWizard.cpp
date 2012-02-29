@@ -51,7 +51,7 @@ void WelcomeWizard::accept() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
     if (field("manualConnection").toBool()) {
-        settings.setValue("Network/RandomizePorts", false);
+        settings.setValue("Network/PortNumber", false);
         QMessageBox::StandardButton result = QMessageBox::information(this,
                                                                       "Allowing the Mixologist to Connect Directly to the Internet",
                                                                       "<p>If you don't know how to configure your router to give the Mixologist a direct connection, "

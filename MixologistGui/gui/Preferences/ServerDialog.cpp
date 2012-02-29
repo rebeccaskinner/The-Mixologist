@@ -39,24 +39,28 @@ ServerDialog::ServerDialog(QWidget *parent)
     ui.setupUi(this);
 
     connect(ui.mixologyServer, SIGNAL(editingFinished()), this, SLOT(editedServer()));
-    //        connect(ui.randomizePorts, SIGNAL(toggled(bool)), this, SLOT(randomizeToggled(bool)));
+    connect(ui.randomizePorts, SIGNAL(toggled(bool)), this, SLOT(randomizeToggled(bool)));
 
     /* Setup display */
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     ui.UPNP->setChecked(settings.value("Network/UPNP", DEFAULT_UPNP).toBool());
-    ui.randomizePorts->setChecked(settings.value("Network/RandomizePorts", DEFAULT_RANDOM_PORTS).toBool());
+    ui.randomizePorts->setChecked(settings.value("Network/PortNumber", DEFAULT_PORT).toInt() == SET_TO_RANDOMIZED_PORT);
 
-    //Until we can save port settings, these are disabled
-    ui.localPort  -> setEnabled(false);
-    ui.extPort    -> setEnabled(false);
-
-    /* load up configuration from peers */
+    /* Load up actual port number  */
     PeerDetails detail;
-    if (!peers->getPeerDetails(peers->getOwnLibraryMixerId(), detail)) {
-        return;
+    if (peers->getPeerDetails(peers->getOwnLibraryMixerId(), detail)) {
+        ui.portNumber->setValue(detail.localPort);
     }
+    ui.portNumber->setEnabled(settings.value("Network/PortNumber", DEFAULT_PORT).toInt() != SET_TO_RANDOMIZED_PORT);
 
+    QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
+    ui.mixologyServer->setText(serverSettings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString());
+
+    //Temporarily disabled
+    ui.NetConfigBox->setVisible(false);
+#ifdef false
     /* set net mode */
+
     int netIndex = 0;
     switch (detail.tryNetMode) {
         case NETMODE_EXT:
@@ -79,36 +83,18 @@ ServerDialog::ServerDialog(QWidget *parent)
     }
     ui.dhtComboBox->setCurrentIndex(netIndex);
 
-    //Temporarily disabled
-    //toggleUPnP();
-
-    /* Addresses must be set here - otherwise can't edit it */
-    /* set local address */
-    ui.localAddress->setText(QString::fromStdString(detail.localAddr));
-    ui.localPort -> setValue(detail.localPort);
-    /* set the server address */
-    ui.extAddress->setText(QString::fromStdString(detail.extAddr));
-    ui.extPort -> setValue(detail.extPort);
-
-    ui.localAddress->setEnabled(false);
-    ui.extAddress -> setEnabled(false);
-
-    //Temporarily disabled
-    ui.NetConfigBox->setVisible(false);
-
-    QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
-    ui.mixologyServer->setText(serverSettings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString());
+#endif
 }
 
 /** Saves the changes on this page */
 bool ServerDialog::save() {
-
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Network/UPNP", ui.UPNP->isChecked());
-    //RandomizePorts requires UPNP
-    settings.setValue("Network/RandomizePorts", ui.UPNP->isChecked() && ui.randomizePorts->isChecked());
+    if (ui.randomizePorts->isChecked()) settings.setValue("Network/PortNumber", -1);
+    else settings.setValue("Network/PortNumber", ui.portNumber->value());
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     serverSettings.setValue("MixologyServer", ui.mixologyServer->text());
+
 #ifdef false
     bool saveAddr = false;
 
@@ -166,33 +152,6 @@ void ServerDialog::editedServer(){
     }
 }
 
-//void ServerDialog::randomizeToggled(bool set){
-//    ui.localPort  -> setEnabled(!set);
-//    ui.extPort    -> setEnabled(!set);
-//}
-
-#ifdef false
-void ServerDialog::toggleUPnP() {
-    /* switch on the radioButton */
-    bool settingChangeable = false;
-    if (0 != ui.netModeComboBox->currentIndex()) {
-        settingChangeable = true;
-    }
-
-    if (settingChangeable) {
-        ui.dhtComboBox->setEnabled(true);
-
-        ui.localAddress->setEnabled(false);
-        ui.localPort  -> setEnabled(true);
-        ui.extAddress -> setEnabled(false);
-        ui.extPort    -> setEnabled(true);
-    } else {
-        ui.dhtComboBox->setEnabled(false);
-
-        ui.localAddress->setEnabled(false);
-        ui.localPort  -> setEnabled(false);
-        ui.extAddress -> setEnabled(false);
-        ui.extPort    -> setEnabled(false);
-    }
+void ServerDialog::randomizeToggled(bool set){
+    ui.portNumber->setEnabled(!set);
 }
-#endif

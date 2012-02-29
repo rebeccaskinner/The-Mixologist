@@ -25,6 +25,8 @@
 #include "pqi/p3dhtmgr.h" // Only need it for constants.
 #include "tcponudp/tou.h"
 
+#include "upnp/upnphandler.h"
+
 #include "util/net.h"
 #include "util/print.h"
 #include "util/debug.h"
@@ -100,7 +102,7 @@ peerConnectState::peerConnectState()
 }
 
 
-p3ConnectMgr::p3ConnectMgr(QString name)
+p3ConnectMgr::p3ConnectMgr(QString users_name)
     :mNetStatus(NET_UNKNOWN),
      mStunStatus(0), mStunFound(0), mStunMoreRequired(true),
      mStatusChanged(false), mUpnpAddrValid(false),
@@ -110,9 +112,11 @@ p3ConnectMgr::p3ConnectMgr(QString name)
     if (authMgr) {
         ownState.id = authMgr->OwnCertId();
         ownState.librarymixer_id = authMgr->OwnLibraryMixerId();
-        ownState.name = name;
+        ownState.name = users_name;
         ownState.netMode = NET_MODE_UDP;
     }
+
+    mUpnpMgr = new upnphandler();
 
     return;
 }
@@ -1719,13 +1723,19 @@ bool p3ConnectMgr::setVisState(unsigned int librarymixer_id, uint32_t visState) 
 
 int p3ConnectMgr::getDefaultPort() {
     QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Network/RandomizePorts", DEFAULT_RANDOM_PORTS).toBool()) {
-        srand(time(NULL));
-        return rand() % (PQI_MAX_RAND_PORT - PQI_MIN_RAND_PORT + 1) + PQI_MIN_RAND_PORT;
+    if (settings.contains("Network/PortNumber")) {
+        if (settings.value("Network/PortNumber", DEFAULT_PORT).toInt() == SET_TO_RANDOMIZED_PORT) {
+            srand(time(NULL));
+            return rand() % (PQI_MAX_RAND_PORT - PQI_MIN_RAND_PORT + 1) + PQI_MIN_RAND_PORT;
+        } else {
+            return settings.value("Network/PortNumber", DEFAULT_PORT).toInt();
+        }
     } else {
-        return PQI_DEFAULT_PORT;
+        srand(time(NULL));
+        int randomPort = rand() % (PQI_MAX_RAND_PORT - PQI_MIN_RAND_PORT + 1) + PQI_MIN_RAND_PORT;
+        settings.setValue("Network/PortNumber", randomPort);
+        return randomPort;
     }
-
 }
 
 bool p3ConnectMgr::checkNetAddress() {

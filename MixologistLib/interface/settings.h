@@ -49,7 +49,8 @@ const bool DEFAULT_NOTIFY_CONNECT = true;
 const bool DEFAULT_NOTIFY_DOWNLOAD_DONE = true;
 
 const bool DEFAULT_UPNP = true;
-const bool DEFAULT_RANDOM_PORTS = true;
+const int SET_TO_RANDOMIZED_PORT = -1;
+const int DEFAULT_PORT = SET_TO_RANDOMIZED_PORT;
 
 const bool DEFAULT_TUTORIAL_DONE_INITIAL = false;
 const bool DEFAULT_TUTORIAL_DONE_LIBRARY = false;

@@ -136,7 +136,7 @@ const uint32_t NET_CONN_UDP_PEER_SYNC   = 0x0020; /* coming soon */
 
 /* flags of peerStatus */
 const uint32_t NET_FLAGS_USE_DISC       = 0x0001;
-const uint32_t NET_FLAGS_USE_DHT            = 0x0002;
+const uint32_t NET_FLAGS_USE_DHT        = 0x0002;
 const uint32_t NET_FLAGS_ONLINE         = 0x0004;
 const uint32_t NET_FLAGS_EXTERNAL_ADDR  = 0x0008;
 const uint32_t NET_FLAGS_STABLE_UDP     = 0x0010;
@@ -152,10 +152,10 @@ class peerAddrInfo {
 public:
     peerAddrInfo();
 
-    bool        found;
-    uint32_t    type;
+    bool found;
+    uint32_t type;
     struct sockaddr_in laddr, raddr;
-    time_t      ts;
+    time_t ts;
 };
 
 class peerConnectAddress {
@@ -208,12 +208,12 @@ public:
       If this is false upon completion of a connection attempt, a schedulednexttry is setup.*/
     bool doubleTried;
 
-    uint32_t    state;  //The connection state
-    uint32_t    actions;
+    uint32_t state;  //The connection state
+    uint32_t actions;
 
-    uint32_t        source; /* most current source */
-    peerAddrInfo        dht;
-    peerAddrInfo        peer;
+    uint32_t source; /* most current source */
+    peerAddrInfo dht;
+    peerAddrInfo peer;
 
     bool inConnAttempt;
     peerConnectAddress currentConnAddr; //current address being tried
@@ -228,73 +228,74 @@ public:
 class p3ConnectMgr: public pqiConnectCb {
 
 public:
-    p3ConnectMgr(QString name);
+    /* users_name is the display name of the logged in user. */
+    p3ConnectMgr(QString users_name);
 
-    void    tick();
+    /* Ticked from the main server thread. */
+    void tick();
 
     /*************** Setup ***************************/
-    void    addNetAssistConnect(pqiNetAssistConnect *dht) {
-        mDhtMgr = dht;
-    }
-    void    addNetAssistFirewall(pqiNetAssistFirewall *upnp) {
-        mUpnpMgr = upnp;
-    }
+
+    /* Adds the dht manager. */
+    void addNetAssistConnect(pqiNetAssistConnect *dht) {mDhtMgr = dht;}
 
     //If port randomization is set, then generates a random port.
     //Otherwise, returns the default port.
-    int     getDefaultPort();
-    bool    checkNetAddress(); /* check our address is sensible */
+    int getDefaultPort();
+
+    /* Sets own IP address and port that will be used by the Mixologist. */
+    bool checkNetAddress();
 
     /*************** External Control ****************/
-    bool    shutdown(); /* blocking shutdown call */
+    bool shutdown(); /* blocking shutdown call */
 
     //Retries both TCP and UDP
-    void    retryConnect(unsigned int librarymixer_id);
-    void    retryConnectAll();
+    void retryConnect(unsigned int librarymixer_id);
+    void retryConnectAll();
 
-    bool    getUPnPState() {
+    bool getUPnPState() {
         return mUpnpMgr->getActive();
     }
-    bool    getUPnPEnabled() {
+    bool getUPnPEnabled() {
         return mUpnpMgr->getEnabled();
     }
-    bool    getDHTEnabled() {
+    bool getDHTEnabled() {
         return mDhtMgr->getEnabled();
     }
 
-    bool    getNetStatusOk() {
+    bool getNetStatusOk() {
         return netFlagOk;
     }
-    bool    getNetStatusUpnpOk() {
+    bool getNetStatusUpnpOk() {
         return netFlagUpnpOk;
     }
-    bool    getNetStatusDhtOk() {
+    bool getNetStatusDhtOk() {
         return netFlagDhtOk;
     }
-    bool    getNetStatusExtOk() {
+    bool getNetStatusExtOk() {
         return netFlagExtOk;
     }
-    bool    getNetStatusUdpOk() {
+    bool getNetStatusUdpOk() {
         return netFlagUdpOk;
     }
-    bool    getNetStatusTcpOk() {
+    bool getNetStatusTcpOk() {
         return netFlagTcpOk;
     }
-    bool    getNetResetReq() {
+    bool getNetResetReq() {
         return netFlagResetReq;
     }
 
     //Sets own netMode with try flags, and sets visState
-    void    setOwnNetConfig(uint32_t netMode, uint32_t visState);
-    bool    setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
-    bool    setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
+    void setOwnNetConfig(uint32_t netMode, uint32_t visState);
+    bool setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
+    bool setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
 
-    bool    setNetworkMode(unsigned int librarymixer_id, uint32_t netMode);
-    bool    setVisState(unsigned int librarymixer_id, uint32_t visState);
+    bool setNetworkMode(unsigned int librarymixer_id, uint32_t netMode);
+    bool setVisState(unsigned int librarymixer_id, uint32_t visState);
 
     /* add/remove friends */
     //Either adds a new friend, or updates the existing friend
-    bool    addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name);
+    bool addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name);
     //bool  removeFriend(std::string);
 
     /*************** External Control ****************/
@@ -302,94 +303,94 @@ public:
     /* access to network details (called through Monitor) */
     const std::string getOwnCertId();
 
-    bool    isFriend(unsigned int librarymixer_id);
-    bool    isOnline(unsigned int librarymixer_id);
+    bool isFriend(unsigned int librarymixer_id);
+    bool isOnline(unsigned int librarymixer_id);
     /*Fills in state for user with librarymixer_id
       Can be used for friends or self.
       Returns true, or false if unable to find user with librarymixer_id*/
-    bool    getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state);
+    bool getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state);
     //Returns either friend's name or a blank string if no such friend
     QString getFriendName(unsigned int librarymixer_id);
     QString getFriendName(std::string cert_id);
 
     QString getOwnName();
     //Like getFriendList but only returns friends that are online
-    void    getOnlineList(std::list<int> &peers);
+    void getOnlineList(std::list<int> &peers);
     //Like getFriendList but only returns friends with Mixology encryption keys
-    void    getSignedUpList(std::list<int> &peers);
+    void getSignedUpList(std::list<int> &peers);
     //Returns a list (based on mFriendsList) of all librarymixer_ids of friends
-    void    getFriendList(std::list<int> &peers);
+    void getFriendList(std::list<int> &peers);
 
     /**************** handle monitors *****************/
-    void    addMonitor(pqiMonitor *mon);
+    void addMonitor(pqiMonitor *mon);
 
     /******* overloaded from pqiConnectCb *************/
     //3 functions are related to DHT
-    virtual void    peerStatus(std::string cert_id,
+    virtual void peerStatus(std::string cert_id,
                                struct sockaddr_in laddr, struct sockaddr_in raddr,
                                uint32_t type, uint32_t flags, uint32_t source);
-    virtual void    peerConnectRequest(std::string id,
+    virtual void peerConnectRequest(std::string id,
                                        struct sockaddr_in raddr, uint32_t source);
-    virtual void    stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags);
+    virtual void stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags);
 
     /****************** Connections *******************/
     /* Called by pqipersongrp with a cert_id to get that member of mFriendsList
     and pop off the next member of connAddrs, which is used to populate the references.*/
-    bool    connectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr,
+    bool connectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr,
                            uint32_t &delay, uint32_t &period, uint32_t &type);
     /* Called by pqipersongrp when one of its persons has reported the results
     of it connection. Sets the person's peerConnectState in mFriendsList appropriately.
     If the report was not of success, if there are more connAddrs to try in
     peerConnecctState, sets its action to PEER_CONNECT_REQ.
     If doubleTried is false, then sets it to true and schedules a retry.*/
-    bool    connectResult(unsigned int librarymixer_id, bool success, uint32_t flags);
+    bool connectResult(unsigned int librarymixer_id, bool success, uint32_t flags);
     /* Called by pqistreamer whenever we received a packet from a friend, updates
        their peerConnectState so we know not to time them out. */
-    void    heardFrom(unsigned int librarymixer_id);
+    void heardFrom(unsigned int librarymixer_id);
 
 
 private:
     //Handles own net status
-    void    netTick();
+    void netTick();
     //Handles status of peers
-    void    statusTick();
+    void statusTick();
     //Informs registered monitors of changes in connectivity
     //Also informs the GUI of people coming online via notify
-    void    tickMonitors();
+    void tickMonitors();
     //Starts up own net connection
-    void    netStartup();
+    void netStartup();
 
     /* Called from within netTick when mNetStatus is NET_UPNP_INIT to start UPNP. */
-    void    netUpnpInit();
+    void netUpnpInit();
     /* Called from within netTick when mNetStatus is NET_UPNP_SETUP.
        Will be called multiple times until either UPNP returns successfully or fails to succeed before time out. */
-    void    netUpnpCheck();
+    void netUpnpCheck();
 
-    void    netUdpCheck();
-    void    netUnreachableCheck();
+    void netUdpCheck();
+    void netUnreachableCheck();
 
     /* Checks and makes sure UPNP is still properly functioning periodically.
        Called from netTick.
        Does not perform any action if called within the past minute.
        Tick happens 1/second or more, seems excessive to be testing the connection health that frequently.
        Should either later mtest this assumption, or compare against established software to see common practice. */
-    void    netUpnpMaintenance();
+    void netUpnpMaintenance();
 
     /* Udp / Stun functions */
-    bool    udpInternalAddress(struct sockaddr_in iaddr);
-    bool    udpExtAddressCheck();
-    void    udpStunPeer(std::string id, struct sockaddr_in &addr);
+    bool udpInternalAddress(struct sockaddr_in iaddr);
+    bool udpExtAddressCheck();
+    void udpStunPeer(std::string id, struct sockaddr_in &addr);
 
-    void    stunInit();
-    bool    stunCheck();
-    void    stunCollect(std::string id, struct sockaddr_in addr, uint32_t flags);
+    void stunInit();
+    bool stunCheck();
+    void stunCollect(std::string id, struct sockaddr_in addr, uint32_t flags);
 
     /* connect attempts */
     //Retries the TCP connection.
     //Called by the generic retryConnect as well as by statustick and peerConnectRequest.
-    bool    retryConnectTCP(unsigned int librarymixer_id);
+    bool retryConnectTCP(unsigned int librarymixer_id);
     //Retries the UDP connection
-    bool    retryConnectNotify(unsigned int librarymixer_id);
+    bool retryConnectNotify(unsigned int librarymixer_id);
 
     //Utility function for usedIps to convert a sockaddr_in into a string
     //representation of form ###.###.###.###:##.
@@ -408,12 +409,12 @@ private:
 
     uint32_t mStunStatus;
     uint32_t mStunFound;
-    bool     mStunMoreRequired;
+    bool  mStunMoreRequired;
 
     //List of pqiMonitor implementors to be informed of connection status events
     std::list<pqiMonitor *> clients;
     //True when the monitors need to be informed of a change
-    bool     mStatusChanged;
+    bool  mStatusChanged;
 
     /* external Address determination */
     bool mUpnpAddrValid, mStunAddrValid;

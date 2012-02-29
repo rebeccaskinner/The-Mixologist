@@ -32,19 +32,20 @@ class ServerDialog : public ConfigPage {
 	Q_OBJECT
 
 public:
-	/** Default Constructor */
+        /* Default Constructor */
 	ServerDialog(QWidget *parent = 0);
 
-	/** Saves the changes on this page */
+        /* Saves the changes on this page */
         bool save();
 
 private slots:
-        //If the server is edited to an empty value, set it to default
+        /* If the server is edited to an empty value, set it to default. */
         void editedServer();
-//        void randomizeToggled(bool set);
+        /* Connected to whenever the randomize ports button is clicked. */
+        void randomizeToggled(bool set);
 
 private:
-	/** Qt Designer generated object */
+        /* Qt Designer generated object */
 	Ui::ServerDialog ui;
 };
 

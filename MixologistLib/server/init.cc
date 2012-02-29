@@ -24,7 +24,6 @@
 #include "interface/init.h"
 #include "interface/peers.h" //for peers variable
 
-#include "upnp/upnphandler.h"
 #include "dht/opendhtmgr.h"
 
 #include "util/debug.h"
@@ -388,8 +387,7 @@ Control *Init::createControl(QString name) {
 
     notify = new p3Notify();
     connMgr = new p3ConnectMgr(name);
-    connMgr->addNetAssistFirewall(new upnphandler());
-    server->mDhtMgr  = new OpenDHTMgr(ownId, connMgr, userdir);
+    server->mDhtMgr = new OpenDHTMgr(ownId, connMgr, userdir);
     connMgr->addNetAssistConnect(server->mDhtMgr);
 
     server->pqih = new pqisslpersongrp(flags);
@@ -462,7 +460,7 @@ Control *Init::createControl(QString name) {
         connMgr->setOwnNetConfig(NET_MODE_EXT, VIS_STATE_STD);
     }
 
-    connMgr -> checkNetAddress();
+    connMgr->checkNetAddress();
 
     /**************************************************************************/
     /* startup (stuff dependent on Ids/peers is after this point) */
