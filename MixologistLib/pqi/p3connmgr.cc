@@ -108,13 +108,12 @@ p3ConnectMgr::p3ConnectMgr(QString users_name)
      mStatusChanged(false), mUpnpAddrValid(false),
      mStunAddrValid(false), mStunAddrStable(false) {
 
-    /* setup basics of own state */
-    if (authMgr) {
-        ownState.id = authMgr->OwnCertId();
-        ownState.librarymixer_id = authMgr->OwnLibraryMixerId();
-        ownState.name = users_name;
-        ownState.netMode = NET_MODE_UDP;
-    }
+    /* Setup basics of own state.
+       authMgr must have been initialized before connMgr. */
+    ownState.id = authMgr->OwnCertId();
+    ownState.librarymixer_id = authMgr->OwnLibraryMixerId();
+    ownState.name = users_name;
+    ownState.netMode = NET_MODE_UDP;
 
     mUpnpMgr = new upnphandler();
 

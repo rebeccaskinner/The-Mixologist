@@ -19,51 +19,40 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-/* Initialisation Class (not publicly disclosed to Iface) */
-    #include <QString>
+/* Initialisation Class */
+#include <QString>
 
-    class NotifyBase;
-    class Control;
+class NotifyBase;
+class Control;
 
-    class Init {
-    public:
-            //Startup Process, in order of usage
-            //Sets default values for variables
-            static void	InitNetConfig() ;
-            /* Commandline/Directory options */
-            static void processCmdLine(int argc, char **argv);
-            //Checks for or creates the basic config dir, which in Unix reside at ~/.mixologist
-            static void	loadBaseDir() ;
-            //Sets up the user directory and all subdirectories
-            static void loadUserDir(unsigned int librarymixer_id);
-            //Initializes SSL for the entire application
-            static QString InitEncryption(unsigned int librarymixer_id);
-            //Creates, initializes and returns a new Control object.
-            static Control* createControl(QString name);
+class Init {
+public:
+    /* Startup Process, with functions in order of usage. */
 
-            //Returns the basedir, without or without a separator, using native separators
-            static QString getBaseDirectory(bool withDirSeperator);
-            //Returns the userdir, using native separators
-            static QString getUserDirectory(bool withDirSeperator);
+    /* Sets default values for variables. */
+    static void InitNetConfig() ;
+    /* Commandline options. */
+    static void processCmdLine(int argc, char **argv);
+    /* Checks for or creates the basic config dir, which in Unix reside at ~/.mixologist. */
+    static void loadBaseDir() ;
+    /* Sets up the user directory and all subdirectories. */
+    static void loadUserDir(unsigned int librarymixer_id);
+    /* Initializes SSL for the entire application. */
+    static QString InitEncryption(unsigned int librarymixer_id);
+    /* Creates, initializes and returns a new Control object. */
+    static Control* createControl(QString name);
 
-            /* Key Parameters that must be set before the Mixologist will start up: */
+    /* Returns the basedir, without or without a trailing separator. */
+    static QString getBaseDirectory(bool withDirSeperator);
+    /* Returns the userdir, without or without a trailing separator. */
+    static QString getUserDirectory(bool withDirSeperator);
 
-            /* Directories, with native separators */
-            static QString basedir;
-            static QString userdir;
+private:
+    /* Directories */
+    static QString basedir;
+    static QString userdir;
 
-            /* Listening Port */
-            //These configuration variables are probably not working at this time, and need to be looked into more
-            static bool forceExtPort;
-            static bool forceLocalAddr;
-            static unsigned short port;
-            static char inet[256];
-            static bool udpListenerOnly;
-
-            /* Logging */
-            static bool haveDebugLevel;
-            static int  debugLevel;
-            static char logfname[1024];
-
-    };
+    /* Whether to use udp for listening only. */
+    static bool udpListenerOnly;
+};
 
