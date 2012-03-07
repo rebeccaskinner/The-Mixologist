@@ -60,7 +60,7 @@ public:
     void load_transfer_rates();
 
     /*************** pqiMonitor callback **********************
-    Called by the p3ConnectMgr's tick function with a list of pqipeers
+    Called by the ConnectivityManager's tick function with a list of pqipeers
     whose statuses have changed. For each friend in the list, if their
     action is PEER_NEW, calls addPeer on them, if their action is
     PEER_CONNECT_REQ, calls connectPeer on them.

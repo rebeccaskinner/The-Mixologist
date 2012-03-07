@@ -29,15 +29,13 @@
 #include <interface/types.h>
 #include <services/p3service.h>
 #include <pqi/pqimonitor.h>
-#include <pqi/p3connmgr.h>
+#include <pqi/connectivitymanager.h>
 #include <QString>
 #include <QStringList>
 #include <serialiser/mixologyitems.h>
 
 class MixologyService;
 extern MixologyService *mixologyService;
-
-class p3ConnectMgr;
 
 class MixologyService: public QObject, public p3Service {
     Q_OBJECT

@@ -23,11 +23,6 @@
 #ifndef PQI_MONITOR_H
 #define PQI_MONITOR_H
 
-/**** Rough sketch of a Monitor class
- * expect it to change significantly
- *
- */
-
 #include <inttypes.h>
 #include <string>
 #include <list>
@@ -66,12 +61,13 @@ const uint32_t STUN_FRIEND_OF_FRIEND    = 0x0040;
 #define CONNECT_PASSIVE     1
 #define CONNECT_ACTIVE  2
 
-#define CB_DHT      1   /* from dht */
+#define CB_DHT          1   /* from dht */
 //#define CB_DISC       2   /* from peers */
 #define CB_PERSON       3   /* from connection */
 #define CB_PROXY        4   /* via proxy */
 
 
+/* Used in a list to describe changed friends for monitors. */
 class pqipeer {
 public:
     unsigned int librarymixer_id;
@@ -81,30 +77,24 @@ public:
     uint32_t    actions;
 };
 
-class p3ConnectMgr;
-
+/* pqiMonitors are registered with ConnectivityManager to receive updates on changes in friends' connectivity. */
 class pqiMonitor {
 public:
     pqiMonitor() {return;}
     virtual ~pqiMonitor() {return;}
 
-    /* Called by the p3ConnectMgr's tick function with a list of pqipeers whose statuses have changed. */
+    /* Called by the ConnectivityManager's tick function with a list of pqipeers whose statuses have changed. */
     virtual void statusChange(const std::list<pqipeer> &plist) = 0;
 };
-
-
-
 
 class pqiConnectCb {
 public:
     virtual ~pqiConnectCb() {return;}
 
-    virtual void    peerStatus(std::string id,
-                               struct sockaddr_in laddr, struct sockaddr_in raddr,
+    virtual void    peerStatus(std::string id, struct sockaddr_in laddr, struct sockaddr_in raddr,
                                uint32_t type, uint32_t flags, uint32_t source) = 0;
 
-    virtual void    peerConnectRequest(std::string id,
-                                       struct sockaddr_in raddr, uint32_t source) = 0;
+    virtual void    peerConnectRequest(std::string id, struct sockaddr_in raddr, uint32_t source) = 0;
 
     virtual void    stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags) = 0;
 };

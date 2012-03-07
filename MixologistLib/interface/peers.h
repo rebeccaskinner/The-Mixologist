@@ -33,17 +33,16 @@ class Peers;
 extern Peers *peers;
 
 /* Net Mode */
-const uint32_t NETMODE_UDP = 0x0001;
-const uint32_t NETMODE_UPNP = 0x0002;
-const uint32_t NETMODE_EXT = 0x0003;
-const uint32_t NETMODE_UNREACHABLE = 0x0004;
-
-/* Visibility */
-const uint32_t VS_DHT_ON = 0x0001;
-//const uint32_t VS_DISC_ON = 0x0002;
+enum PeerDetailsNetMode {
+    NETMODE_NONE,
+    NETMODE_UDP,
+    NETMODE_UPNP,
+    NETMODE_EXT,
+    NETMODE_UNREACHABLE
+};
 
 /* State */
-enum peerStates {
+enum PeerDetailsState {
     PEER_STATE_CONNECTED,
     PEER_STATE_TRYING,
     PEER_STATE_WAITING_FOR_RETRY,
@@ -57,72 +56,83 @@ public:
 
     PeerDetails();
 
-    /* Auth details */
+    /* Identifying details */
     std::string id;
     unsigned int librarymixer_id;
     QString name;
 
-    std::string fpr; /* fingerprint */
-
     /* Network details (only valid if friend) */
-    peerStates state; //Current connection status
+    PeerDetailsState state; //Current connection status
 
     std::string localAddr;
     uint16_t localPort;
     std::string extAddr;
     uint16_t extPort;
 
-    uint32_t netMode;
-    uint32_t tryNetMode; /* only for ownState */
-    uint32_t visState;
+    PeerDetailsNetMode netMode;
+    PeerDetailsNetMode tryNetMode; /* only for ownState */
 
     /* basic stats */
     uint32_t lastConnect; /* how long ago */
-    uint32_t connectPeriod;
 };
-
-std::ostream &operator<<(std::ostream &out, const PeerDetails &detail);
 
 class Peers {
 public:
-
-    /* Peer Details (Net & Auth) */
+    /* Returns the logged in Mixologist user's own encryption certificate id. */
     virtual std::string getOwnCertId() = 0;
+
+    /* Returns the logged in Mixologist user's own LibraryMixer id. */
     virtual unsigned int getOwnLibraryMixerId() = 0;
+
+    /* Returns the logged in user's own name. */
     virtual QString getOwnName() = 0;
 
-    //List of LibraryMixer ids for all online friends
-    virtual bool getOnlineList(std::list<int> &ids) = 0;
-    //List of LibraryMixer ids for all friends with encryption keys
-    virtual bool getSignedUpList(std::list<int> &ids) = 0;
-    //List of LibraryMixer ids for all friends
-    virtual bool getFriendList(std::list<int> &ids) = 0;
+    /* List of LibraryMixer ids for all online friends. */
+    virtual void getOnlineList(std::list<int> &ids) = 0;
 
-    virtual bool isOnline(unsigned int librarymixer_id) = 0;
+    /* List of LibraryMixer ids for all friends with encryption keys. */
+    virtual void getSignedUpList(std::list<int> &ids) = 0;
+
+    /* List of LibraryMixer ids for all friends. */
+    virtual void getFriendList(std::list<int> &ids) = 0;
+
+    /* Returns true if that id belongs to a friend. */
     virtual bool isFriend(unsigned int librarymixer_id) = 0;
+
+    /* Returns true if that id belongs to a friend, and that friend is online. */
+    virtual bool isOnline(unsigned int librarymixer_id) = 0;
+
+    /* Returns the name of the friend with that LibraryMixer id.
+       Returns an empty string if no such friend. */
     virtual QString getPeerName(unsigned int librarymixer_id) = 0;
-    /*Fills in PeerDetails for user with librarymixer_id
-      Can be used for friends or self.
-      Returns true, or false if unable to find user with librarymixer_id*/
+
+    /* Fills in PeerDetails for user with librarymixer_id
+       Can be used for friends or self.
+       Returns true, or false if unable to find user with librarymixer_id*/
     virtual bool getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) = 0;
 
-    //Returns the associated cert_id or "" if unable to find.
+    /* Returns the user's encryption certificacte id or "" if unable to find. */
     virtual std::string findCertByLibraryMixerId(unsigned int librarymixer_id) = 0;
-    //Returns the associated librarymixer_id or -1 if unable to find.
+
+    /* Returns the user's LibraryMixer id or -1 if unable to find. */
     virtual unsigned int findLibraryMixerByCertId(std::string cert_id) = 0;
 
-    /* Add/Remove Friends */
-    //Either adds a new friend, or updates the existing friend
+    /* Either adds a new friend, or updates the existing friend. */
     virtual bool addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name) = 0;
 
-    /* Network Stuff */
+    /* Immediate retry to connect to that friend. */
     virtual void connectAttempt(unsigned int librarymixer_id) = 0;
+
+    /* Immediate retry to connect to all offline friends. */
     virtual void connectAll() = 0;
+
+    /* The maximum and minimum values for the Mixologist's ports. */
+    static const int MIN_PORT = 1024;
+    static const int MAX_PORT = 50000;
+
     virtual bool setLocalAddress(unsigned int librarymixer_id, std::string addr, uint16_t port) = 0;
     virtual bool setExtAddress(unsigned int librarymixer_id, std::string addr, uint16_t port) = 0;
     virtual bool setNetworkMode(unsigned int librarymixer_id, uint32_t netMode) = 0;
-    virtual bool setVisState(unsigned int librarymixer_id, uint32_t vis) = 0;
-
 };
 
 #endif

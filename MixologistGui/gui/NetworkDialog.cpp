@@ -77,7 +77,7 @@ void NetworkDialog::insertConnect() {
     QTreeWidgetItem *newSelect = NULL;
     unsigned int oldId = 0;
     if (oldSelect) {
-        oldId = (oldSelect -> text(5)).toInt();
+        oldId = (oldSelect->text(5)).toInt();
     }
 
     QList<QTreeWidgetItem *> items;
@@ -93,31 +93,31 @@ void NetworkDialog::insertConnect() {
         /* add all the labels */
 
         /* (0) Name */
-        item -> setText(0, detail.name);
+        item->setText(0, detail.name);
 
         /* (1) Status  */
         if (detail.state == PEER_STATE_CONNECTED)
-            item -> setText(1, "Connected");
+            item->setText(1, "Connected");
         else if (detail.state == PEER_STATE_TRYING)
-            item -> setText(1, "Trying");
+            item->setText(1, "Trying");
         else if (detail.state == PEER_STATE_WAITING_FOR_RETRY)
-            item -> setText(1, "Waiting to retry");
+            item->setText(1, "Waiting to retry");
         else
-            item -> setText(1, "Offline");
+            item->setText(1, "Offline");
 
         /* (2) Last Connect */
         {
             // Show anouncement if a friend never was connected.
             if (detail.state == PEER_STATE_CONNECTED)
-                item -> setText(2, "Now");
+                item->setText(2, "Now");
             else if (detail.lastConnect==0 )
-                item -> setText(2, "");
+                item->setText(2, "");
             else {
                 // Dont Show a timestamp in RS calculate the day
                 QDateTime datum = QDateTime::fromTime_t(detail.lastConnect);
                 // out << datum.toString(Qt::LocalDate);
                 QString stime = datum.toString(Qt::LocalDate);
-                item -> setText(2, stime);
+                item->setText(2, stime);
             }
         }
 
@@ -126,17 +126,17 @@ void NetworkDialog::insertConnect() {
             std::ostringstream out;
             out << detail.extAddr << ":";
             out << detail.extPort;
-            item -> setText(3, QString::fromStdString(out.str()));
+            item->setText(3, QString::fromStdString(out.str()));
         }
         {
             std::ostringstream out;
             out << detail.localAddr << ":";
             out << detail.localPort;
-            item -> setText(4, QString::fromStdString(out.str()));
+            item->setText(4, QString::fromStdString(out.str()));
         }
 
         /* (4) LibraryMixer ID */
-        item -> setText(5, QString::number(detail.librarymixer_id));
+        item->setText(5, QString::number(detail.librarymixer_id));
 
         if ((oldSelect) && (oldId == detail.librarymixer_id)) {
             newSelect = item;
@@ -151,7 +151,8 @@ void NetworkDialog::insertConnect() {
     if (peers->getPeerDetails(peers->getOwnLibraryMixerId(),detail)) {
         QTreeWidgetItem *self_item = new QTreeWidgetItem((QTreeWidget *)0);
 
-        self_item->setText(0, detail.name + " (that's you!)");
+        self_item->setText(0, peers->getOwnName());
+        self_item->setText(1, "This is you!");
         //skip last connect
         {
             std::ostringstream out;
@@ -192,7 +193,7 @@ QTreeWidgetItem *NetworkDialog::getCurrentNeighbour() {
 
     /* get a link to the table */
     QTreeWidget *connectWidget = ui.connecttreeWidget;
-    QTreeWidgetItem *item = connectWidget -> currentItem();
+    QTreeWidgetItem *item = connectWidget->currentItem();
     if (!item) return NULL;
     return item;
 }

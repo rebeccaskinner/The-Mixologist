@@ -103,44 +103,28 @@ std::list<std::string> getLocalInterfaces() {
     struct if_nameindex *ifptr = iflist;
 
     //need a socket for ioctl()
-    if ( (sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        pqioutput(PQL_ALERT, pqinetzone,
-                  "Cannot Determine Local Addresses!");
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        pqioutput(PQL_ALERT, pqinetzone, "Cannot Determine Local Addresses!");
         exit(1);
     }
 
-    if (!ifptr) {
-        pqioutput(PQL_ALERT, pqinetzone,
-                  "getLocalInterfaces(): ERROR if_nameindex == NULL");
-    }
+    if (!ifptr) pqioutput(PQL_ALERT, pqinetzone, "getLocalInterfaces(): ERROR if_nameindex == NULL");
 
-    // loop through the interfaces.
-    //for(; *(char *)ifptr != 0; ifptr++)
+    //loop through the interfaces.
     for (; ifptr->if_index != 0; ifptr++) {
         //copy in the interface name to look up address of
         strncpy(ifreq.ifr_name, ifptr->if_name, IF_NAMESIZE);
 
         if (ioctl(sock, SIOCGIFADDR, &ifreq) != 0) {
-            std::ostringstream out;
-            out << "Cannot Determine Address for Iface: ";
-            out << ifptr -> if_name << std::endl;
-            pqioutput(PQL_DEBUG_BASIC, pqinetzone, out.str().c_str());
+            pqioutput(PQL_DEBUG_BASIC, pqinetzone, QString("Cannot Determine Address for Iface: " + ifptr->if_name));
         } else {
-            struct sockaddr_in *aptr =
-                (struct sockaddr_in *) &ifreq.ifr_addr;
-            const char *astr=inet_ntoa(aptr -> sin_addr);
-
-            std::ostringstream out;
-            out << "Iface: ";
-            out << ifptr -> if_name << std::endl;
-            out << " Address: " << astr;
-            out << std::endl;
-            pqioutput(PQL_DEBUG_BASIC, pqinetzone, out.str().c_str());
+            struct sockaddr_in *aptr = (struct sockaddr_in *) &ifreq.ifr_addr;
+            const char *astr=inet_ntoa(aptr->sin_addr);
 
             addrs.push_back(astr);
         }
     }
-    // free socket -> or else run out of fds.
+    //free socket or else run out of fds.
     close(sock);
 
     if_freenameindex(iflist);
@@ -214,12 +198,8 @@ std::string socket_errorType(int err) {
 #include <iphlpapi.h>
 //#include <iprtrmib.h>
 
-// A function to determine the interfaces on your computer....
-// No idea of how to do this in windows....
-// see if it compiles.
 std::list<std::string> getLocalInterfaces() {
     std::list<std::string> addrs;
-
 
     /* USE MIB IPADDR Interface */
     PMIB_IPADDRTABLE iptable =  NULL;
@@ -237,7 +217,7 @@ std::list<std::string> getLocalInterfaces() {
 
     struct in_addr addr;
 
-    for (unsigned int i = 0; i < iptable -> dwNumEntries; i++) {
+    for (unsigned int i = 0; i < iptable->dwNumEntries; i++) {
         std::ostringstream out;
 
         out << "Iface(" << iptable->table[i].dwIndex << ") ";
@@ -405,35 +385,21 @@ int inaddr_cmp(struct sockaddr_in addr1, unsigned long addr2) {
 }
 
 
-struct in_addr getPreferredInterface() { // returns best addr.
+struct in_addr getPreferredInterface() {
 
-    std::list<std::string> addrs =  getLocalInterfaces();
+    std::list<std::string> addrs = getLocalInterfaces();
     std::list<std::string>::iterator it;
-    /* This strange syntax is to silence some irritating spurious GCC warnings.
-       See: http://stackoverflow.com/questions/5434865/quickest-way-to-initialize-an-array-of-structures-to-all-0s */
-#ifdef WINDOWS_SYS
-    struct in_addr addr_zero = {{{0}}};
-    struct in_addr addr_loop = {{{0}}};
-    struct in_addr addr_priv = {{{0}}};
-    struct in_addr addr_ext = {{{0}}};
-    struct in_addr addr = {{{0}}}; 
-#else    
-    struct in_addr addr_zero = {0}, addr_loop = {0}, addr_priv = {0}, addr_ext = {0}, addr = {0};
-#endif
+
+    struct in_addr addr_zero, addr_loop, addr_priv, addr_ext, addr;
 
     bool found_zero = false;
     bool found_loopback = false;
     bool found_priv = false;
     bool found_ext = false;
 
-    // find the first of each of these.
-    // if ext - take first.
-    // if no ext -> first priv
-    // if no priv -> first loopback.
-
     for (it = addrs.begin(); it != addrs.end(); it++) {
         inet_aton((*it).c_str(), &addr);
-        // for windows silliness (returning 0.0.0.0 as valid addr!).
+        /* For Windows, which can return 0.0.0.0 as valid address! */
         if (addr.s_addr == 0) {
             if (!found_zero) {
                 found_zero = true;
@@ -458,19 +424,13 @@ struct in_addr getPreferredInterface() { // returns best addr.
         }
     }
 
-    if (found_priv)
-        return addr_priv;
+    if (found_priv) return addr_priv;
 
-    // next bit can happen under windows,
-    // a general address is still
-    // preferable to a loopback device.
-    if (found_zero)
-        return addr_zero;
+    if (found_zero) return addr_zero;
 
-    if (found_loopback)
-        return addr_loop;
+    if (found_loopback) return addr_loop;
 
-    // shound be 255.255.255.255 (error).
+    //Return 255.255.255.255 (error).
     addr.s_addr = 0xffffffff;
     return addr;
 }
@@ -500,14 +460,14 @@ bool LookupDNSAddr(std::string name, struct sockaddr_in &addr) {
     struct addrinfo *hints = &hints_st;
     struct addrinfo *res;
 
-    hints -> ai_flags = 0; // (cygwin don;t like these) AI_ADDRCONFIG | AI_NUMERICSERV;
-    hints -> ai_family = AF_INET;
-    hints -> ai_socktype = 0;
-    hints -> ai_protocol = 0;
-    hints -> ai_addrlen = 0;
-    hints -> ai_addr = NULL;
-    hints -> ai_canonname = NULL;
-    hints -> ai_next = NULL;
+    hints->ai_flags = 0; // (cygwin don;t like these) AI_ADDRCONFIG | AI_NUMERICSERV;
+    hints->ai_family = AF_INET;
+    hints->ai_socktype = 0;
+    hints->ai_protocol = 0;
+    hints->ai_addrlen = 0;
+    hints->ai_addr = NULL;
+    hints->ai_canonname = NULL;
+    hints->ai_next = NULL;
 
     /* get the port number */
     sprintf(service, "%d", ntohs(addr.sin_port));

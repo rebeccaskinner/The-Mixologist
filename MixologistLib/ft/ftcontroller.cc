@@ -38,7 +38,7 @@
 #include <util/dir.h>
 #include <util/debug.h>
 
-#include <pqi/p3connmgr.h>
+#include <pqi/connectivitymanager.h>
 #include <pqi/pqinotify.h>
 
 #include <QSettings>

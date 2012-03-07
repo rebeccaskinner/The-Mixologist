@@ -20,366 +20,475 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#include "udpsorter.h"
+//Must be included before udpsorter.h which includes util/net.h to avoid _WIN32_WINNT redefine warnings on Windows
+#include "pqi/pqinetwork.h"
+
+#include "tcponudp/udpsorter.h"
 #include "util/net.h"
-#include "util/print.h"
-
-#include <stdlib.h>
-#include <iostream>
-#include <sstream>
-#include <iomanip>
-
 #include "util/debug.h"
 #include "time.h"
-const int rsudpsorterzone = 28477;
 
 static const int STUN_TTL = 64;
 
-/*
- * #define DEBUG_UDP_SORTER 1
- */
-
-
-UdpSorter::UdpSorter(struct sockaddr_in &local)
-    :udpLayer(NULL), laddr(local), eaddrKnown(false), eaddrStable(false),
-     mStunKeepAlive(false), mStunLastRecv(0), mStunLastSend(0)
-
-
-{
-    sockaddr_clear(&eaddr);
-
-    openSocket();
-    return;
+/* We need this to be able to have streams be a map where the key is a sockaddr_in. */
+bool operator<(const struct sockaddr_in &addr, const struct sockaddr_in &addr2) {
+    if (addr.sin_family != addr2.sin_family)
+        return (addr.sin_family < addr2.sin_family);
+    if (addr.sin_addr.s_addr != addr2.sin_addr.s_addr)
+        return (addr.sin_addr.s_addr < addr2.sin_addr.s_addr);
+    if (addr.sin_port != addr2.sin_port)
+        return (addr.sin_port < addr2.sin_port);
+    return false;
 }
 
+UdpSorter::UdpSorter(struct sockaddr_in &local)
+    :udpLayer(NULL), localAddress(local), externalAddressKnown(false), externalAddressStable(false), mStunKeepAlive(false), mStunLastRecv(0), mStunLastSend(0) {
 
-/* higher level interface */
+    sockaddr_clear(&externalAddress);
+
+    udpLayer = new UdpLayer(this, localAddress);
+    udpLayer->start();
+
+    log(LOG_ALERT, UDPSORTERZONE, "Opened UDP port on:" + QString(inet_ntoa(local.sin_addr)) + ":" + QString::number(ntohs(local.sin_port)) + "\n");
+}
+
 void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
-    /* print packet information */
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::recvPkt(" << size << ") from: " << from;
-    std::cerr << std::endl;
-#endif
-
-    sortMtx.lock();
+    QMutexLocker stack(&sortMtx);
     mStunLastRecv = time(NULL);
 
     /* look for a peer */
-    std::map<struct sockaddr_in, UdpPeer *>::iterator it;
+    QMap<struct sockaddr_in, UdpPeer *>::iterator it;
     it = streams.find(from);
 
     /* check for STUN packet */
-    if (UdpStun_isStunPacket(data, size)) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::recvPkt() is Stun Packet";
-        std::cerr << std::endl;
-#endif
-
-        /* respond */
+    if (UdpStun_isStunRequest(data, size) || UdpStun_isStunResponse(data, size)) {
         locked_handleStunPkt(data, size, from);
     } else if (it == streams.end()) {
-        /* peer unknown */
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::recvPkt() Peer Unknown!";
-        std::cerr << std::endl;
-#endif
-        std::ostringstream out;
-        out << "UdpSorter::recvPkt() ";
-        out << "from unknown: " << from;
-        log(LOG_WARNING,rsudpsorterzone,out.str().c_str());
+        log(LOG_WARNING, UDPSORTERZONE, QString("Received UDP packet from unknown address ") + inet_ntoa(from.sin_addr));
     } else {
         /* forward to them */
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::recvPkt() Sending to UdpPeer: ";
-        std::cerr << it->first;
-        std::cerr << std::endl;
-#endif
-        (it->second)->recvPkt(data, size);
+        it.value()->recvPkt(data, size);
     }
-
-    sortMtx.unlock();
-    /* done */
 }
 
-
 int  UdpSorter::sendPkt(void *data, int size, struct sockaddr_in &to, int ttl) {
-    /* print packet information */
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::sendPkt(" << size << ") ttl: " << ttl;
-    std::cerr << " to: " << to;
-    std::cerr << std::endl;
-#endif
-
-    /* send to udpLayer */
     return udpLayer->sendPkt(data, size, to, ttl);
 }
 
-int     UdpSorter::status(std::ostream &out) {
-    sortMtx.lock();
-
-    out << "UdpSorter::status()" << std::endl;
-    out << "localaddr: " << laddr << std::endl;
-    out << "UdpSorter::peers:" << std::endl;
-    std::map<struct sockaddr_in, UdpPeer *>::iterator it;
-    for (it = streams.begin(); it != streams.end(); it++) {
-        out << "\t" << it->first << std::endl;
-    }
-    out << std::endl;
-
-    sortMtx.unlock();
-
-    udpLayer->status(out);
-
-    return 1;
-}
-
-/* setup connections */
-int UdpSorter::openSocket() {
-    udpLayer = new UdpLayer(this, laddr);
-    udpLayer->start();
-
-    return 1;
-}
-
-/* monitoring / updates */
-int UdpSorter::okay() {
+bool UdpSorter::okay() {
     return udpLayer->okay();
 }
 
 int UdpSorter::tick() {
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::tick()" << std::endl;
-#endif
     checkStunKeepAlive();
 
+    fixedServerTest();
+
     return 1;
 }
 
-
-int UdpSorter::close() {
-    /* TODO */
-    return 1;
-}
-
-
-/* add a TCPonUDP stream */
-int UdpSorter::addUdpPeer(UdpPeer *peer, const struct sockaddr_in &raddr) {
-    sortMtx.lock();
-
-
-    /* check for duplicate */
-    std::map<struct sockaddr_in, UdpPeer *>::iterator it;
-    it = streams.find(raddr);
-    bool ok = (it == streams.end());
-    if (!ok) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::addUdpPeer() Peer already exists!" << std::endl;
-        std::cerr << "UdpSorter::addUdpPeer() ERROR" << std::endl;
-#endif
-    } else {
-        streams[raddr] = peer;
+bool UdpSorter::addUdpPeer(UdpPeer *peer, const struct sockaddr_in &raddr) {
+    QMutexLocker stack(&sortMtx);
+    if (streams.contains(raddr)) {
+        log(LOG_WARNING, UDPSORTERZONE, "Attempted to add already existing UdpPeer!");
+        return false;
     }
-
-    sortMtx.unlock();
-    return ok;
+    streams[raddr] = peer;
+    return true;
 }
 
-int UdpSorter::removeUdpPeer(UdpPeer *peer) {
+bool UdpSorter::removeUdpPeer(UdpPeer *peer) {
     QMutexLocker stack(&sortMtx);
 
-    /* check for duplicate */
-    std::map<struct sockaddr_in, UdpPeer *>::iterator it;
+    QMap<struct sockaddr_in, UdpPeer *>::iterator it;
     for (it = streams.begin(); it != streams.end(); it++) {
-        if (it->second == peer) {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::removeUdpPeer() SUCCESS" << std::endl;
-#endif
+        if (it.value() == peer) {
             streams.erase(it);
-            return 1;
+            return true;
         }
     }
 
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::removeUdpPeer() ERROR" << std::endl;
-#endif
-    return 0;
+    return false;
 }
 
-
-/******************************* STUN Handling ********************************/
-
-/* respond */
 bool UdpSorter::locked_handleStunPkt(void *data, int size, struct sockaddr_in &from) {
-    if (size == 20) { /* request */
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::handleStunPkt() got Request from: ";
-        std::cerr << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port);
-        std::cerr << std::endl;
-#endif
-        {
-            std::ostringstream out;
-            out << "UdpSorter::handleStunPkt() got Request from: " << from;
-            log(LOG_WARNING,rsudpsorterzone,out.str().c_str());
-        }
+    if (UdpStun_isStunRequest(data, size)) {
+        log(LOG_DEBUG_ALERT, UDPSORTERZONE, QString("Received STUN request from ") + inet_ntoa(from.sin_addr));
 
         /* generate a response */
         int len;
         void *pkt = UdpStun_generate_stun_reply(&from, &len);
-        if (!pkt)
-            return false;
+        if (!pkt) return false;
 
         int sentlen = sendPkt(pkt, len, from, STUN_TTL);
         free(pkt);
 
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::handleStunPkt() sent Response size:" << sentlen;
-        std::cerr << std::endl;
-#endif
-
         return (len == sentlen);
-    } else if (size == 28) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::handleStunPkt() got Response";
-        std::cerr << std::endl;
-#endif
-        /* got response */
-        struct sockaddr_in eAddr;
-        bool good = UdpStun_response(data, size, eAddr);
+    } else if (UdpStun_isStunResponse(data, size)) {
+        log(LOG_WARNING, UDPSORTERZONE, QString("Received STUN response from ") + inet_ntoa(from.sin_addr));
+        struct sockaddr_in reportedExternalAddress;
+        bool good = UdpStun_response(data, size, reportedExternalAddress);
         if (good) {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::handleStunPkt() got Ext Addr: ";
-            std::cerr << inet_ntoa(eAddr.sin_addr) << ":" << ntohs(eAddr.sin_port);
-            std::cerr << std::endl;
-#endif
-            {
-                std::ostringstream out;
-                out << "UdpSorter::handleStunPkt() got Response from: " << from;
-                out << " Ext Addr: " << eAddr;
-                log(LOG_WARNING,rsudpsorterzone,out.str().c_str());
-            }
-
-            locked_recvdStun(from, eAddr);
+            log(LOG_WARNING, UDPSORTERZONE,
+                QString("Got external address from STUN: ") + inet_ntoa(reportedExternalAddress.sin_addr) +
+                QString(":") + QString::number(ntohs(reportedExternalAddress.sin_port)));
+            locked_receivedStunResponse(from, reportedExternalAddress);
 
             return true;
         }
     }
 
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::handleStunPkt() Bad Packet";
-    std::cerr << std::endl;
-#endif
+    log(LOG_DEBUG_ALERT, UDPSORTERZONE, "UdpSorter::handleStunPkt() Bad Packet");
     return false;
 }
 
 
-bool    UdpSorter::externalAddr(struct sockaddr_in &external, uint8_t &stable) {
-    if (eaddrKnown) {
-        external = eaddr;
+bool UdpSorter::readExternalAddress(struct sockaddr_in &external, uint8_t &stable) {
+    if (externalAddressKnown) {
+        external = externalAddress;
 
-        if (eaddrStable)
-            stable = 1;
-        else
-            stable = 0;
+        if (externalAddressStable) stable = 1;
+        else stable = 0;
 
         return true;
     }
     return false;
 }
 
-
-int     UdpSorter::doStun(struct sockaddr_in stun_addr) {
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::doStun()";
-    std::cerr << std::endl;
-#endif
-
-    /* send out a stun packet -> save in the local variable */
-    if (!okay()) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::doStun() Not Active";
-        std::cerr << std::endl;
-#endif
-    }
-
 #define MAX_STUN_SIZE 64
+bool UdpSorter::doStun(struct sockaddr_in stun_addr) {
+    if (!okay()) return false;
+
     char stundata[MAX_STUN_SIZE];
     int tmplen = MAX_STUN_SIZE;
-    bool done = UdpStun_generate_stun_pkt(stundata, &tmplen);
-    if (!done) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::doStun() Failed";
-        std::cerr << std::endl;
-#endif
-        //pqioutput(PQL_ALERT, pqistunzone, "pqistunner::stun() Failed!");
-        return 0;
+    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, &tmplen);
+    if (!packetGenerationSuccess) {
+        pqioutput(PQL_ALERT, PQISTUNZONE, "pqistunner::doStun() unable to generate packet");
+        return false;
     }
 
-    /* send it off */
     sendPkt(stundata, tmplen, stun_addr, STUN_TTL);
 
-    sortMtx.lock();
-    mStunLastSend = time(NULL);
-    sortMtx.unlock();
+    {
+        QMutexLocker stack(&sortMtx);
+        mStunLastSend = time(NULL);
+    }
 
-#ifdef DEBUG_UDP_SORTER
-    std::ostringstream out;
-    out << "UdpSorter::doStun() Sent Stun Packet(" << sentlen << ") from:";
-    out << inet_ntoa(laddr.sin_addr) << ":" << ntohs(laddr.sin_port);
-    out << " to:";
-    out << inet_ntoa(stun_addr.sin_addr) << ":" << ntohs(stun_addr.sin_port);
+    return true;
+}
 
-    std::cerr << out.str() << std::endl;
+/******************************* STUN Handling ********************************/
 
-    //pqioutput(PQL_ALERT, pqistunzone, out.str());
-#endif
+#define TOU_STUN_MAX_FAIL_COUNT 10 /* 10 tries (could be higher?) */
+#define TOU_STUN_MAX_SEND_RATE 5  /* every 5 seconds */
+#define TOU_STUN_MAX_RECV_RATE 25 /* every 25 seconds */
 
-    return 1;
+/******************************* STUN Handling ********************************/
+
+void UdpSorter::setStunKeepAlive(bool required) {
+    QMutexLocker stack(&sortMtx);
+    mStunKeepAlive = required;
+}
+
+void UdpSorter::addStunPeer(const struct sockaddr_in &peerAddress, const char *peerid) {
+    /* First add peer into mStunList if it's not already. */
+    {
+        QMutexLocker stack(&sortMtx);
+
+        bool alreadyExists = false;
+        foreach (TouStunPeer* currentPeer, mStunList) {
+            if ((peerAddress.sin_addr.s_addr == currentPeer->peerAddress.sin_addr.s_addr) &&
+                (peerAddress.sin_port == currentPeer->peerAddress.sin_port)) {
+                alreadyExists = true;
+                break;
+            }
+        }
+
+        if (!alreadyExists) {
+            TouStunPeer* peer = new TouStunPeer(std::string(peerid), peerAddress);
+            mStunList.push_back(peer);
+        }
+    }
+
+    /* Then contact the peer if we need to stun. */
+    bool needStun;
+    {
+        QMutexLocker stack(&sortMtx);
+        needStun = (!externalAddressKnown);
+    }
+    if (needStun) doStun(peerAddress);
+}
+
+bool UdpSorter::checkStunKeepAlive() {
+    TouStunPeer* peer;
+    time_t now;
+    {
+        QMutexLocker stack(&sortMtx);
+
+        if (!mStunKeepAlive) return false;
+
+        /* Check if it's time to send a keep alive STUN packet. */
+        now = time(NULL);
+        if ((now - mStunLastSend < TOU_STUN_MAX_SEND_RATE) ||
+            (now - mStunLastRecv < TOU_STUN_MAX_RECV_RATE)) {
+            /* Too soon for another STUN packet. */
+            return false;
+        }
+
+        if (mStunList.size() == 0) return false;
+
+        /* extract entry */
+        peer = mStunList.front();
+        mStunList.pop_front();
+    }
+
+    doStun(peer->peerAddress);
+
+    {
+        QMutexLocker stack(&sortMtx);
+
+        if (peer->failCount < TOU_STUN_MAX_FAIL_COUNT) {
+            /* We preemptively raise the failCount.
+               If we end up receiving a STUN response, that will reset this to 0 anyway. */
+            peer->failCount++;
+            peer->lastsend = now;
+
+            /* Push them onto the back of mStunList for more tries in the future. */
+            mStunList.push_back(peer);
+        } else {
+            delete peer;
+        }
+    }
+
+    return true;
+}
+
+void UdpSorter::fixedServerTest() {
+    if (externalAddressKnown) return;
+
+    static time_t lastSend;
+    if (time(NULL) - lastSend < 20) return;
+
+    if (!okay()) return;
+
+    char stundata[MAX_STUN_SIZE];
+    int tmplen = MAX_STUN_SIZE;
+    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, &tmplen);
+    if (!packetGenerationSuccess) {
+        pqioutput(PQL_ALERT, PQISTUNZONE, "pqistunner::doStun() unable to generate packet");
+        return;
+    }
+
+    struct sockaddr_in stun_addr;
+    if (!LookupDNSAddr("stun.selbie.com", stun_addr)) return;
+    stun_addr.sin_port = htons(3478);
+
+    log(LOG_ALERT, UDPSORTERZONE, "Sending fixed server test to " + QString(inet_ntoa(stun_addr.sin_addr)) + ":" + QString::number(ntohs(stun_addr.sin_port)));
+    lastSend = time(NULL);
+    sendPkt(stundata, tmplen, stun_addr, STUN_TTL);
+}
+
+bool UdpSorter::locked_receivedStunResponse(const struct sockaddr_in &peerAddress, const struct sockaddr_in &reportedExternalAddress) {
+    bool found = true;
+
+    /* Find and update the appropriate TouStunPeer. */
+    foreach (TouStunPeer* currentPeer, mStunList) {
+        if ((peerAddress.sin_addr.s_addr == currentPeer->peerAddress.sin_addr.s_addr) &&
+            (peerAddress.sin_port == currentPeer->peerAddress.sin_port)) {
+            currentPeer->failCount = 0;
+            currentPeer->reportedExternalAddress = reportedExternalAddress;
+            currentPeer->responseReceived = true;
+
+            found = true;
+            break;
+        }
+    }
+
+    struct sockaddr_in stun_addr;
+    LookupDNSAddr("stun.selbie.com", stun_addr);
+    if (peerAddress.sin_addr.s_addr == stun_addr.sin_addr.s_addr) {
+        log(LOG_ALERT, UDPSORTERZONE, "Received response from selbie:" + QString(inet_ntoa(reportedExternalAddress.sin_addr)) + ":" + QString::number(ntohs(reportedExternalAddress.sin_port)) + "\n");
+        externalAddress = reportedExternalAddress;
+        externalAddressStable = true;
+        externalAddressKnown = true;
+    }
+
+    if (!externalAddressKnown) {
+        /* We need to find two peers with responses so that we can compare them to each other
+           and ensure we are getting consistent responses. */
+        TouStunPeer* firstPeerWithResponse = NULL;
+        TouStunPeer* secondPeerWithResponse = NULL;
+        foreach (TouStunPeer* currentPeer, mStunList) {
+            if (currentPeer->responseReceived && isExternalNet(&currentPeer->reportedExternalAddress.sin_addr)) {
+                if (firstPeerWithResponse == NULL) {
+                    firstPeerWithResponse = currentPeer;
+                } else {
+                    secondPeerWithResponse = currentPeer;
+                    break;
+                }
+            }
+        }
+
+        /* If we've got two responses, we can now compare them and find out our external address.
+           If they differ, that means that we are dealing with a symmetric NAT, and STUN will be unable to map an external port for us. */
+        if (firstPeerWithResponse && secondPeerWithResponse) {
+            externalAddressKnown = true;
+            externalAddress = reportedExternalAddress;
+            if ((firstPeerWithResponse->reportedExternalAddress.sin_addr.s_addr == secondPeerWithResponse->reportedExternalAddress.sin_addr.s_addr) &&
+                (firstPeerWithResponse->reportedExternalAddress.sin_port == secondPeerWithResponse->reportedExternalAddress.sin_port)) {
+                externalAddressStable = true;
+            } else {
+                externalAddressStable = false;
+            }
+        }
+    }
+
+    return found;
 }
 
 /******************************* STUN Handling ********************************/
 /***** These next functions are generic and not dependent on class variables **/
 /******************************* STUN Handling ********************************/
 
-bool    UdpStun_response(void *stun_pkt, int size, struct sockaddr_in &addr) {
-    /* check what type it is */
-    if (size < 28) {
-        return false;
-    }
+bool UdpStun_isStunRequest(void *data, int size) {
+    /* Too small to be a stun packet that contains a header. */
+    if (size < 20) return false;
 
-    if (htons(((uint16_t *) stun_pkt)[0]) != 0x0101) {
-        /* not a response */
-        return false;
-    }
+    /* Match size field. */
+    uint16_t pktsize = ntohs(((uint16_t *) data)[1]) + 20;
+    if (size != pktsize) return false;
 
-    /* iterate through the packet */
-    /* for now assume the address follows the header directly */
-    /* all stay in netbyteorder! */
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = ((uint32_t *) stun_pkt)[6];
-    addr.sin_port = ((uint16_t *) stun_pkt)[11];
+    /* This matches the profile of a request. */
+    if (0x0001 == ntohs(((uint16_t *) data)[0])) return true;
 
-
-#ifdef DEBUG_UDP_SORTER
-    std::ostringstream out;
-    out << "UdpSorter::response() Recvd a Stun Response, ext_addr: ";
-    out << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port);
-    std::cerr << out.str() << std::endl;
-#endif
-
-    return true;
-
+    return false;
 }
 
-bool UdpStun_generate_stun_pkt(void *stun_pkt, int *len) {
-    if (*len < 20) {
-        return false;
+bool UdpStun_isStunResponse(void *data, int size) {
+    /* Too small to be a stun packet that contains a header. */
+    if (size < 20) return false;
+
+    /* Match size field. */
+    uint16_t pktsize = ntohs(((uint16_t *) data)[1]) + 20;
+    if (size != pktsize) return false;
+
+    /* This matches the profile of a response. */
+    if (0x0101 == ntohs(((uint16_t *) data)[0])) return true;
+
+    return false;
+}
+
+bool UdpStun_response(void *stun_pkt, int size, struct sockaddr_in &addr) {
+    if (!UdpStun_isStunResponse(stun_pkt, size)) return false;
+
+    /* We are going to be stepping through the stun_pkt, this is how far in we are in bytes.
+       We start at 20 in order to start at the beginning of the attributes, right after the header. */
+    int index_in_stun_pkt = 20;
+
+
+    bool mappedAddressFound = false;
+    struct sockaddr_in mappedAddress;
+
+    bool xorMappedAddressFound = false;
+    struct sockaddr_in xorMappedAddress;
+
+    while (index_in_stun_pkt < size) {
+        /* We need to divide our index in 2 in order to read 16 bit values out (or later 4 for 32 bit values).
+           We know that it will be divisible evenly by 4 because we start on 20, and only add in multiples of 4. */
+        uint16_t attribute_type = ntohs(((uint16_t *) stun_pkt)[index_in_stun_pkt / 2]);
+        uint16_t attribute_byte_length = ntohs(((uint16_t *) stun_pkt)[(index_in_stun_pkt / 2) + 1]);
+
+        /* 0x0001 is the attribute type code for returning a mapped address. */
+        if (attribute_type == 0x0001) {
+            if (attribute_byte_length != 8) {
+                log(LOG_WARNING, UDPSORTERZONE, "Received invalid address in response for STUN address");
+                return false;
+            }
+            /* All stay in netbyteorder! */
+            uint16_t addressFamily = ntohs(((uint16_t *) stun_pkt)[(index_in_stun_pkt / 2) + 2]);
+            if (addressFamily == 0x01) mappedAddress.sin_family = AF_INET;
+            else {
+                log(LOG_WARNING, UDPSORTERZONE, "Received non-IPv4 response for STUN address " + QString::number(addressFamily));
+                return false;
+            }
+            mappedAddress.sin_port = ((uint16_t *) stun_pkt)[(index_in_stun_pkt / 2) + 3];
+            mappedAddress.sin_addr.s_addr = ((uint32_t *) stun_pkt)[(index_in_stun_pkt / 4) + 2];
+            mappedAddressFound = true;
+        }
+        /* 0x0020 is the attribute type for returning an XOR mapped addressed. */
+        else if (attribute_type == 0x0020) {
+            if (attribute_byte_length != 8) {
+                log(LOG_WARNING, UDPSORTERZONE, "Received invalid address in response for XOR STUN address");
+                return false;
+            }
+            /* All stay in netbyteorder! */
+            uint16_t addressFamily = ntohs(((uint16_t *) stun_pkt)[(index_in_stun_pkt / 2) + 2]);
+            if (addressFamily == 0x01) xorMappedAddress.sin_family = AF_INET;
+            else {
+                log(LOG_WARNING, UDPSORTERZONE, "Received non-IPv4 response for XOR STUN address " + QString::number(addressFamily));
+                return false;
+            }
+            /* In order to decode the XOR mapping on the XOR mapped address, we use the magic cookie to XOR the host order bits.
+               The port uses only the most significant bits of the magic cookie. */
+            xorMappedAddress.sin_port = htons(0x2112 ^ ntohs(((uint16_t *) stun_pkt)[(index_in_stun_pkt / 2) + 3]));
+            xorMappedAddress.sin_addr.s_addr = htonl(0x2112A442 ^ ntohl(((uint32_t *) stun_pkt)[(index_in_stun_pkt / 4) + 2]));
+            xorMappedAddressFound = true;
+        }
+        else {
+            log(LOG_DEBUG_ALERT, UDPSORTERZONE, "Ignoring STUN response attribute 0x" + QString::number(attribute_type, 16));
+        }
+
+        /* Regarding the last bit with the modulus arithmetic, STUN attribute values must end on 4 byte boundaries.
+           Therefore, if the length is less than 32 bit it will be padded with ignored values, and we must
+           increase the index by an amount between 0-3 bytes. */
+        index_in_stun_pkt = index_in_stun_pkt +
+                            2 + //The 2 bytes type field
+                            2 + //The 2 byte length field
+                            attribute_byte_length +
+                            ((4 - (attribute_byte_length % 4)) % 4); //The padding, up to 4 bytes
     }
 
-    /* just the header */
-    ((uint16_t *) stun_pkt)[0] = (uint16_t) htons(0x0001);
-    ((uint16_t *) stun_pkt)[1] = (uint16_t) htons(20); /* only header */
-    /* transaction id - should be random */
-    ((uint32_t *) stun_pkt)[1] = (uint32_t) htonl(0x0020);
+    if (!xorMappedAddressFound && !mappedAddressFound) return false;
+
+    /* XOR mapped addresses are more reliable than regular mapped addresses.
+       This is because according to RFC 5389, some NATs tamper with mapped addresses,
+       which is what led to the addition of the XOR mapped address attribute in STUN. */
+    if (xorMappedAddressFound) {
+        addr.sin_family = xorMappedAddress.sin_family;
+        addr.sin_port = xorMappedAddress.sin_port;
+        addr.sin_addr.s_addr = xorMappedAddress.sin_addr.s_addr;
+        if (mappedAddressFound) {
+            if (xorMappedAddress.sin_family != mappedAddress.sin_family ||
+                xorMappedAddress.sin_port != mappedAddress.sin_port ||
+                xorMappedAddress.sin_addr.s_addr != mappedAddress.sin_addr.s_addr) {
+                log(LOG_WARNING, UDPSORTERZONE, "STUN response shows signs of tampering by a router or firewall.");
+                /* TODO We should probably do something with this information. */
+            }
+        }
+    } else if (mappedAddressFound) {
+        addr.sin_family = mappedAddress.sin_family;
+        addr.sin_port = mappedAddress.sin_port;
+        addr.sin_addr.s_addr = mappedAddress.sin_addr.s_addr;
+    }
+    return true;
+}
+
+bool UdpStun_generate_stun_request(void *stun_pkt, int *len) {
+    /* A STUN packet consists of a 20-byte header followed by 0 or more attributes (we have 0).
+       The first 2 bits of the header are 0.
+       The second 14 bits of the header are the message type. Message type 1 represents an address binding request.
+       The next 16 bits of the header are the message length in bytes, not including the 20-byte header.
+       The next 32 bits are the "magic cookie", which must equal 0x2112A442.
+       The final 96 bits are the transaction ID, which is an arbitrary number that the server will echo back in its response. */
+
+    /* Too small to be a stun packet that contains a header. */
+    if (*len < 20) return false;
+
+    /* Just the header, we're not adding any attributes. */
+    ((uint16_t *) stun_pkt)[0] = (uint16_t) htons(0x0001); //Set the 00 and the message type to request.
+    ((uint16_t *) stun_pkt)[1] = (uint16_t) htons(0); //Set the length to 0, since we have no attributes
+    ((uint32_t *) stun_pkt)[1] = (uint32_t) htonl(0x2112A442); //Magic cookie
+    /* Transaction ID, just some arbitrary numers */
     ((uint32_t *) stun_pkt)[2] = (uint32_t) htonl(0x0121);
     ((uint32_t *) stun_pkt)[3] = (uint32_t) htonl(0x0111);
     ((uint32_t *) stun_pkt)[4] = (uint32_t) htonl(0x1010);
@@ -389,351 +498,37 @@ bool UdpStun_generate_stun_pkt(void *stun_pkt, int *len) {
 
 
 void *UdpStun_generate_stun_reply(struct sockaddr_in *stun_addr, int *len) {
-    /* just the header */
-    void *stun_pkt = malloc(28);
-    ((uint16_t *) stun_pkt)[0] = (uint16_t) htons(0x0101);
-    ((uint16_t *) stun_pkt)[1] = (uint16_t) htons(28); /* only header + 8 byte addr */
-    /* transaction id - should be random */
-    ((uint32_t *) stun_pkt)[1] = (uint32_t) htonl(0x0f20);
-    ((uint32_t *) stun_pkt)[2] = (uint32_t) htonl(0x0f21);
-    ((uint32_t *) stun_pkt)[3] = (uint32_t) htonl(0x0f11);
+    /* A STUN binding response consists of a 20-byte header followed by at least the address (which is all we include).
+       The header is arranged the same as our generic stun packet, and 20 bytes.
+       The mapped address attribute consists of:
+       First 16 bits are the attribute type. Attribute type 1 is mapped address type.
+       The second 16 bits are the attribute length of the value section. This is 8 for a mapped address.
+       The next 8 bits are the beginning of the value section, and are defined 0.
+       The next 8 bits are the address family. Address family 1 represents IPv4.
+       The next 16 bits are the port numer.
+       The final 32 bits are the IPv4 address as an s_addr. */
+
+    /* 20 byte header + 4 byte attribute header + 8 byte attribute */
+    void *stun_pkt = malloc(32);
+
+    /* First the header. */
+    ((uint16_t *) stun_pkt)[0] = (uint16_t) htons(0x0101); //Set the 00 and the message type to response.
+    ((uint16_t *) stun_pkt)[1] = (uint16_t) htons(8); //Skip the 20 byte header + 8 byte mapped address
+    ((uint32_t *) stun_pkt)[1] = (uint32_t) htonl(0x2112A442); //Magic cookie
+    /* Transaction ID, just some arbitrary numers */
+    ((uint32_t *) stun_pkt)[2] = (uint32_t) htonl(0x0121);
+    ((uint32_t *) stun_pkt)[3] = (uint32_t) htonl(0x0111);
     ((uint32_t *) stun_pkt)[4] = (uint32_t) htonl(0x1010);
-    /* now add address
-     *  0  1    2  3
-     * <INET>  <port>
-     * <inet address>
-     */
 
-    /* THESE SHOULD BE NET ORDER ALREADY */
-    ((uint16_t *) stun_pkt)[10] = AF_INET;
-    ((uint16_t *) stun_pkt)[11] = stun_addr->sin_port;
-    ((uint32_t *) stun_pkt)[6] =  stun_addr->sin_addr.s_addr;
+    /* Now add the mapped address type and length. */
+    ((uint16_t *) stun_pkt)[10] = htons(0x0001); //Set the attribute type mapped address
+    ((uint16_t *) stun_pkt)[11] = htons(8); //Attribute length for mapped address
 
-    *len = 28;
+    /* Now add the value of the mapped address attribute. */
+    ((uint16_t *) stun_pkt)[12] = htons(0x0001); //Set the 00 and the address family
+    ((uint16_t *) stun_pkt)[13] = stun_addr->sin_port; //Set the port
+    ((uint32_t *) stun_pkt)[7] = stun_addr->sin_addr.s_addr;
+
+    *len = 32;
     return stun_pkt;
 }
-
-bool UdpStun_isStunPacket(void *data, int size) {
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::isStunPacket() ?";
-    std::cerr << std::endl;
-#endif
-
-    if (size < 20) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::isStunPacket() (size < 20) -> false";
-        std::cerr << std::endl;
-#endif
-        return false;
-    }
-
-    /* match size field */
-    uint16_t pktsize = ntohs(((uint16_t *) data)[1]);
-    if (size != pktsize) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::isStunPacket() (size != pktsize) -> false";
-        std::cerr << std::endl;
-#endif
-        return false;
-    }
-
-    if ((size == 20) && (0x0001 == ntohs(((uint16_t *) data)[0]))) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::isStunPacket() (size=20 & data[0]=0x0001) -> true";
-        std::cerr << std::endl;
-#endif
-        /* request */
-        return true;
-    }
-
-    if ((size == 28) && (0x0101 == ntohs(((uint16_t *) data)[0]))) {
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::isStunPacket() (size=28 & data[0]=0x0101) -> true";
-        std::cerr << std::endl;
-#endif
-        /* response */
-        return true;
-    }
-    return false;
-}
-
-
-/******************************* STUN Handling ********************************
- * The KeepAlive part - slightly more complicated
- *
- *
- */
-
-#define TOU_STUN_MAX_FAIL_COUNT 10 /* 10 tries (could be higher?) */
-#define TOU_STUN_MAX_SEND_RATE 5  /* every 5  seconds */
-#define TOU_STUN_MAX_RECV_RATE 25 /* every 25 seconds */
-
-/******************************* STUN Handling ********************************/
-
-bool UdpSorter::setStunKeepAlive(uint32_t required) {
-    sortMtx.lock();
-
-    mStunKeepAlive = (required != 0);
-
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::setStunKeepAlive() to: " << mStunKeepAlive;
-    std::cerr << std::endl;
-#endif
-    sortMtx.unlock();
-
-    return 1;
-}
-
-bool    UdpSorter::addStunPeer(const struct sockaddr_in &remote, const char *peerid) {
-    /* add to the list */
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::addStunPeer()";
-    std::cerr << std::endl;
-#endif
-
-    storeStunPeer(remote, peerid);
-
-    sortMtx.lock();
-    bool needStun = (!eaddrKnown);
-    sortMtx.unlock();
-
-    if (needStun) {
-        doStun(remote);
-    }
-
-    return true;
-}
-
-bool    UdpSorter::storeStunPeer(const struct sockaddr_in &remote, const char *peerid) {
-
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::storeStunPeer()";
-    std::cerr << std::endl;
-#endif
-
-    QMutexLocker stack(&sortMtx);
-
-
-    std::list<TouStunPeer>::iterator it;
-    for (it = mStunList.begin(); it != mStunList.end(); it++) {
-        if ((remote.sin_addr.s_addr == it->remote.sin_addr.s_addr) &&
-                (remote.sin_port == it->remote.sin_port)) {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::storeStunPeer() Peer Already There!";
-            std::cerr << std::endl;
-#endif
-            /* already there */
-            return false;
-        }
-    }
-
-    TouStunPeer peer(std::string(peerid), remote);
-    mStunList.push_back(peer);
-
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::storeStunPeer() Added Peer";
-    std::cerr << std::endl;
-#endif
-
-    return true;
-}
-
-
-bool    UdpSorter::checkStunKeepAlive() {
-
-#ifdef DEBUG_UDP_SORTER
-    std::cerr << "UdpSorter::checkStunKeepAlive()";
-    std::cerr << std::endl;
-#endif
-
-    TouStunPeer peer;
-    time_t now;
-    {
-        QMutexLocker stack(&sortMtx);
-
-
-        if (!mStunKeepAlive) {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::checkStunKeepAlive() FALSE";
-            std::cerr << std::endl;
-#endif
-            return false; /* all good */
-        }
-
-        /* check if we need to send one now */
-        now = time(NULL);
-
-        if ((now - mStunLastSend < TOU_STUN_MAX_SEND_RATE) ||
-                (now - mStunLastRecv < TOU_STUN_MAX_RECV_RATE)) {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::checkStunKeepAlive() To Fast ... delaying";
-            std::cerr << std::endl;
-#endif
-            /* too fast */
-            return false;
-        }
-
-        if (mStunList.size() < 1) {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::checkStunKeepAlive() No Peers in List!";
-            std::cerr << std::endl;
-#endif
-            return false;
-        }
-
-        /* extract entry */
-        peer = mStunList.front();
-        mStunList.pop_front();
-    }
-
-    doStun(peer.remote);
-
-    {
-        QMutexLocker stack(&sortMtx);
-
-        if (peer.failCount < TOU_STUN_MAX_FAIL_COUNT) {
-            peer.failCount++;
-            peer.lastsend = now;
-            mStunList.push_back(peer);
-
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::checkStunKeepAlive() pushing Stun peer to back of list";
-            std::cerr << std::endl;
-#endif
-
-        } else {
-#ifdef DEBUG_UDP_SORTER
-            std::cerr << "UdpSorter::checkStunKeepAlive() Discarding bad stun peer";
-            std::cerr << std::endl;
-#endif
-        }
-
-#ifdef DEBUG_UDP_SORTER
-        locked_printStunList();
-#endif
-
-    }
-
-
-    return true;
-}
-
-
-bool    UdpSorter::locked_recvdStun(const struct sockaddr_in &remote, const struct sockaddr_in &extaddr) {
-#ifdef DEBUG_UDP_SORTER
-    std::ostringstream out;
-    out << "UdpSorter::locked_recvdStun() from:";
-    out << inet_ntoa(remote.sin_addr) << ":" << ntohs(remote.sin_port);
-    out << " claiming ExtAddr is:";
-    out << inet_ntoa(extaddr.sin_addr) << ":" << ntohs(extaddr.sin_port);
-
-    std::cerr << out.str() << std::endl;
-#endif
-
-    bool found = true;
-    std::list<TouStunPeer>::iterator it;
-    for (it = mStunList.begin(); it != mStunList.end(); it++) {
-        if ((remote.sin_addr.s_addr == it->remote.sin_addr.s_addr) &&
-                (remote.sin_port == it->remote.sin_port)) {
-            it->failCount = 0;
-            it->eaddr = extaddr;
-            it->response = true;
-
-            found = true;
-            break;
-        }
-    }
-
-#ifdef DEBUG_UDP_SORTER
-    locked_printStunList();
-#endif
-
-    if (!eaddrKnown) {
-        locked_checkExternalAddress();
-    }
-
-    return found;
-}
-
-bool    UdpSorter::locked_checkExternalAddress() {
-#ifdef DEBUG_UDP_SORTER
-    std::ostringstream out;
-    out << "UdpSorter::locked_checkExternalAddress()";
-    std::cerr << out.str() << std::endl;
-#endif
-
-    bool found1 = false;
-    bool found2 = false;
-
-    std::list<TouStunPeer>::iterator it;
-    std::list<TouStunPeer>::iterator p1;
-    std::list<TouStunPeer>::iterator p2;
-    for (it = mStunList.begin(); it != mStunList.end(); it++) {
-        if (it->response && isExternalNet(&(it->eaddr.sin_addr))) {
-            if (!found1) {
-                p1 = it;
-                found1 = true;
-            } else {
-                p2 = it;
-                found2 = true;
-                break;
-            }
-        }
-    }
-
-    if (found1 && found2) {
-        if ((p1->eaddr.sin_addr.s_addr == p2->eaddr.sin_addr.s_addr) &&
-                (p1->eaddr.sin_port == p2->eaddr.sin_port)) {
-            eaddrStable = true;
-        } else {
-            eaddrStable = false;
-        }
-        eaddrKnown = true;
-        eaddr = p1->eaddr;
-
-#ifdef DEBUG_UDP_SORTER
-        std::cerr << "UdpSorter::locked_checkExternalAddress() Found State:";
-        if (eaddrStable)
-            std::cerr << " Stable NAT translation (GOOD!) ";
-        else
-            std::cerr << " unStable (symmetric NAT translation (BAD!) ";
-        std::cerr << std::endl;
-#endif
-
-        return true;
-    }
-
-    return false;
-}
-
-
-
-bool    UdpSorter::locked_printStunList() {
-#ifdef DEBUG_UDP_SORTER
-    std::ostringstream out;
-
-    time_t now = time(NULL);
-    out << "locked_printStunList()" << std::endl;
-    out << "\tLastSend: " << now - mStunLastSend << std::endl;
-    out << "\tLastRecv: " << now - mStunLastRecv << std::endl;
-
-    std::list<TouStunPeer>::iterator it;
-    for (it = mStunList.begin(); it != mStunList.end(); it++) {
-        out << "id:" << Util::BinToHex(it->id) << " addr: " << inet_ntoa(it->remote.sin_addr);
-        out << ":" << htons(it->remote.sin_port);
-        out << " eaddr: " << inet_ntoa(it->eaddr.sin_addr);
-        out << ":" << htons(it->eaddr.sin_port);
-        out << " failCount: " << it->failCount;
-        out << " lastSend: " << now - it->lastsend;
-        out << std::endl;
-    }
-
-    std::cerr << out.str();
-#endif
-
-    return true;
-}
-
-
-
-

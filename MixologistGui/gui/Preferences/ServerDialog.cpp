@@ -51,6 +51,8 @@ ServerDialog::ServerDialog(QWidget *parent)
     if (peers->getPeerDetails(peers->getOwnLibraryMixerId(), detail)) {
         ui.portNumber->setValue(detail.localPort);
     }
+    ui.portNumber->setMinimum(Peers::MIN_PORT);
+    ui.portNumber->setMaximum(Peers::MAX_PORT);
     ui.portNumber->setEnabled(settings.value("Network/PortNumber", DEFAULT_PORT).toInt() != SET_TO_RANDOMIZED_PORT);
 
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
@@ -75,13 +77,6 @@ ServerDialog::ServerDialog(QWidget *parent)
             break;
     }
     ui.netModeComboBox->setCurrentIndex(netIndex);
-
-    /* set dht */
-    netIndex = 1;
-    if (detail.visState & VS_DHT_ON) {
-        netIndex = 0;
-    }
-    ui.dhtComboBox->setCurrentIndex(netIndex);
 
 #endif
 }
@@ -122,16 +117,6 @@ bool ServerDialog::save() {
 
     if (detail.tryNetMode != netMode) {
         peers->setNetworkMode(ownId, netMode);
-    }
-
-    uint32_t visState = 0;
-    /* Check if vis has changed */
-    if (0 == ui.dhtComboBox->currentIndex()) {
-        visState |= VS_DHT_ON;
-    }
-
-    if (visState != detail.visState) {
-        peers->setVisState(ownId, visState);
     }
 
     if (0 != netIndex) {

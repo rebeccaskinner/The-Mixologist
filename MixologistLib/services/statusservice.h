@@ -50,7 +50,7 @@ public:
     /**********************************************************************************
      * Implementations for pqiMonitor
      **********************************************************************************/
-    /* Called by the p3ConnectMgr's tick function with a list of pqipeers whose statuses have changed.
+    /* Called by the ConnectivityManager's tick function with a list of pqipeers whose statuses have changed.
        If action is PEER_CONNECTED, sends an OnConnectStatusItem. */
     virtual void statusChange(const std::list<pqipeer> &plist);
 

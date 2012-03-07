@@ -31,7 +31,7 @@
 #include "serialiser/serial.h"
 #include "serialiser/baseitems.h"  /***** For FileData *****/
 
-#include "pqi/p3connmgr.h" //For updating last heard from stats
+#include "pqi/connectivitymanager.h" //For updating last heard from stats
 
 const int PQISTREAM_ABS_MAX = 900000000; /* ~900 MB/sec (actually per loop) */
 

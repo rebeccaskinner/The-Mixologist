@@ -21,7 +21,7 @@
  ****************************************************************/
 
 #include "pqi/pqipersongrp.h"
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 #include "util/debug.h"
 #include "interface/settings.h"
 #include "interface/peers.h"
@@ -118,7 +118,7 @@ int pqipersongrp::tick() {
 
 /* Initialise pqilistener */
 int pqipersongrp::init_listener() {
-    /* extract our information from the p3ConnectMgr */
+    /* extract our information from the ConnectivityManager */
     if (initFlags & PQIPERSON_NO_LISTENER) {
         pqil = NULL;
     } else {
@@ -133,7 +133,7 @@ int pqipersongrp::init_listener() {
     return 1;
 }
 
-int     pqipersongrp::restart_listener() {
+int pqipersongrp::restart_listener() {
     // stop it,
     // change the address.
     // restart.
@@ -157,7 +157,7 @@ int     pqipersongrp::restart_listener() {
     return 1;
 }
 
-void    pqipersongrp::load_transfer_rates() {
+void pqipersongrp::load_transfer_rates() {
     QSettings settings(*mainSettings, QSettings::IniFormat);
     setMaxRate(true, settings.value("Transfers/MaxTotalDownloadRate", DEFAULT_MAX_TOTAL_DOWNLOAD).toInt());
     setMaxRate(false, settings.value("Transfers/MaxTotalDownloadRate", DEFAULT_MAX_TOTAL_UPLOAD).toInt());
@@ -166,7 +166,7 @@ void    pqipersongrp::load_transfer_rates() {
 }
 
 
-void    pqipersongrp::statusChange(const std::list<pqipeer> &plist) {
+void pqipersongrp::statusChange(const std::list<pqipeer> &plist) {
     /* iterate through, only worry about the friends */
     std::list<pqipeer>::const_iterator it;
     for (it = plist.begin(); it != plist.end(); it++) {
@@ -176,7 +176,7 @@ void    pqipersongrp::statusChange(const std::list<pqipeer> &plist) {
     }
 }
 
-int     pqipersongrp::addPeer(std::string id, unsigned int librarymixer_id) {
+int pqipersongrp::addPeer(std::string id, unsigned int librarymixer_id) {
     {
         std::ostringstream out;
         out << "pqipersongrp::addPeer() cert_id: " << id;
@@ -204,7 +204,7 @@ int     pqipersongrp::addPeer(std::string id, unsigned int librarymixer_id) {
 }
 
 #ifdef false
-int     pqipersongrp::removePeer(std::string id) {
+int pqipersongrp::removePeer(std::string id) {
     std::map<std::string, PQInterface *>::iterator it;
 
     QMutexLocker stack(&coreMtx);
@@ -222,8 +222,8 @@ int     pqipersongrp::removePeer(std::string id) {
 }
 #endif
 
-int     pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer_id) {
-    /* get status from p3connectMgr */
+int pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer_id) {
+    /* get status from ConnectivityManager */
 
     {
         QMutexLocker stack(&coreMtx);
@@ -231,16 +231,16 @@ int     pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer
         it = pqis.find(cert_id);
         if (it == pqis.end()) return 0;
 
-        /* get the connect attempt details from the p3connmgr... */
+        /* get the connect attempt details from the ConnectivityManager. */
         pqiperson *p = (pqiperson *) it->second;
 
-        /* get address from p3connmgr */
+        /* get address from ConnectivityManager */
         if (!connMgr) return 0;
 
         struct sockaddr_in addr;
         uint32_t delay, period, type;
 
-        if (!connMgr->connectAttempt(librarymixer_id, addr, delay, period, type)) {
+        if (!connMgr->getQueuedConnectAttempt(librarymixer_id, addr, delay, period, type)) {
             return 0;
         }
 
@@ -260,13 +260,13 @@ int     pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer
     return 1;
 }
 
-void    pqipersongrp::timeoutPeer(std::string cert_id) {
+void pqipersongrp::timeoutPeer(std::string cert_id) {
     QMutexLocker stack(&coreMtx);
     std::map<std::string, PQInterface *>::iterator it;
     it = pqis.find(cert_id);
     if (it == pqis.end()) return;
 
-    /* get the connect attempt details from the p3connmgr... */
+    /* get the connect attempt details from the ConnectivityManager */
     pqiperson *p = (pqiperson *) it->second;
 
     p->reset();
@@ -280,7 +280,7 @@ bool    pqipersongrp::notifyConnect(std::string id, uint32_t ptype, bool success
         type = NET_CONN_UDP_ALL;
     }
 
-    if (connMgr) connMgr->connectResult(authMgr->findLibraryMixerByCertId(id), success, type);
+    if (connMgr) connMgr->reportConnectionUpdate(authMgr->findLibraryMixerByCertId(id), success, type);
 
     return (NULL != connMgr);
 }

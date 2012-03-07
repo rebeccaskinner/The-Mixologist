@@ -23,7 +23,7 @@
 
 #include "server/p3peers.h"
 #include "server/server.h"
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 #include "pqi/authmgr.h"
 #include <interface/init.h>
 
@@ -33,9 +33,8 @@
 
 #include "pqi/authmgr.h"
 
-/*******
- * #define P3PEERS_DEBUG 1
- *******/
+p3Peers::p3Peers(QString &ownName)
+    :ownName(ownName) {}
 
 /* Peer Details (Net & Auth) */
 std::string p3Peers::getOwnCertId() {
@@ -47,23 +46,20 @@ unsigned int p3Peers::getOwnLibraryMixerId() {
 }
 
 QString p3Peers::getOwnName(){
-    return connMgr->getOwnName();
+    return ownName;
 }
 
 
-bool p3Peers::getOnlineList(std::list<int> &ids) {
+void p3Peers::getOnlineList(std::list<int> &ids) {
     connMgr->getOnlineList(ids);
-    return true;
 }
 
-bool p3Peers::getSignedUpList(std::list<int> &ids) {
+void p3Peers::getSignedUpList(std::list<int> &ids) {
     connMgr->getSignedUpList(ids);
-    return true;
 }
 
-bool p3Peers::getFriendList(std::list<int> &ids) {
+void p3Peers::getFriendList(std::list<int> &ids) {
     connMgr->getFriendList(ids);
-    return true;
 }
 
 bool p3Peers::isOnline(unsigned int librarymixer_id) {
@@ -88,7 +84,6 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
     d.extAddr   = inet_ntoa(pcs.serveraddr.sin_addr);
     d.extPort   = ntohs(pcs.serveraddr.sin_port);
     d.lastConnect   = pcs.lastcontact;
-    d.connectPeriod = 0;
 
     /* Translate */
 
@@ -127,15 +122,6 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
         d.tryNetMode    = NETMODE_UDP;
     }
 
-    d.visState  = 0;
-    /*  if (!(pcs.visState & VIS_STATE_NODISC)) {
-                    d.visState |= VS_DISC_ON;
-        }*/
-
-    if (!(pcs.visState & VIS_STATE_NODHT)) {
-        d.visState |= VS_DHT_ON;
-    }
-
     return true;
 }
 
@@ -148,8 +134,7 @@ unsigned int p3Peers::findLibraryMixerByCertId(std::string cert_id) {
 }
 
 QString p3Peers::getPeerName(unsigned int librarymixer_id) {
-    /* get from authMgr as it should have more peers? */
-    return connMgr->getFriendName(librarymixer_id);
+    return connMgr->getPeerName(librarymixer_id);
 }
 
 /* Add/Remove Friends */
@@ -171,19 +156,12 @@ bool p3Peers::setLocalAddress(unsigned int librarymixer_id, std::string addr_str
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    int ret = 1;
-    /********************************** WINDOWS/UNIX SPECIFIC PART *******************/
 #ifndef WINDOWS_SYS
-    if (ret && (0 != inet_aton(addr_str.c_str(), &(addr.sin_addr))))
+    if (0 == inet_aton(addr_str.c_str(), &(addr.sin_addr))) return false;
 #else
     addr.sin_addr.s_addr = inet_addr(addr_str.c_str());
-    if (ret)
 #endif
-    /********************************** WINDOWS/UNIX SPECIFIC PART *******************/
-    {
-        return connMgr->setLocalAddress(librarymixer_id, addr);
-    }
-    return false;
+    return connMgr->setLocalAddress(librarymixer_id, addr);
 }
 
 bool p3Peers::setExtAddress(unsigned int librarymixer_id, std::string addr_str, uint16_t port) {
@@ -191,19 +169,12 @@ bool p3Peers::setExtAddress(unsigned int librarymixer_id, std::string addr_str, 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    int ret = 1;
-    /********************************** WINDOWS/UNIX SPECIFIC PART *******************/
 #ifndef WINDOWS_SYS
-    if (ret && (0 != inet_aton(addr_str.c_str(), &(addr.sin_addr))))
+    if (0 == inet_aton(addr_str.c_str(), &(addr.sin_addr))) return false;
 #else
     addr.sin_addr.s_addr = inet_addr(addr_str.c_str());
-    if (ret)
 #endif
-    /********************************** WINDOWS/UNIX SPECIFIC PART *******************/
-    {
-        return connMgr->setExtAddress(librarymixer_id, addr);
-    }
-    return false;
+    return connMgr->setExtAddress(librarymixer_id, addr);
 }
 
 
@@ -230,44 +201,7 @@ bool p3Peers::setNetworkMode(unsigned int librarymixer_id, uint32_t extNetMode) 
     return connMgr->setNetworkMode(librarymixer_id, netMode);
 }
 
-
-bool p3Peers::setVisState(unsigned int librarymixer_id, uint32_t extVisState) {
-    uint32_t visState = 0;
-    if (!(extVisState & VS_DHT_ON))
-        visState |= VIS_STATE_NODHT;
-    /*  if (!(extVisState & VS_DISC_ON))
-            visState |= VIS_STATE_NODISC;*/
-
-    return connMgr->setVisState(librarymixer_id, visState);
-}
-
 PeerDetails::PeerDetails()
-    :state(PEER_STATE_OFFLINE), netMode(0), lastConnect(0), connectPeriod(0) {
+    :state(PEER_STATE_OFFLINE), netMode(NETMODE_NONE), lastConnect(0) {
     return;
-}
-
-std::ostream &operator<<(std::ostream &out, const PeerDetails &detail) {
-    out << "PeerDetail: " << detail.name.toStdString() << "  <" << detail.id << ">";
-    out << std::endl;
-
-    out << " fpr:     " << detail.fpr;
-    out << std::endl;
-
-    out << " state:       " << detail.state;
-    out << " netMode:     " << detail.netMode;
-    out << std::endl;
-
-    out << " localAddr:   " << detail.localAddr;
-    out << ":" << detail.localPort;
-    out << std::endl;
-    out << " extAddr:   " << detail.extAddr;
-    out << ":" << detail.extPort;
-    out << std::endl;
-
-
-    out << " lastConnect:       " << detail.lastConnect;
-    out << " connectPeriod:     " << detail.connectPeriod;
-    out << std::endl;
-
-    return out;
 }

@@ -37,7 +37,7 @@ const int ftserverzone = 29539;
 #include "server/librarymixer-friendlibrary.h"
 
 #include "pqi/pqi.h"
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 
 #include "serialiser/serviceids.h"
 

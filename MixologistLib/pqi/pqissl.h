@@ -33,7 +33,7 @@
 
 #include "pqi/pqi_base.h"
 
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 
 #include "pqi/authmgr.h"
 

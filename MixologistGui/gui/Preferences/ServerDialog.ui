@@ -643,20 +643,6 @@
        </spacer>
       </item>
       <item>
-       <widget class="QComboBox" name="dhtComboBox">
-        <item>
-         <property name="text">
-          <string>DHT Enabled</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>DHT Disabled</string>
-         </property>
-        </item>
-       </widget>
-      </item>
-      <item>
        <layout class="QVBoxLayout">
         <item>
          <layout class="QHBoxLayout"/>

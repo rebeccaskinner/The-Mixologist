@@ -24,8 +24,6 @@
 #include "interface/init.h"
 #include "interface/peers.h" //for peers variable
 
-#include "dht/opendhtmgr.h"
-
 #include "util/debug.h"
 #include "util/dir.h"
 #include "util/net.h"
@@ -61,7 +59,7 @@ Files *files = NULL;
 ftServer *ftserver = NULL;
 ftController *fileDownloadController = NULL;
 Control *control = NULL;
-p3ConnectMgr *connMgr = NULL;
+ConnectivityManager *connMgr = NULL;
 AuthMgr *authMgr = NULL;
 Notify *notify = NULL;
 Msgs *msgs = NULL;
@@ -217,7 +215,7 @@ QString Init::InitEncryption(unsigned int _librarymixer_id) {
 
 
 
-Control *Init::createControl(QString name) {
+Control *Init::createControl(QString ownName) {
     Server *server = new Server();
     control = server;
 
@@ -272,9 +270,7 @@ Control *Init::createControl(QString name) {
     /**************************************************************************/
 
     notify = new p3Notify();
-    connMgr = new p3ConnectMgr(name);
-    server->mDhtMgr = new OpenDHTMgr(authMgr->OwnCertId(), connMgr, userdir);
-    connMgr->addNetAssistConnect(server->mDhtMgr);
+    connMgr = new ConnectivityManager();
 
     server->pqih = new pqisslpersongrp(flags);
     connMgr->addMonitor(server->pqih);
@@ -337,7 +333,7 @@ Control *Init::createControl(QString name) {
 
     /* Setup GUI Interfaces. */
 
-    peers = new p3Peers();
+    peers = new p3Peers(ownName);
     msgs = new p3Msgs(chatservice); //not actually for messages, used to be for both chat and messages, now only chat
 
     return server;

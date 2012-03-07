@@ -87,7 +87,7 @@ public:
     bool RemoveCertificate(unsigned int librarymixer_id); */
 
     /**********************************************************************************
-     * Implementations for some of peers's functions.
+     * Body of public-facing API functions called through p3peers
      **********************************************************************************/
     /* Used by the entire application to get own certificate. */
     std::string OwnCertId() {return ownCertificateID;}

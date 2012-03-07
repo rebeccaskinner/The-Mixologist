@@ -32,6 +32,7 @@ const int p3facemsgzone = 11453;
 #include <time.h>
 
 #include "interface/types.h"
+#include "interface/peers.h"
 #include "server/p3msgs.h"
 
 //#include "services/p3msgservice.h"
@@ -78,7 +79,7 @@ bool    p3Msgs::getNewChat(std::list<ChatInfo> &chats) {
 
 void p3Msgs::initChatInfo(ChatMsgItem *c, ChatInfo &i) {
     i.rsid = c -> PeerId();
-    i.name = connMgr->getFriendName(i.rsid);
+    i.name = peers->getPeerName(peers->findLibraryMixerByCertId(i.rsid));
     i.chatflags = 0 ;
     i.msg  = c -> message;
 

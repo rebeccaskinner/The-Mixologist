@@ -71,4 +71,7 @@ int log(unsigned int lvl, int zone, QString msg);
 #define AUTHMGRZONE 38383
 #define CONNECTIONMANAGERZONE 90000
 #define UPNPHANDLERZONE 99283
+#define PQISTUNZONE 99503
+#define UDPLAYERZONE 99510
+#define UDPSORTERZONE 99511
 #endif

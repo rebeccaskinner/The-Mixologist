@@ -22,10 +22,9 @@
 
 /***** Test for the new DHT system *****/
 
-#include "pqi/p3dhtmgr.h"
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 #include "pqi/pqimonitor.h"
-#include "dht/opendhtmgr.h"
+#include "pqi/p3dhtmgr.h"
 
 #include "util/net.h"
 #include "util/print.h"
@@ -40,7 +39,7 @@
 
 #include <QMutex>
 
-#define BOOTSTRAP_DEBUG  1
+//#define BOOTSTRAP_DEBUG  1
 
 void usage(char *name) {
     std::cerr << "USAGE: " << name << " -o OwnId [ -p PeerId1 [ -p PeerId2 [ ... ] ] ] ";
@@ -330,7 +329,7 @@ int main(int argc, char **argv) {
     }
 
     pqiConnectCbStun cbStun;
-    OpenDHTMgr  dhtTester(ownId, &cbStun, ".");
+    p3DhtMgr  dhtTester(ownId, &cbStun);
 
     /* startup dht */
     std::cerr << "Starting up DhtTester()" << std::endl;
@@ -393,7 +392,7 @@ bool stunPeer(struct sockaddr_in toaddr, struct sockaddr_in &ansaddr) {
     int  maxlen = 100;
     int  len = maxlen;
 
-    UdpStun_generate_stun_pkt((void *) stunpkt, &len);
+    UdpStun_generate_stun_request((void *) stunpkt, &len);
 
 #ifdef BOOTSTRAP_DEBUG
     std::cerr << "stunPeer() Send packet length: " << len << std::endl;

@@ -27,7 +27,7 @@
 #include <openssl/sha.h>
 
 #include "pqi/p3dhtmgr.h"
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 
 #include "util/print.h"
 #include "util/debug.h"
@@ -71,9 +71,7 @@ void printDhtPeerEntry(dhtPeerEntry *ent, std::ostream &out);
 /* Interface class for DHT data */
 
 dhtPeerEntry::dhtPeerEntry()
-    :state(DHT_PEER_INIT), lastTS(0),
-     notifyPending(0), notifyTS(0),
-     type(DHT_ADDR_INVALID) {
+    :state(DHT_PEER_INIT), lastTS(0), notifyPending(0), notifyTS(0), type(DHT_ADDR_INVALID) {
     laddr.sin_addr.s_addr = 0;
     laddr.sin_port = 0;
     laddr.sin_family = 0;
@@ -85,8 +83,73 @@ dhtPeerEntry::dhtPeerEntry()
     return;
 }
 
+class dhtSearchData {
+public:
+    p3DhtMgr *mgr;
+    OpenDHTClient *client;
+    std::string key;
+};
+
+
+class dhtPublishData {
+public:
+    p3DhtMgr *mgr;
+    OpenDHTClient *client;
+    std::string key;
+    std::string value;
+    uint32_t    ttl;
+};
+
+/* Thread routines */
+
+extern "C" void *doDhtPublish(void *p) {
+#ifdef OPENDHT_DEBUG
+    std::cerr << "in doDhtPublish(void* p)" << std::endl ;
+#endif
+    dhtPublishData *data = (dhtPublishData *) p;
+    if (data == NULL) {
+        //pthread_exit(NULL);
+        return NULL;
+    }
+
+    /* publish it! */
+    if (data->mgr != NULL && data->client != NULL)
+        data->client->publishKey(data->key, data->value, data->ttl);
+
+    delete data;
+    //pthread_exit(NULL);
+
+    return NULL;
+}
+
+
+extern "C" void *doDhtSearch(void *p) {
+    dhtSearchData *data = (dhtSearchData *) p;
+    if ((!data) || (!data->mgr) || (!data->client)) {
+        //pthread_exit(NULL);
+
+        return NULL;
+    }
+
+    /* search it! */
+    std::list<std::string> values;
+
+    if (data->client->searchKey(data->key, values)) {
+        /* callback */
+        std::list<std::string>::iterator it;
+        for (it = values.begin(); it != values.end(); it++) {
+            data->mgr->resultDHT(data->key, *it);
+        }
+    }
+
+    delete data;
+    //pthread_exit(NULL);
+
+    return NULL;
+}
+
 p3DhtMgr::p3DhtMgr(std::string id, pqiConnectCb *cb)
-    :pqiNetAssistConnect(id, cb), mStunRequired(true) {
+    :mPeerId(id), mConnCb(cb), mStunRequired(true) {
     /* setup own entry */
     dhtMtx.lock();
 
@@ -115,15 +178,6 @@ p3DhtMgr::p3DhtMgr(std::string id, pqiConnectCb *cb)
 
 /* OVERLOADED from pqiNetAssistConnect
  */
-
-void    p3DhtMgr::shutdown() {
-    /* ??? */
-
-}
-
-void    p3DhtMgr::restart() {
-    /* ??? */
-}
 
 void    p3DhtMgr::enable(bool on) {
     dhtMtx.lock();
@@ -283,28 +337,16 @@ bool p3DhtMgr::dropPeer(std::string id) {
 /* post DHT key saying we should connect */
 bool p3DhtMgr::notifyPeer(std::string id) {
     QMutexLocker stack(&dhtMtx);
-#ifdef DHT_DEBUG
-    std::cerr << "p3DhtMgr::notifyPeer() " << id << std::endl;
-#endif
 
     std::map<std::string, dhtPeerEntry>::iterator it;
     it = peers.find(id);
-    if (it == peers.end()) {
-        return false;
-    }
+    if (it == peers.end()) return false;
+
     /* ignore OFF peers */
-    if (it->second.state == DHT_PEER_OFF) {
-        return false;
-    }
+    if (it->second.state == DHT_PEER_OFF) return false;
 
-
-    time_t now = time(NULL);
-
-    if (now - it->second.notifyTS < 2 * DHT_NOTIFY_PERIOD) {
+    if (time(NULL) - it->second.notifyTS < 2 * DHT_NOTIFY_PERIOD) {
         /* drop the notify (too soon) */
-#ifdef DHT_DEBUG
-        std::cerr << "p3DhtMgr::notifyPeer() TO SOON - DROPPING" << std::endl;
-#endif
         {
             /* Log */
             std::ostringstream out;
@@ -320,9 +362,6 @@ bool p3DhtMgr::notifyPeer(std::string id) {
 
     /* Trigger search if not found! */
     if (it->second.state != DHT_PEER_FOUND) {
-#ifdef DHT_DEBUG
-        std::cerr << "p3DhtMgr::notifyPeer() PEER NOT FOUND - Trigger search" << std::endl;
-#endif
         {
             /* Log */
             std::ostringstream out;
@@ -390,10 +429,8 @@ bool p3DhtMgr::enableStun(bool on) {
 
     mDhtModifications = true;
 
-    if (!on) {
-        /* clear up */
-        stunIds.clear();
-    }
+    /* clear up */
+    if (!on) stunIds.clear();
 
     mStunRequired = on;
 
@@ -404,66 +441,32 @@ bool p3DhtMgr::enableStun(bool on) {
 
 
 void p3DhtMgr::run() {
-    /*
-     *
-     */
-
     while (1) {
-        //checkDHTStatus();
-
-
-#ifdef DHT_DEBUG
-        status(std::cerr);
-#endif
-
         dhtMtx.lock();
-
         uint32_t dhtState = mDhtState;
-
         dhtMtx.unlock();
 
         int period = 60; /* default wait */
         switch (dhtState) {
             case DHT_STATE_INIT:
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() state = INIT -> wait" << std::endl;
-#endif
                 period = 10;
                 break;
             case DHT_STATE_CHECK_PEERS:
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() state = CHECK_PEERS -> do stuff" << std::endl;
-#endif
                 checkPeerDHTKeys();
                 checkStunState();
                 period = DHT_MIN_PERIOD;
                 break;
             case DHT_STATE_FIND_STUN:
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() state = FIND_STUN -> do stuff" << std::endl;
-#endif
                 doStun();
                 checkPeerDHTKeys(); /* keep on going - as we could be in this state for a while */
                 checkStunState();
                 period = DHT_MIN_PERIOD;
                 break;
             case DHT_STATE_ACTIVE: {
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() state = ACTIVE -> do stuff" << std::endl;
-#endif
 
                 period = checkOwnDHTKeys();
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() checkOwnDHTKeys() period: " << period << std::endl;
-#endif
                 int tmpperiod = checkNotifyDHT();
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() checkNotifyDHT() period: " << tmpperiod << std::endl;
-#endif
                 int tmpperiod2 = checkPeerDHTKeys();
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() checkPeerDHTKeys() period: " << tmpperiod2 << std::endl;
-#endif
                 if (tmpperiod < period)
                     period = tmpperiod;
                 if (tmpperiod2 < period)
@@ -480,16 +483,9 @@ void p3DhtMgr::run() {
             break;
             default:
             case DHT_STATE_OFF:
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() state = OFF -> wait" << std::endl;
-#endif
                 period = 60;
                 break;
         }
-
-#ifdef DHT_DEBUG
-        std::cerr << "p3DhtMgr::run() sleeping for: " << period << std::endl;
-#endif
 
         /* Breakable sleep loop */
 
@@ -512,13 +508,7 @@ void p3DhtMgr::run() {
 
             dhtMtx.unlock();
 
-            if (toBreak) {
-#ifdef DHT_DEBUG
-                std::cerr << "p3DhtMgr::run() breaking sleep" << std::endl;
-#endif
-
-                break; /* speed up config modifications */
-            }
+            if (toBreak) break; /* speed up config modifications */
 
             /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #ifndef WINDOWS_SYS
@@ -1193,28 +1183,84 @@ int  p3DhtMgr::status(std::ostream &out) {
 
 
 bool p3DhtMgr::dhtInit() {
-    std::cerr << "p3DhtMgr::dhtInit() DUMMY FN" << std::endl;
     return true;
+#ifdef false
+    QString configpath = mConfigDir;
+
+    /* load up DHT gateways */
+    mClient = new OpenDHTClient();
+
+    QString filename = configpath;
+    if (configpath.size() > 0) {
+        filename += "/";
+    }
+    filename += "ODHTservers.txt";
+
+    /* check file date first */
+    if (mClient -> checkServerFile(filename)) {
+        return mClient -> loadServers(filename);
+    } else if (!mClient -> loadServersFromWeb(filename)) {
+        return mClient -> loadServers(filename);
+    }
+    return true;
+#endif
 }
 
 bool p3DhtMgr::dhtShutdown() {
-    std::cerr << "p3DhtMgr::dhtShutdown() DUMMY FN" << std::endl;
-    return true;
+    /* do nothing */
+    if (mClient) {
+        delete mClient;
+        mClient = NULL;
+        return true;
+    }
+
+    return false;
 }
 
 bool p3DhtMgr::dhtActive() {
-    std::cerr << "p3DhtMgr::dhtActive() DUMMY FN" << std::endl;
+    /* do nothing */
+    if ((mClient) && (mClient -> dhtActive())) {
+        return true;
+    }
+    return false;
+}
+
+bool p3DhtMgr::publishDHT(std::string key, std::string value, uint32_t ttl) {
+    /* launch a publishThread */
+    //pthread_t tid;
+
+#ifdef OPENDHT_DEBUG
+    std::cerr << "in publishDHT(.......)" << std::endl ;
+#endif
+
+    dhtPublishData *pub = new dhtPublishData;
+    pub->mgr = this;
+    pub->client = mClient;
+    pub->key = key;
+    pub->value = value;
+    pub->ttl = ttl;
+
+    //void *data = (void *) pub;
+    //pthread_create(&tid, 0, &doDhtPublish, data);
+    //pthread_detach(tid); /* so memory is reclaimed in linux */
+
     return true;
 }
 
-bool p3DhtMgr::publishDHT(std::string, std::string, uint32_t) {
-    std::cerr << "p3DhtMgr::publishDHT() DUMMY FN" << std::endl;
-    return false;
-}
+bool p3DhtMgr::searchDHT(std::string key) {
+    /* launch a publishThread */
+    //pthread_t tid;
 
-bool p3DhtMgr::searchDHT(std::string) {
-    std::cerr << "p3DhtMgr::searchDHT() DUMMY FN" << std::endl;
-    return false;
+    dhtSearchData *dht = new dhtSearchData;
+    dht->mgr = this;
+    dht->client = mClient;
+    dht->key = key;
+
+    //void *data = (void *) dht;
+    //pthread_create(&tid, 0, &doDhtSearch, data);
+    //pthread_detach(tid); /* so memory is reclaimed in linux */
+
+    return true;
 }
 
 
@@ -1281,10 +1327,6 @@ bool p3DhtMgr::dhtPublish(std::string idhash,
 }
 
 bool p3DhtMgr::dhtNotify(std::string idhash, std::string ownIdHash, std::string) {
-#ifdef DHT_DEBUG
-    std::cerr << "p3DhtMgr::dhtNotify()" << std::endl;
-#endif
-
     std::ostringstream value;
     value << "RSDHT:" << std::setw(2) << std::setfill('0') << DHT_MODE_NOTIFY << ":";
     value << ownIdHash;
@@ -1294,10 +1336,6 @@ bool p3DhtMgr::dhtNotify(std::string idhash, std::string ownIdHash, std::string)
 }
 
 bool p3DhtMgr::dhtSearch(std::string idhash, uint32_t) {
-#ifdef DHT_DEBUG
-    std::cerr << "p3DhtMgr::dhtSearch()" << std::endl;
-#endif
-
     /* call to the real DHT */
     return searchDHT(idhash);
 }

@@ -44,7 +44,6 @@
 class MixologyService;
 class LibraryMixerItem;
 
-class p3ConnectMgr;
 class AuthMgr;
 
 class NotifyBase; /* needed by FiStore */

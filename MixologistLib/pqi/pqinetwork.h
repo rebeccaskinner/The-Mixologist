@@ -45,6 +45,10 @@
  *
  */
 
+/* This is needed to silence warnings from windef.h in mingw */
+//#ifdef _WIN32_WINNT
+//#undef _WIN32_WINNT
+//#endif
 #define _WIN32_WINNT 0x0501
 
 #include "util/net.h" /* more generic networking header */
@@ -103,16 +107,20 @@ int sockaddr_cmp(struct sockaddr_in &addr1, struct sockaddr_in &addr2 );
 int inaddr_cmp(struct sockaddr_in addr1, struct sockaddr_in addr2 );
 int inaddr_cmp(struct sockaddr_in addr1, unsigned long);
 
-/* Picks and returns the best address out of local interfaces. */
+/* Picks and returns the best address out of local interfaces.
+   Steps through the interfaces, and returns the first external address we come across.
+   If there is no external address, return the first private address we come across.
+   If there is no private address, returns loopback address.
+   In the case of Windows, if there is an all 0 address, returns it instead of loopback. */
 struct in_addr getPreferredInterface();
 
 /* Returns all local interfaces. */
 std::list<std::string> getLocalInterfaces();
 
 /* True if the two addresses are on the same subnet, i.e. (addr1 & 255.255.255.0) == (addr2 & 255.255.255.0) */
-bool    isSameSubnet(struct in_addr *addr1, struct in_addr *addr2);
+bool isSameSubnet(struct in_addr *addr1, struct in_addr *addr2);
 /* True if the two addresses are the same, both in IP and port. */
-bool    isSameAddress(struct sockaddr_in *addr, struct sockaddr_in *addr2);
+bool isSameAddress(struct sockaddr_in *addr, struct sockaddr_in *addr2);
 
 in_addr_t pqi_inet_netof(struct in_addr addr); // our implementation.
 
@@ -126,12 +134,9 @@ int unix_fcntl_nonblock(int sockfd);
 int unix_connect(int sockfd, const struct sockaddr *serv_addr, socklen_t addrlen);
 int unix_getsockopt_error(int sockfd, int *err);
 
-#ifdef WINDOWS_SYS // WINDOWS
-/******************* WINDOWS SPECIFIC PART ******************/
+#ifdef WINDOWS_SYS
 int     WinToUnixError(int error);
-#endif
+#endif //WINDOWS_SYS
 
-
-
-#endif
+#endif //MRK_PQI_NETWORKING_HEADER
 

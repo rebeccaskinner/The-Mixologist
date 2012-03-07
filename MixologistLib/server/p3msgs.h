@@ -25,7 +25,6 @@
 
 #include "interface/msgs.h"
 
-class p3ConnectMgr;
 class p3ChatService;
 
 class ChatMsgItem;

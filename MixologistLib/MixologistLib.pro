@@ -61,14 +61,15 @@ DEFINES *= MINIUPNPC_VERSION=14
 
 SSL_DIR= ../ThirdParty/src/openssl-1.0.0a
 UPNPC_DIR= ../ThirdParty/src/miniupnpc-1.4.20100202
+PJLIB_DIR = ../ThirdParty/src/pjproject-1.12/pjlib
+PJLIBUTIL_DIR = ../ThirdParty/src/pjproject-1.12/pjlib-util
+PJNATH_DIR = ../ThirdParty/src/pjproject-1.12/pjnath
 
-INCLUDEPATH += . $${SSL_DIR}/include $${UPNPC_DIR}
+INCLUDEPATH += . $${SSL_DIR}/include $${UPNPC_DIR} $${PJNATH_DIR}/include $${PJLIB_DIR}/include $${PJLIBUTIL_DIR}/include
 
 # Input
 HEADERS += dht/b64.h \
-           dht/dhtclient.h \
            dht/opendht.h \
-           dht/opendhtmgr.h \
            dht/opendhtstr.h \
            ft/ftcontroller.h \
            ft/fttransfermodule.h \
@@ -83,13 +84,11 @@ HEADERS += dht/b64.h \
            ft/ftserver.h \
            ft/ftborrower.h \
            pqi/authmgr.h \
-           pqi/p3connmgr.h \
+           pqi/connectivitymanager.h \
            pqi/p3dhtmgr.h \
            pqi/p3notify.h \
-           pqi/p3upnpmgr.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
-           pqi/pqiassist.h \
            pqi/pqihandler.h \
            pqi/pqihash.h \
            pqi/pqilistener.h \
@@ -133,6 +132,7 @@ HEADERS += dht/b64.h \
            services/statusservice.h \
            services/p3chatservice.h \
            services/p3service.h \
+           stun/stunhandler.h \
            tcponudp/bio_tou.h \
            tcponudp/tcppacket.h \
            tcponudp/tcpstream.h \
@@ -171,7 +171,6 @@ SOURCES = \
 				ft/ftfilewatcher.cc \
 				ft/ftborrower.cc \
                                 upnp/upnputil.cc \
-				dht/opendhtmgr.cc \
 				upnp/upnphandler.cc \
 				dht/opendht.cc \
 				dht/opendhtstr.cc \
@@ -190,7 +189,7 @@ SOURCES = \
 				pqi/pqisslpersongrp.cc \
 				pqi/pqissllistener.cc \
 				pqi/pqissl.cc \
-				pqi/p3connmgr.cc \
+                                pqi/connectivitymanager.cc \
 				pqi/p3dhtmgr.cc \
 				pqi/pqistreamer.cc \
 				pqi/pqiloopback.cc \
@@ -204,6 +203,7 @@ SOURCES = \
 				serialiser/tlvtypes.cc \
                                 serialiser/tlvfileitem.cc \
 				serialiser/serial.cc \
+                                stun/stunhandler.cc \
                                 tcponudp/bss_tou.cc \
 				tcponudp/tcpstream.cc \
 				tcponudp/tou.cc \

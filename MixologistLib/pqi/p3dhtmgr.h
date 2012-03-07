@@ -28,10 +28,9 @@
 #include <string>
 #include <map>
 #include "pqi/pqinetwork.h"
+#include "dht/opendht.h"
 
 #include "pqi/pqimonitor.h"
-
-#include "pqi/pqiassist.h"
 
 #include <QThread>
 #include <QMutex>
@@ -43,7 +42,7 @@
 
 
 /* for DHT peer STATE */
-#define DHT_PEER_OFF            0
+#define DHT_PEER_OFF            0 /* Peer is not to be contacted with notifyPeer at least */
 #define DHT_PEER_INIT           1
 #define DHT_PEER_SEARCH         2
 #define DHT_PEER_FOUND          3
@@ -89,7 +88,7 @@ public:
     std::string hash2; /* SHA1 Hash of reverse Id */
 };
 
-class p3DhtMgr: public pqiNetAssistConnect, public QThread {
+class p3DhtMgr: public QThread {
     /*
      */
 public:
@@ -103,8 +102,6 @@ public:
     /* OVERLOADED From pqiNetAssistConnect. */
 
     virtual void enable(bool on);
-    virtual void shutdown();
-    virtual void restart();
 
     virtual bool getEnabled(); /* on */
     virtual bool getActive();  /* actually working */
@@ -155,6 +152,9 @@ protected:
                             struct sockaddr_in &raddr,
                             uint32_t type, std::string sign);
 
+    /* publish notification (publish Our Id)
+     * We publish the connection attempt with key equal to peers hash,
+     * using our own hash as the value. */
     virtual bool dhtNotify(std::string peerid, std::string ownId,
                            std::string sign);
 
@@ -181,12 +181,18 @@ public:
 
 protected:
 
+    /* Creates the openDHTClient and has it read in the openDHT server list. */
     virtual bool    dhtInit();
+    /* Kills the openDHTClient. */
     virtual bool    dhtShutdown();
+    /* True if connected to the open DHT server network. */
     virtual bool    dhtActive();
     virtual int     status(std::ostream &out);
 
+    /* Publishes a key value paid into the open DHT network. */
     virtual bool publishDHT(std::string key, std::string value, uint32_t ttl);
+
+    /* Retrieves the values associated with a key from the open DHT network. */
     virtual bool searchDHT(std::string key);
 
 
@@ -212,6 +218,9 @@ private:
 
     void    clearDhtData();
 
+    std::string  mPeerId;
+    pqiConnectCb *mConnCb;
+
     /* IP Bootstrap */
     bool    getDhtBootstrapList();
     std::string BootstrapId(uint32_t bin);
@@ -223,21 +232,29 @@ private:
     /* protected by Mutex */
     mutable QMutex dhtMtx;
 
-    bool     mDhtOn; /* User desired state */
-    bool     mDhtModifications; /* any user requests? */
+    bool mDhtOn; /* User desired state */
+    /* True when there are orders from higher-up for the DHT manager to do something. */
+    bool mDhtModifications;
 
     dhtPeerEntry ownEntry;
     time_t ownNotifyTS;
     std::map<std::string, dhtPeerEntry> peers;
 
+    /* List of friend ids that have been added. */
     std::list<std::string> stunIds;
-    bool     mStunRequired;
 
+    /* Whether we need to send out stun messages. */
+    bool mStunRequired;
+
+    /* The current state of the mDht. */
     uint32_t mDhtState;
+
     time_t   mDhtActiveTS;
 
     bool   mBootstrapAllowed;
     time_t mLastBootstrapListTS;
+
+    OpenDHTClient *mClient;
 };
 
 

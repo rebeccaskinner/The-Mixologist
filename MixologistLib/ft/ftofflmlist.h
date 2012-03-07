@@ -126,7 +126,7 @@ public:
     /* Returns the number of friends we have off LibraryMixer share information for. */
     int getOffLMShareFriendCount() const;
 
-    /* Called by the ftController (passing from p3ConnectMgr) to inform about changes in friends' online statuses. */
+    /* Called by the ftController (passing from the ConnectivityManager) to inform about changes in friends' online statuses. */
     void statusChange(const std::list<pqipeer> &changeList);
 
     /**********************************************************************************

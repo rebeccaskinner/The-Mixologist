@@ -26,12 +26,10 @@
 // for blocking signals
 #include <signal.h>
 #include "util/debug.h"
-#include "upnp/upnphandler.h"
-#include "dht/opendhtmgr.h"
 #include "pqi/pqisslpersongrp.h"
 #include "pqi/pqiloopback.h"
 #include "ft/ftcontroller.h"
-#include "pqi/p3connmgr.h"
+#include "pqi/connectivitymanager.h"
 /* Implemented Rs Interfaces */
 #include "server/p3peers.h"
 #include "server/p3msgs.h"
@@ -49,7 +47,6 @@
 bool Server::StartupMixologist() {
     ftserver->StartupThreads();
     ftserver->ResumeTransfers();
-    mDhtMgr->start();
 
     this->start();
 
@@ -149,7 +146,7 @@ void Server::run() {
                 lastSec = (int) ts;
 
                 // Every second! (UDP keepalive).
-                tou_tick_stunkeepalive();
+                TCP_over_UDP_tick_stunkeepalive();
 
             } // end of slow tick.
 

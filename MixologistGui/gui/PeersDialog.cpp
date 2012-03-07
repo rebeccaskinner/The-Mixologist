@@ -155,13 +155,13 @@ void  PeersDialog::insertPeers() {
         QTreeWidgetItem *item = new QTreeWidgetItem(ui.friendsList, 0);
 
         /* add all the labels */
-        item -> setTextColor(FRIEND_ICON_AND_SORT_COLUMN, Qt::transparent);
+        item->setTextColor(FRIEND_ICON_AND_SORT_COLUMN, Qt::transparent);
 
-        item -> setText(FRIEND_NAME_COLUMN, detail.name);
+        item->setText(FRIEND_NAME_COLUMN, detail.name);
 
         /* Hidden column: LibraryMixer ID */
         {
-            item -> setText(FRIEND_LIBRARYMIXER_ID_COLUMN, QString::number(detail.librarymixer_id));
+            item->setText(FRIEND_LIBRARYMIXER_ID_COLUMN, QString::number(detail.librarymixer_id));
             if ((selected) && (selected_librarymixer_id == detail.librarymixer_id)) {
                 newSelect = item;
             }
@@ -171,36 +171,36 @@ void  PeersDialog::insertPeers() {
         int i;
         if (detail.state == PEER_STATE_CONNECTED) {
             for (i = 1; i <= 2; i++) {
-                item -> setTextColor(i,(Qt::darkCyan));
+                item->setTextColor(i,(Qt::darkCyan));
                 QFont font;
                 font.setBold(true);
-                item -> setFont(i,font);
-                item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTED)));
-                item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("1").append(detail.name.toLower()));
-                item -> setText(FRIEND_STATUS_COLUMN, QString("Connected"));
+                item->setFont(i,font);
+                item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTED)));
+                item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("1").append(detail.name.toLower()));
+                item->setText(FRIEND_STATUS_COLUMN, QString("Connected"));
             }
         } else if (detail.state == PEER_STATE_TRYING) {
-            item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
-            item -> setText(FRIEND_STATUS_COLUMN, QString("Trying"));
+            item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
+            item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
+            item->setText(FRIEND_STATUS_COLUMN, QString("Trying"));
         } else if (detail.state == PEER_STATE_WAITING_FOR_RETRY) {
-            item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
+            item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
+            item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
             QSettings settings(*mainSettings, QSettings::IniFormat, this);
             if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
-                item -> setText(FRIEND_STATUS_COLUMN, QString("Continuing"));
+                item->setText(FRIEND_STATUS_COLUMN, QString("Continuing"));
             } else {
-                item -> setText(FRIEND_STATUS_COLUMN, QString("Trying"));
+                item->setText(FRIEND_STATUS_COLUMN, QString("Trying"));
             }
         } else if (detail.state == PEER_STATE_NO_CERT) {
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("4").append(detail.name.toLower()));
-            item -> setText(FRIEND_STATUS_COLUMN, QString("Not signed up for the Mixologist"));
-            item -> setTextColor(FRIEND_NAME_COLUMN, Qt::lightGray);
-            item -> setTextColor(FRIEND_STATUS_COLUMN, Qt::lightGray);
+            item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("4").append(detail.name.toLower()));
+            item->setText(FRIEND_STATUS_COLUMN, QString("Not signed up for the Mixologist"));
+            item->setTextColor(FRIEND_NAME_COLUMN, Qt::lightGray);
+            item->setTextColor(FRIEND_STATUS_COLUMN, Qt::lightGray);
         } else {
-            item -> setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_OFFLINE)));
-            item -> setText(FRIEND_ICON_AND_SORT_COLUMN, QString("3").append(detail.name.toLower()));
-            item -> setText(FRIEND_STATUS_COLUMN, QString("Offline"));
+            item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_OFFLINE)));
+            item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("3").append(detail.name.toLower()));
+            item->setText(FRIEND_STATUS_COLUMN, QString("Offline"));
         }
 
         /* add to the list */
@@ -387,17 +387,17 @@ void PeersDialog::insertUserOptional(unsigned int librarymixer_id, int code, QSt
 
 /* Utility Fns */
 QString PeersDialog::getPeerName(QTreeWidgetItem *selection) {
-    return selection -> text(FRIEND_NAME_COLUMN);
+    return selection->text(FRIEND_NAME_COLUMN);
 }
 
 int PeersDialog::getFriendLibraryMixerId(QTreeWidgetItem *selection) {
-    return (selection -> text(FRIEND_LIBRARYMIXER_ID_COLUMN)).toInt();
+    return (selection->text(FRIEND_LIBRARYMIXER_ID_COLUMN)).toInt();
 }
 
 QTreeWidgetItem *PeersDialog::getCurrentPeer() {
     /* get a link to the table */
     QTreeWidget *peerWidget = ui.friendsList;
-    QTreeWidgetItem *item = peerWidget -> currentItem();
+    QTreeWidgetItem *item = peerWidget->currentItem();
     if (!item) return NULL;
     return item;
 }

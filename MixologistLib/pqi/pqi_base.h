@@ -35,13 +35,6 @@
 /*** Base DataTypes: ****/
 #include "serialiser/serial.h"
 
-
-#define PQI_MIN_PORT 1024
-#define PQI_MAX_PORT 50000
-#define PQI_MIN_RAND_PORT 10000
-#define PQI_MAX_RAND_PORT 30000
-#define PQI_DEFAULT_PORT 1680
-
 /**** Consts for pqiperson */
 
 const uint32_t PQI_CONNECT_TCP = 0x0001;

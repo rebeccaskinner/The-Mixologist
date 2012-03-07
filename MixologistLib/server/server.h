@@ -31,13 +31,7 @@
 The main thread that does most of the work, and implements the Control interface in iface.h that provides high-level control over MixologistLib.
 */
 
-class p3ConnectMgr;
-class AuthMgr;
 class pqipersongrp;
-class pqiNetAssistFirewall;
-class p3DhtMgr;
-class p3ChatService;
-class ftServer;
 
 class Server: public Control, public QThread {
 public:
@@ -81,7 +75,6 @@ public:
 
     //These important public variables hold pointers to the single instances of each of the below
     pqipersongrp *pqih;
-    p3DhtMgr  *mDhtMgr;
 
     friend class Init;
 };

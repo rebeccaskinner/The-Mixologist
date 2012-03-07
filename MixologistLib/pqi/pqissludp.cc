@@ -113,7 +113,7 @@ int     pqissludp::Initiate_Connection() {
         "pqissludp::Initiate_Connection() Attempting Outgoing Connection....");
 
     /* decide if we're active or passive */
-    if (PeerId() < connMgr->getOwnCertId()) {
+    if (PeerId() < authMgr->OwnCertId()) {
         sslmode = PQISSL_ACTIVE;
     } else {
         sslmode = PQISSL_PASSIVE;

@@ -24,7 +24,6 @@
 
 /* platform independent networking... */
 #include "pqi/pqinetwork.h"
-#include "pqi/pqiassist.h"
 #include "upnp/upnputil.h"
 
 #include <QObject>
@@ -42,31 +41,31 @@
 class UPnPConfigData;
 class UPnPAsynchronizer;
 
-class upnphandler: public pqiNetAssistFirewall {
+class upnphandler {
 public:
 
     upnphandler();
-    virtual ~upnphandler(){};
+    ~upnphandler(){};
 
     /* Asynchronous call to enable or disable UPNP. */
-    virtual void enable(bool on);
+    void enable(bool on);
     /* Blocking call to disable UPNP and remove all forwardings. */
-    virtual void shutdown();
+    void shutdown();
     /* Asynchronous call to disable UPNP, removing all forwardings, and restart it. */
-    virtual void restart();
+    void restart();
 
     /* True if UPNP has been set to enabled. */
-    virtual bool getEnabled();
+    bool getEnabled();
     /* True if UPNP has successfully started and is working properly. */
-    virtual bool getActive();
+    bool getActive();
 
     /* The address that the listening port is on. */
-    virtual void setInternalPort(unsigned short newPort);
-    virtual void setExternalPort(unsigned short newPort);
+    void setInternalPort(unsigned short newPort);
+    void setExternalPort(unsigned short newPort);
 
     /* Addresses as determined by uPnP. */
-    virtual bool getInternalAddress(struct sockaddr_in &addr);
-    virtual bool getExternalAddress(struct sockaddr_in &addr);
+    bool getInternalAddress(struct sockaddr_in &addr);
+    bool getExternalAddress(struct sockaddr_in &addr);
 
 private:
 

@@ -22,23 +22,18 @@
 
 #include "tou.h"
 
-static  const int kInitStreamTable = 5;
-
 #include <stdlib.h>
 #include <string.h>
 
 #include "udplayer.h"
 #include "tcpstream.h"
+#include "tcponudp/tou_net.h"
+
 #include <vector>
 #include <iostream>
 
 #include <errno.h>
 #include <time.h>
-
-#define DEBUG_TOU_INTERFACE 1
-/***
- *#define DEBUG_TOU_INTERFACE 1
- **/
 
 struct TcpOnUdp_t {
     int tou_fd;
@@ -49,73 +44,69 @@ struct TcpOnUdp_t {
 
 typedef struct TcpOnUdp_t TcpOnUdp;
 
-static  std::vector<TcpOnUdp *> tou_streams;
+static std::vector<TcpOnUdp *> tou_streams;
 
-static  int tou_inited = 0;
-static  UdpSorter *udps = NULL;
+/* If we have already called TCP_over_UDP_init. */
+static bool touInitDone = false;
 
-static int  tou_tick_all();
+/* The UdpSorter that is our underlying network transport. */
+static UdpSorter *udpSorter = NULL;
 
-/*  tou_init - opens the udp port (universal bind) */
-int     tou_init(const struct sockaddr *my_addr, socklen_t) {
-    if (tou_inited)
-        return 1;
+static int tou_tick_all();
 
-    tou_streams.resize(kInitStreamTable);
+bool TCP_over_UDP_init(const struct sockaddr *my_addr, socklen_t) {
+    if (touInitDone) return true;
 
-    udps = new UdpSorter( *((struct sockaddr_in *) my_addr));
+    /* Initialize with size 5. */
+    tou_streams.resize(5);
+
+    /* Initialize the underlying network transport. */
+    udpSorter = new UdpSorter( *((struct sockaddr_in *) my_addr));
 
     /* check the bind succeeded */
-    if (!(udps->okay())) {
-        delete (udps);
-        udps = NULL;
-        return -1;
+    if (!(udpSorter->okay())) {
+        delete (udpSorter);
+        udpSorter = NULL;
+        return false;
     }
 
-    tou_inited = 1;
-    return 1;
+    touInitDone = true;
+    return true;
 }
 
-/*  tou_stunpeer supply tou with stun peers. */
-int     tou_stunpeer(const struct sockaddr *my_addr, socklen_t,
-                     const char *id) {
-    if (!tou_inited)
-        return -1;
+int TCP_over_UDP_add_stunpeer(const struct sockaddr *my_addr, socklen_t, const char *id) {
+    if (!touInitDone) return -1;
 
-    udps->addStunPeer(*(struct sockaddr_in *) my_addr, id);
+    udpSorter->addStunPeer(*(struct sockaddr_in *) my_addr, id);
     return 0;
 }
 
-int     tou_stunkeepalive(int required) {
-    if (!tou_inited)
-        return -1;
+int TCP_over_UDP_set_stunkeepalive(bool enabled) {
+    if (!touInitDone) return -1;
 
-    udps->setStunKeepAlive(required);
+    udpSorter->setStunKeepAlive(enabled);
     return 1;
 }
 
-int     tou_tick_stunkeepalive() {
-    if (!tou_inited)
-        return -1;
+int TCP_over_UDP_tick_stunkeepalive() {
+    if (!touInitDone) return -1;
 
-    udps->tick();
+    udpSorter->tick();
     return 1;
 }
 
-int     tou_extaddr(struct sockaddr *ext_addr, socklen_t *, uint8_t *stable) {
-    if (!tou_inited)
-        return -1;
+int TCP_over_UDP_read_extaddr(struct sockaddr *ext_addr, socklen_t *, uint8_t *stable) {
+    if (!touInitDone) return -1;
 
-    if (udps->externalAddr(*(struct sockaddr_in *) ext_addr, *stable)) {
-        return 1;
-    }
+    if (udpSorter->readExternalAddress(*(struct sockaddr_in *) ext_addr, *stable)) return 1;
+
     return 0;
 }
 
 
 /*  open - which does nothing */
-int     tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
-    if (!tou_inited) {
+int tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
+    if (!touInitDone) {
         return -1;
     }
 
@@ -141,15 +132,10 @@ int     tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
     tou -> lasterrno = EUSERS;
 
     return -1;
-
-#ifdef DEBUG_TOU_INTERFACE
-    std::cerr << "tou_socket() FAILED" << std::endl;
-    exit(1);
-#endif
 }
 
 /*  bind - opens the udp port */
-int     tou_bind(int sockfd, const struct sockaddr *,
+int tou_bind(int sockfd, const struct sockaddr *,
                  socklen_t) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
@@ -169,7 +155,7 @@ int     tou_bind(int sockfd, const struct sockaddr *,
  *      will return -1 EAGAIN, until connection complete.
  *      - always non blocking.
  */
-int     tou_connect(int sockfd, const struct sockaddr *serv_addr,
+int tou_connect(int sockfd, const struct sockaddr *serv_addr,
                     socklen_t addrlen, uint32_t conn_period) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
@@ -184,8 +170,8 @@ int     tou_connect(int sockfd, const struct sockaddr *serv_addr,
 
     /* create a TCP stream to connect with. */
     if (!tous->tcp) {
-        tous->tcp = new TcpStream(udps);
-        udps->addUdpPeer(tous->tcp,
+        tous->tcp = new TcpStream(udpSorter);
+        udpSorter->addUdpPeer(tous->tcp,
                          *((const struct sockaddr_in *) serv_addr));
     }
 
@@ -200,7 +186,7 @@ int     tou_connect(int sockfd, const struct sockaddr *serv_addr,
     return -1;
 }
 
-int     tou_listenfor(int sockfd, const struct sockaddr *serv_addr,
+int tou_listenfor(int sockfd, const struct sockaddr *serv_addr,
                       socklen_t addrlen) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
@@ -214,8 +200,8 @@ int     tou_listenfor(int sockfd, const struct sockaddr *serv_addr,
 
     /* create a TCP stream to connect with. */
     if (!tous->tcp) {
-        tous->tcp = new TcpStream(udps);
-        udps->addUdpPeer(tous->tcp,
+        tous->tcp = new TcpStream(udpSorter);
+        udpSorter->addUdpPeer(tous->tcp,
                          *((const struct sockaddr_in *) serv_addr));
     }
 
@@ -226,14 +212,14 @@ int     tou_listenfor(int sockfd, const struct sockaddr *serv_addr,
     return 0;
 }
 
-int     tou_listen(int, int) {
+int tou_listen(int, int) {
     tou_tick_all();
     return 1;
 }
 
 
 /* slightly different - returns sockfd on connection */
-int     tou_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+int tou_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
     }
@@ -258,7 +244,7 @@ int     tou_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 }
 
 
-int     tou_connected(int sockfd) {
+int tou_connected(int sockfd) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
     }
@@ -311,7 +297,7 @@ ssize_t tou_write(int sockfd, const void *buf, size_t count) {
 }
 
 /* check stream */
-int     tou_maxread(int sockfd) {
+int tou_maxread(int sockfd) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
     }
@@ -327,7 +313,7 @@ int     tou_maxread(int sockfd) {
     return ret;
 }
 
-int     tou_maxwrite(int sockfd) {
+int tou_maxwrite(int sockfd) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
     }
@@ -345,7 +331,7 @@ int     tou_maxwrite(int sockfd) {
 
 
 /*  close down the tcp over udp connection */
-int     tou_close(int sockfd) {
+int tou_close(int sockfd) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
     }
@@ -358,7 +344,7 @@ int     tou_close(int sockfd) {
 
         /* shut it down */
         tous->tcp->close();
-        udps->removeUdpPeer(tous->tcp);
+        udpSorter->removeUdpPeer(tous->tcp);
         delete tous->tcp;
     }
 
@@ -369,7 +355,7 @@ int     tou_close(int sockfd) {
 
 /*  get an error number */
 int tou_errno(int sockfd) {
-    if (!udps) {
+    if (!udpSorter) {
         return ENOTSOCK;
     }
     if (tou_streams[sockfd] == NULL) {
@@ -379,7 +365,7 @@ int tou_errno(int sockfd) {
     return tous->lasterrno;
 }
 
-int     tou_clear_error(int sockfd) {
+int tou_clear_error(int sockfd) {
     if (tou_streams[sockfd] == NULL) {
         return -1;
     }

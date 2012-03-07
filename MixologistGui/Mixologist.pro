@@ -69,6 +69,7 @@ win32 {
         -lgdi32
     LIBS += -lole32 \
         -lwinmm
+    LIBS += -lpjnath-i686-pc-mingw32 -lpjlib-util-i686-pc-mingw32 -lpj-i686-pc-mingw32
     RC_FILE = platformspecific/win.rc
 }
 

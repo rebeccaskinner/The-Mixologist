@@ -23,95 +23,87 @@
 #ifndef TOU_UDP_LAYER_H
 #define TOU_UDP_LAYER_H
 
-
-/*
-#include <netinet/in.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-*/
-
-
 /* universal networking functions */
-#include "tou_net.h"
-
-#include <iosfwd>
-#include <list>
-#include <deque>
 
 #include <QThread>
 #include <QMutex>
 
-std::ostream &operator<<(std::ostream &out,  const struct sockaddr_in &addr);
-bool operator==(const struct sockaddr_in &addr, const struct sockaddr_in &addr2);
-bool operator<(const struct sockaddr_in &addr, const struct sockaddr_in &addr2);
+class UdpReceiver;
 
-std::string printPkt(void *d, int size);
-std::string printPktOffset(unsigned int offset, void *d, unsigned int size);
-
-
-/* UdpLayer ..... is the bottom layer which
- * just sends and receives Udp packets.
- */
-
-class UdpReceiver {
-public:
-    virtual void recvPkt(void *data, int size, struct sockaddr_in &from) = 0;
-};
+/**********************************************************************************
+ * UdpLayer represents the UDP layer, which just sends and receives UDP packets.
+ * On create, it will create a UDP socket and begin listening on the specified address.
+ * It provides an interface on top of the tou_net.
+ **********************************************************************************/
 
 class UdpLayer: public QThread {
 public:
+    /* Creates a new UdpLayer, which will bind a new listening socket onto local. */
+    UdpLayer(UdpReceiver *udpr, struct sockaddr_in &local);
+    virtual ~UdpLayer() {}
 
-    UdpLayer(UdpReceiver *recv, struct sockaddr_in &local);
-    virtual ~UdpLayer() {
-        return;
-    }
+    /* The thread loop, which constantly waits for incoming data,
+       and then reports it to the UdpReceiver when it arrives. */
+    virtual void run();
 
-    int     status(std::ostream &out);
+    /* Sends the specified packet. */
+    int sendPkt(void *data, int size, struct sockaddr_in &to, int ttl);
 
-    /* setup connections */
-    int openSocket();
+    /* Returns whether any errors have occurred, true on okay. */
+    bool okay();
 
-    virtual void run(); /* called once the thread is started */
+    /* Closes the listener socket. */
+    void close();
 
-    void    recv_loop(); /* uses callback to UdpReceiver */
-
-    /* Higher Level Interface */
-    //int  readPkt(void *data, int *size, struct sockaddr_in &from);
-    int  sendPkt(void *data, int size, struct sockaddr_in &to, int ttl);
-
-    /* monitoring / updates */
-    int okay();
-    int tick();
-
-    int close();
-
-    /* data */
-    /* internals */
 protected:
+    /* Sets up the socket and starts listening on it. */
+    int openSocket(struct sockaddr_in &local);
 
+    /* Calls the tou_net to read in a UDP packet from the socket.
+       Returns the amount of data read on success, or -1 on failure. */
     virtual int receiveUdpPacket(void *data, int *size, struct sockaddr_in &from);
-    virtual int sendUdpPacket(const void *data, int size, struct sockaddr_in &to);
 
-    int setTTL(int t);
+    /* Calls the tou_net to send the specified packet. */
+    virtual void sendUdpPacket(const void *data, int size, struct sockaddr_in &to);
+
+    /* Sets a new TTL. */
+    int setTTL(int newTTL);
+
+    /* Returns the current set TTL. */
     int getTTL();
 
-    /* low level */
 private:
+    UdpReceiver *udpReceiver;
 
-    UdpReceiver *recv;
+    /* Whether we have any errors, or 0 when no errors. */
+    int errorState;
 
-    struct sockaddr_in laddr; /* local addr */
-
-    int  errorState;
+    /* The socket we are listening on. */
     int sockfd;
+
+    /* The TTL for this socket. */
     int ttl;
 
     mutable QMutex sockMtx;
 };
 
-#include <iostream>
-#include <stdlib.h>
+/**********************************************************************************
+ * Interface class for classes that wish to be able to receive incoming packets from
+ * the UdpLayer.
+ **********************************************************************************/
+class UdpReceiver {
+private:
+    /* Called when there is an incoming packet by UdpLayer. */
+    virtual void recvPkt(void *data, int size, struct sockaddr_in &from) = 0;
 
+    friend class UdpLayer;
+};
+
+//std::string printPkt(void *d, int size);
+//std::string printPktOffset(unsigned int offset, void *d, unsigned int size);
+
+/* This testing class is useful for making sure higher level functions work okay when UDP is losing packets. */
+#ifdef false
 class LossyUdpLayer: public UdpLayer {
 public:
 
@@ -149,7 +141,7 @@ protected:
     }
 
 
-    virtual int sendUdpPacket(const void *data, int size, struct sockaddr_in &to) {
+    virtual void sendUdpPacket(const void *data, int size, struct sockaddr_in &to) {
         double prob = (1.0 * (rand() / (RAND_MAX + 1.0)));
 
         if (prob < lossFraction) {
@@ -171,5 +163,6 @@ protected:
 
     double lossFraction;
 };
+#endif //false
 
-#endif
+#endif //TOU_UDP_LAYER_H

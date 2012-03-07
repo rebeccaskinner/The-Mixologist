@@ -30,8 +30,6 @@
 #include <list>
 #include <map>
 
-#include "dht/dhtclient.h"
-
 #include <QString>
 #include <QMutex>
 
@@ -45,19 +43,29 @@ public:
     struct sockaddr_in addr;
 };
 
-class OpenDHTClient: public DHTClient {
+
+/* Connects to openDHT servers, and stores and retrieves key value pairs from them. */
+class OpenDHTClient {
 public:
 
-    virtual bool publishKey(std::string key, std::string value, uint32_t ttl);
-    virtual bool searchKey(std::string key, std::list<std::string> &values);
+    /* Publishes a key value paid into the open DHT network. */
+    bool publishKey(std::string key, std::string value, uint32_t ttl);
+
+    /* Retrieves the values associated with a key from the open DHT network. */
+    bool searchKey(std::string key, std::list<std::string> &values);
 
     /* Fns accessing data */
-    virtual bool checkServerFile(QString filename);
-    virtual bool loadServers(QString filename);
-    virtual bool loadServersFromWeb(QString storefname);
-    virtual bool loadServers(std::istream &);
+    /* Checks to see if the stored file is valid and fresh enough to use. */
+    bool checkServerFile(QString filename);
+    /* Reads in the istream from the file and passes it to loadServers. */
+    bool loadServers(QString filename);
+    /* Downloads the file and passes it to loadServers. */
+    bool loadServersFromWeb(QString storefname);
+    /* Reads in the DHT servers. */
+    bool loadServers(std::istream &);
 
-    virtual bool dhtActive();
+    /* True if connected to the open DHT server network. */
+    bool dhtActive();
 
 private:
     bool    getServer(std::string &host, uint16_t &port, struct sockaddr_in &addr);
@@ -68,9 +76,12 @@ private:
 
     /* generic send msg */
     bool openDHT_sendMessage(std::string msg, std::string &response);
+    /* Connects to www.opendht.org to get the server list. */
     bool openDHT_getDHTList(std::string &response);
 
     mutable QMutex dhtMutex;
+
+    /* Map by domain name of dhtSevers. */
     std::map<std::string, dhtServer> mServers;
     uint32_t mDHTFailCount;
 
