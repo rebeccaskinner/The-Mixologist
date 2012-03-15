@@ -32,15 +32,6 @@
 class Peers;
 extern Peers *peers;
 
-/* Net Mode */
-enum PeerDetailsNetMode {
-    NETMODE_NONE,
-    NETMODE_UDP,
-    NETMODE_UPNP,
-    NETMODE_EXT,
-    NETMODE_UNREACHABLE
-};
-
 /* State */
 enum PeerDetailsState {
     PEER_STATE_CONNECTED,
@@ -68,9 +59,6 @@ public:
     uint16_t localPort;
     std::string extAddr;
     uint16_t extPort;
-
-    PeerDetailsNetMode netMode;
-    PeerDetailsNetMode tryNetMode; /* only for ownState */
 
     /* basic stats */
     uint32_t lastConnect; /* how long ago */
@@ -132,7 +120,6 @@ public:
 
     virtual bool setLocalAddress(unsigned int librarymixer_id, std::string addr, uint16_t port) = 0;
     virtual bool setExtAddress(unsigned int librarymixer_id, std::string addr, uint16_t port) = 0;
-    virtual bool setNetworkMode(unsigned int librarymixer_id, uint32_t netMode) = 0;
 };
 
 #endif

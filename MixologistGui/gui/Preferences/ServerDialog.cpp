@@ -57,28 +57,6 @@ ServerDialog::ServerDialog(QWidget *parent)
 
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     ui.mixologyServer->setText(serverSettings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString());
-
-    //Temporarily disabled
-    ui.NetConfigBox->setVisible(false);
-#ifdef false
-    /* set net mode */
-
-    int netIndex = 0;
-    switch (detail.tryNetMode) {
-        case NETMODE_EXT:
-            netIndex = 2;
-            break;
-        case NETMODE_UDP:
-            netIndex = 1;
-            break;
-        default:
-        case NETMODE_UPNP:
-            netIndex = 0;
-            break;
-    }
-    ui.netModeComboBox->setCurrentIndex(netIndex);
-
-#endif
 }
 
 /** Saves the changes on this page */
@@ -90,44 +68,6 @@ bool ServerDialog::save() {
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     serverSettings.setValue("MixologyServer", ui.mixologyServer->text());
 
-#ifdef false
-    bool saveAddr = false;
-
-    PeerDetails detail;
-    std::string ownId = peers->getOwnCertId();
-
-    if (!peers->getPeerDetails(ownId, detail)) return false;
-
-    int netIndex = ui.netModeComboBox->currentIndex();
-
-    /* Check if netMode has changed */
-    uint32_t netMode = 0;
-    switch (netIndex) {
-        case 2:
-            netMode = NETMODE_EXT;
-            break;
-        case 1:
-            netMode = NETMODE_UDP;
-            break;
-        default:
-        case 0:
-            netMode = NETMODE_UPNP;
-            break;
-    }
-
-    if (detail.tryNetMode != netMode) {
-        peers->setNetworkMode(ownId, netMode);
-    }
-
-    if (0 != netIndex) {
-        saveAddr = true;
-    }
-
-    if (saveAddr) {
-        peers->setLocalAddress(peers->getOwnCertId(), ui.localAddress->text().toStdString(), ui.localPort->value());
-        peers->setExtAddress(peers->getOwnCertId(), ui.extAddress->text().toStdString(), ui.extPort->value());
-    }
-#endif
     return true;
 }
 

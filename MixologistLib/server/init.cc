@@ -6,7 +6,7 @@
 #include "ft/ftborrower.h"
 
 #include "pqi/authmgr.h"
-#include "pqi/p3notify.h"
+#include "pqi/pqinotify.h"
 #include "pqi/pqisslpersongrp.h"
 #include "pqi/pqiloopback.h"
 
@@ -216,7 +216,11 @@ QString Init::InitEncryption(unsigned int _librarymixer_id) {
 
 
 Control *Init::createControl(QString ownName) {
+    QThread* serverThread = new QThread();
     Server *server = new Server();
+    server->moveToThread(serverThread);
+    serverThread->start();
+
     control = server;
 
     /**************************************************************************/
@@ -269,7 +273,8 @@ Control *Init::createControl(QString ownName) {
     /* setup classes / structures */
     /**************************************************************************/
 
-    notify = new p3Notify();
+    notify = new pqiNotify();
+
     connMgr = new ConnectivityManager();
 
     server->pqih = new pqisslpersongrp(flags);
@@ -315,18 +320,9 @@ Control *Init::createControl(QString ownName) {
 
     server->pqih->load_transfer_rates();
 
-    /* Find IP and port. */
-    connMgr->checkNetAddress();
-
-    /**************************************************************************/
-    /* startup (stuff dependent on Ids/peers is after this point) */
-    /**************************************************************************/
-
+    /* Find IP and set up ports. */
+    connMgr->connectionSetup();
     server->pqih->init_listener();
-
-    /**************************************************************************/
-    /* Force Any Last Configuration Options */
-    /**************************************************************************/
 
     pqiloopback *ploop = new pqiloopback(authMgr->OwnCertId(), authMgr->OwnLibraryMixerId());
     server->pqih->AddPQI(ploop);

@@ -40,14 +40,10 @@ class UdpLayer: public QThread {
 public:
     /* Creates a new UdpLayer, which will bind a new listening socket onto local. */
     UdpLayer(UdpReceiver *udpr, struct sockaddr_in &local);
-    virtual ~UdpLayer() {}
-
-    /* The thread loop, which constantly waits for incoming data,
-       and then reports it to the UdpReceiver when it arrives. */
-    virtual void run();
+    virtual ~UdpLayer();
 
     /* Sends the specified packet. */
-    int sendPkt(void *data, int size, struct sockaddr_in &to, int ttl);
+    int sendPkt(void *data, int size, const struct sockaddr_in &to, int ttl);
 
     /* Returns whether any errors have occurred, true on okay. */
     bool okay();
@@ -56,15 +52,19 @@ public:
     void close();
 
 protected:
+    /* The thread loop, which constantly waits for incoming data, and then reports it to the UdpReceiver when it arrives. */
+    virtual void run();
+
     /* Sets up the socket and starts listening on it. */
-    int openSocket(struct sockaddr_in &local);
+    bool openSocket(struct sockaddr_in &local);
 
     /* Calls the tou_net to read in a UDP packet from the socket.
        Returns the amount of data read on success, or -1 on failure. */
     virtual int receiveUdpPacket(void *data, int *size, struct sockaddr_in &from);
 
-    /* Calls the tou_net to send the specified packet. */
-    virtual void sendUdpPacket(const void *data, int size, struct sockaddr_in &to);
+    /* Calls the tou_net to send the specified packet.
+       Returns the amount of data sent on success, or -1 on failure. */
+    virtual int sendUdpPacket(const void *data, int size, const struct sockaddr_in &to);
 
     /* Sets a new TTL. */
     int setTTL(int newTTL);
@@ -118,7 +118,7 @@ public:
 protected:
 
     virtual int receiveUdpPacket(void *data, int *size, struct sockaddr_in &from) {
-        double prob = (1.0 * (rand() / (RAND_MAX + 1.0)));
+        double prob = (1.0 * (qrand() / (RAND_MAX + 1.0)));
 
         if (prob < lossFraction) {
             /* but discard */
@@ -142,7 +142,7 @@ protected:
 
 
     virtual void sendUdpPacket(const void *data, int size, struct sockaddr_in &to) {
-        double prob = (1.0 * (rand() / (RAND_MAX + 1.0)));
+        double prob = (1.0 * (qrand() / (RAND_MAX + 1.0)));
 
         if (prob < lossFraction) {
             /* discard */

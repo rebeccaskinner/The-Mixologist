@@ -351,7 +351,7 @@ bool upnphandler::shutdown_upnp() {
 
 UPnPAsynchronizer::UPnPAsynchronizer(upnphandler* handler)
     :handler(handler){
-    this->connect(this, SIGNAL(startRequested(bool)), this, SLOT(startUPnP(bool)), Qt::QueuedConnection);
+    this->connect(this, SIGNAL(startRequested()), this, SLOT(startUPnP()), Qt::QueuedConnection);
     this->connect(this, SIGNAL(stopRequested(bool)), this, SLOT(stopUPnP(bool)), Qt::QueuedConnection);
 }
 
@@ -360,13 +360,13 @@ UPnPAsynchronizer* UPnPAsynchronizer::createWorker(upnphandler* handler) {
     QThread *thread = new QThread();
     asynchronousWorker->moveToThread(thread);
     thread->connect(asynchronousWorker, SIGNAL(workCompleted()), thread, SLOT(quit()));
-    thread->connect(asynchronousWorker, SIGNAL(workCompleted()), thread, SLOT(deleteLater()));
+    thread->connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
     thread->start();
     return asynchronousWorker;
 }
 
 void UPnPAsynchronizer::requestStart() {
-    emit startRequested(true);
+    emit startRequested();
 }
 
 void UPnPAsynchronizer::requestStop() {
@@ -375,19 +375,18 @@ void UPnPAsynchronizer::requestStop() {
 
 void UPnPAsynchronizer::requestRestart() {
     emit stopRequested(false);
-    emit startRequested(true);
+    emit startRequested();
 }
 
-void UPnPAsynchronizer::startUPnP(bool emitCompletion) {
+void UPnPAsynchronizer::startUPnP() {
     handler->initUPnPState();
     handler->start_upnp();
 
     handler->printUPnPState();
 
-    if (emitCompletion) {
-        emit workCompleted();
-        this->deleteLater();
-    }
+    /* Asynchronous call to start completed, destroy the asynchronizer and its thread. */
+    emit workCompleted();
+    this->deleteLater();
 }
 
 void UPnPAsynchronizer::stopUPnP(bool emitCompletion) {

@@ -97,31 +97,6 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
         d.state = PEER_STATE_NO_CERT;
     else d.state = PEER_STATE_OFFLINE;
 
-    switch (pcs.netMode & NET_MODE_ACTUAL) {
-        case NET_MODE_EXT:
-            d.netMode   = NETMODE_EXT;
-            break;
-        case NET_MODE_UPNP:
-            d.netMode   = NETMODE_UPNP;
-            break;
-        case NET_MODE_UDP:
-            d.netMode   = NETMODE_UDP;
-            break;
-        case NET_MODE_UNREACHABLE:
-        case NET_MODE_UNKNOWN:
-        default:
-            d.netMode   = NETMODE_UNREACHABLE;
-            break;
-    }
-
-    if (pcs.netMode & NET_MODE_TRY_EXT) {
-        d.tryNetMode    = NETMODE_EXT;
-    } else if (pcs.netMode & NET_MODE_TRY_UPNP) {
-        d.tryNetMode    = NETMODE_UPNP;
-    } else {
-        d.tryNetMode    = NETMODE_UDP;
-    }
-
     return true;
 }
 
@@ -177,31 +152,7 @@ bool p3Peers::setExtAddress(unsigned int librarymixer_id, std::string addr_str, 
     return connMgr->setExtAddress(librarymixer_id, addr);
 }
 
-
-bool p3Peers::setNetworkMode(unsigned int librarymixer_id, uint32_t extNetMode) {
-    /* translate */
-    uint32_t netMode = 0;
-    switch (extNetMode) {
-        case NETMODE_EXT:
-            netMode = NET_MODE_EXT;
-            break;
-        case NETMODE_UPNP:
-            netMode = NET_MODE_UPNP;
-            break;
-        case NETMODE_UDP:
-            netMode = NET_MODE_UDP;
-            break;
-        case NETMODE_UNREACHABLE:
-            netMode = NET_MODE_UNREACHABLE;
-            break;
-        default:
-            break;
-    }
-
-    return connMgr->setNetworkMode(librarymixer_id, netMode);
-}
-
 PeerDetails::PeerDetails()
-    :state(PEER_STATE_OFFLINE), netMode(NETMODE_NONE), lastConnect(0) {
+    :state(PEER_STATE_OFFLINE), lastConnect(0) {
     return;
 }

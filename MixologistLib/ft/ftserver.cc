@@ -48,9 +48,9 @@ const int ftserverzone = 29539;
 #include <interface/settings.h>
 
 /* Setup */
-ftServer::ftServer() : mP3iface(NULL), mFtDataplex(NULL) {}
+ftServer::ftServer() : persongrp(NULL), mFtDataplex(NULL) {}
 
-void ftServer::setP3Interface(P3Interface *pqi) {mP3iface = pqi;}
+void ftServer::setP3Interface(P3Interface *pqi) {persongrp = pqi;}
 
 void ftServer::setupMixologyService() {
     connect(mixologyService, SIGNAL(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)),
@@ -325,7 +325,7 @@ bool    ftServer::sendDataRequest(std::string peerId, QString hash,
     rfi->fileoffset = offset; /* ftr->offset; */
     rfi->chunksize  = chunksize; /* ftr->chunk; */
 
-    mP3iface->SendFileRequest(rfi);
+    persongrp->SendFileRequest(rfi);
 
     return true;
 }
@@ -370,7 +370,7 @@ bool ftServer::sendData(std::string peerId, QString hash, uint64_t size,
         /* file data */
         rfd->fd.binData.setBinData(&(((uint8_t *) data)[offset]), chunk);
 
-        mP3iface->SendFileData(rfd);
+        persongrp->SendFileData(rfd);
 
         offset += chunk;
         remainingToSend -= chunk;
@@ -389,15 +389,13 @@ bool ftServer::sendData(std::string peerId, QString hash, uint64_t size,
 int ftServer::tick() {
     log(LOG_DEBUG_ALL, ftserverzone, "ftServer::tick()");
 
-    if (mP3iface == NULL) {
-        std::ostringstream out;
+    if (persongrp == NULL) {
         log(LOG_DEBUG_ALERT, ftserverzone, "ftServer::tick() Invalid Interface()");
-
         return 1;
     }
 
     int moreToTick = 0;
-    if (0 < mP3iface -> tick()) moreToTick = 1;
+    if (0 < persongrp->tick()) moreToTick = 1;
     if (0 < handleFileData()) moreToTick = 1;
 
     return moreToTick;
@@ -412,7 +410,7 @@ bool ftServer::handleFileData() {
     int i = 0;
 
     i_init = i;
-    while ((fr = mP3iface -> GetFileRequest()) != NULL ) {
+    while ((fr = persongrp->GetFileRequest()) != NULL ) {
         i++; /* count */
         mFtDataplex->recvDataRequest(fr->PeerId(),
                                      fr->file.hash,  fr->file.filesize,
@@ -424,7 +422,7 @@ bool ftServer::handleFileData() {
 
     // now File Data.
     i_init = i;
-    while ((fd = mP3iface -> GetFileData()) != NULL ) {
+    while ((fd = persongrp->GetFileData()) != NULL ) {
         i++; /* count */
 
         /* incoming data */

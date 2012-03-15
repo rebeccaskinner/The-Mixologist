@@ -20,6 +20,7 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
+#include "pqi/pqinotify.h"
 #include "pqi/pqissl.h"
 #include "pqi/pqissllistener.h"
 #include "pqi/pqinetwork.h"
@@ -39,7 +40,7 @@ pqissllistener::pqissllistener(struct sockaddr_in addr)
     :listenAddress(addr), listenerActive(false) {
 
     if (!(authMgr->active())) {
-        pqioutput(LOG_DEBUG_ALERT, pqissllistenzone, "SSL-CTX-CERT-ROOT not initialised!");
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Encryption failure", "SSL-CTX-CERT-ROOT not initialised!");
         exit(1);
     }
 
@@ -134,6 +135,10 @@ int pqissllistener::setuplisten() {
         out << " Cannot Bind to Local Address!" << std::endl;
         showSocketError(out);
         pqioutput(LOG_DEBUG_ALERT, pqissllistenzone, out.str().c_str());
+        getPqiNotify()->AddSysMessage(SYS_ERROR,
+                                      "Network failure",
+                                      QString("Unable to open TCP port ") + inet_ntoa(listenAddress.sin_addr) +
+                                      ":" + QString::number(listenAddress.sin_port));
 
         exit(1);
         return -1;
@@ -143,12 +148,10 @@ int pqissllistener::setuplisten() {
     }
 
     if (0 != (err = listen(listeningSocket, 100))) {
-        std::ostringstream out;
-        out << "pqissllistener::setuplisten()";
-        out << "Error: Cannot Listen to Socket: ";
-        out << err << std::endl;
-        showSocketError(out);
-        pqioutput(LOG_DEBUG_ALERT, pqissllistenzone, out.str().c_str());
+        getPqiNotify()->AddSysMessage(SYS_ERROR,
+                                      "Network failure",
+                                      QString("Unable to open TCP port ") + inet_ntoa(listenAddress.sin_addr) +
+                                      ":" + QString::number(listenAddress.sin_port));
 
         exit(1);
         return -1;

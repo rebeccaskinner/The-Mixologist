@@ -33,10 +33,12 @@ The main thread that does most of the work, and implements the Control interface
 
 class pqipersongrp;
 
-class Server: public Control, public QThread {
+class Server: public QObject, public Control {
+    Q_OBJECT
+
 public:
-    Server(){return;}
-    virtual ~Server(){return;};
+    Server(){}
+    virtual ~Server(){};
 
     /* Starts all of MixologistLib's threads. */
     virtual bool StartupMixologist();
@@ -57,16 +59,26 @@ public:
     virtual qulonglong clientVersion();
     virtual qulonglong latestKnownVersion();
 
+signals:
+    /* When signaled, asynchronously calls beginTimers to start the tick loop. */
+    void timersStarting();
+
+private slots:
+    /* Starts the tick loop. */
+    void beginTimers();
+
+    /* Ticks once a second. */
+    void oneSecondTick();
+
+    /* A variable rate tick for incoming and outgoing data that sets its own rate. */
+    void variableTick();
+
 private:
 
     /* This is the main MixologistLib loop, handles the ticking */
-    virtual void run();
+    //virtual void run();
 
-    mutable QMutex coreMutex;
-
-    /* General Internal Helper Functions (Must be Locked) */
-    double getCurrentTS();
-
+    mutable QMutex versionMutex;
     QString storedClientName;
     qulonglong storedClientVersion;
     qulonglong storedLatestKnownVersion;

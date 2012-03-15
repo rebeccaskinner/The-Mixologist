@@ -34,6 +34,8 @@
 #include <netinet/in.h>
 
 #else
+#include <pqi/pqinetwork.h>
+
 #include <stdint.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>

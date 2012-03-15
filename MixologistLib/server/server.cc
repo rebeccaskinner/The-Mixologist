@@ -21,36 +21,31 @@
  ****************************************************************/
 
 #include "server/server.h"
-#include "interface/init.h"
-
-// for blocking signals
-#include <signal.h>
-#include "util/debug.h"
-#include "pqi/pqisslpersongrp.h"
-#include "pqi/pqiloopback.h"
-#include "ft/ftcontroller.h"
 #include "pqi/connectivitymanager.h"
-/* Implemented Rs Interfaces */
-#include "server/p3peers.h"
-#include "server/p3msgs.h"
+#include "pqi/pqisslpersongrp.h"
 #include "ft/ftserver.h"
-#include "services/p3chatservice.h"
-
 #include "tcponudp/tou.h"
 
-#include <sys/time.h>
-
-/****
-#define DEBUG_TICK 1
-****/
+#include <QTimer>
 
 bool Server::StartupMixologist() {
     ftserver->StartupThreads();
     ftserver->ResumeTransfers();
 
-    this->start();
+    /* Rather than starting the timers ourselves (that would set the thread affinity to the main thread)
+       we emit a queued signal to start the timers so they are created in this thread. */
+    connect(this, SIGNAL(timersStarting()), this, SLOT(beginTimers()), Qt::QueuedConnection);
+    emit timersStarting();
 
     return true;
+}
+
+void Server::beginTimers() {
+    QTimer *oneSecondTimer = new QTimer(this);
+    connect(oneSecondTimer, SIGNAL(timeout()), this, SLOT(oneSecondTick()));
+    oneSecondTimer->start(1000);
+
+    QTimer::singleShot(0, this, SLOT(variableTick()));
 }
 
 bool Server::ShutdownMixologist() {
@@ -64,119 +59,58 @@ void Server::ReloadTransferRates() {
 }
 
 void Server::setVersion(const QString &clientName, qulonglong clientVersion, qulonglong latestKnownVersion) {
+    QMutexLocker stack(&versionMutex);
     storedClientName = clientName;
     storedClientVersion = clientVersion;
     storedLatestKnownVersion = latestKnownVersion;
 }
 
-QString Server::clientName() {return storedClientName;}
-qulonglong Server::clientVersion() {return storedClientVersion;}
-qulonglong Server::latestKnownVersion() {return storedLatestKnownVersion;}
+QString Server::clientName() {
+    QMutexLocker stack(&versionMutex);
+    return storedClientName;
+}
 
-/* Thread Fn: Run the Core */
-void Server::run() {
-    double timeDelta = 0.25;
-    double minTimeDelta = 0.1; // 25;
-    double maxTimeDelta = 0.5;
-    double kickLimit = 0.15;
+qulonglong Server::clientVersion() {
+    QMutexLocker stack(&versionMutex);
+    return storedClientVersion;
+}
 
-    double avgTickRate = timeDelta;
+qulonglong Server::latestKnownVersion() {
+    QMutexLocker stack(&versionMutex);
+    return storedLatestKnownVersion;
+}
 
-    double lastts, ts;
-    lastts = ts = getCurrentTS();
+void Server::oneSecondTick() {
+    connMgr->tick();
+    TCP_over_UDP_tick_stunkeepalive();
+}
 
-    long   lastSec = 0; /* for the slower ticked stuff */
+#define MAX_SECONDS_TO_SLEEP 1
+#define MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER 0.15
 
-    while (true) {
-#ifndef WINDOWS_SYS
-        usleep((int) (timeDelta * 1000000));
-#else
-        Sleep((int) (timeDelta * 1000));
-#endif
+void Server::variableTick() {
+    static double secondsToSleep, averageSecondsToSleep = 0.25;
+    averageSecondsToSleep = 0.2 * secondsToSleep + 0.8 * averageSecondsToSleep;
 
-        ts = getCurrentTS();
-        double delta = ts - lastts;
+    /* The fact that this tick is in the ftserver is actually deceptive.
+       The ftserver tick also ticks our main pqisslpersongrp (this should probably be changed in the future).
+       This means that almost all of our inbound and outbound data are handled by this tick. */
+    int moreDataExists = ftserver->tick();
 
-        /* for the fast ticked stuff */
-        if (delta > timeDelta) {
-            lastts = ts;
-
-            /******************************** RUN SERVER *****************/
-            int moreToTick;
-
-            {
-                QMutexLocker stack(&coreMutex);
-                moreToTick = ftserver -> tick();
-            }
-
-            /* tick the connection Manager */
-            connMgr->tick();
-            /******************************** RUN SERVER *****************/
-
-            /* adjust tick rate depending on whether there is more.
-             */
-
-            avgTickRate = 0.2 * timeDelta + 0.8 * avgTickRate;
-
-            if (1 == moreToTick) {
-                timeDelta = 0.9 * avgTickRate;
-                if (timeDelta > kickLimit) {
-                    /* force next tick in one sec
-                     * if we are reading data.
-                     */
-                    timeDelta = kickLimit;
-                    avgTickRate = kickLimit;
-                }
-            } else {
-                timeDelta = 1.1 * avgTickRate;
-            }
-
-            /* limiter */
-            if (timeDelta < minTimeDelta) {
-                timeDelta = minTimeDelta;
-            } else if (timeDelta > maxTimeDelta) {
-                timeDelta = maxTimeDelta;
-            }
-
-            /* Fast Updates */
-
-            /* now we have the slow ticking stuff */
-            /* stuff ticked once a second (but can be slowed down) */
-            if ((int) ts > lastSec) {
-                lastSec = (int) ts;
-
-                // Every second! (UDP keepalive).
-                TCP_over_UDP_tick_stunkeepalive();
-
-            } // end of slow tick.
-
-        } // end of only once a second.
+    /* Adjust tick rate depending on whether there is more file transfer data backing up. */
+    if (moreDataExists == 1) {
+        secondsToSleep = 0.9 * averageSecondsToSleep;
+        if (secondsToSleep > MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER) {
+            secondsToSleep = MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER;
+            averageSecondsToSleep = MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER;
+        }
+    } else {
+        secondsToSleep = 1.1 * averageSecondsToSleep;
     }
-    return;
+
+    if (secondsToSleep > MAX_SECONDS_TO_SLEEP) {
+        secondsToSleep = MAX_SECONDS_TO_SLEEP;
+    }
+
+    QTimer::singleShot(secondsToSleep * 1000, this, SLOT(variableTick()));
 }
-
-
-/* General Internal Helper Functions
-  ----> MUST BE LOCKED!
- */
-
-#ifdef WINDOWS_SYS
-#include <time.h>
-#include <sys/timeb.h>
-#endif
-
-double Server::getCurrentTS() {
-
-#ifndef WINDOWS_SYS
-    struct timeval cts_tmp;
-    gettimeofday(&cts_tmp, NULL);
-    double cts =  (cts_tmp.tv_sec) + ((double) cts_tmp.tv_usec) / 1000000.0;
-#else
-    struct _timeb timebuf;
-    _ftime( &timebuf);
-    double cts =  (timebuf.time) + ((double) timebuf.millitm) / 1000.0;
-#endif
-    return cts;
-}
-
-

@@ -93,7 +93,6 @@ public:
 
     virtual bool setLocalAddress(unsigned int librarymixer_id, std::string addr, uint16_t port);
     virtual bool setExtAddress(unsigned int librarymixer_id, std::string addr, uint16_t port);
-    virtual bool setNetworkMode(unsigned int librarymixer_id, uint32_t netMode);
 
 private:
     /* Master storage in the Mixologist for a user's own name. */

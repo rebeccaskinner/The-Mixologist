@@ -84,7 +84,7 @@ void ftTempList::addTempItem(const QString &title, const QStringList &paths, uns
     connect(newItem, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), this, SIGNAL(fileNoLongerAvailable(QString,qulonglong)));
     XmlUtil::writeXml(TEMPITEMFILE, xml);
 
-    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_SUGGEST_WAITING, title);
+    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_WAITING, title);
 
     foreach(QString path, paths) fileWatcher->addFile(path);
 }
@@ -99,7 +99,7 @@ void ftTempList::removeReturnBorrowedTempItem(const QString &itemKey) {
             removeTempItem(item);
             foreach (QString path, paths) {
                 fileWatcher->stopWatching(path);
-                if (!QFile::remove(path)) getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File remove error", "Unable to remove borrowed file " + path);
+                if (!QFile::remove(path)) getPqiNotify()->AddSysMessage(SYS_WARNING, "File remove error", "Unable to remove borrowed file " + path);
             }
             return;
         }

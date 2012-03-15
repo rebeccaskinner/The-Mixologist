@@ -1029,7 +1029,7 @@ std::string p3DhtMgr::BootstrapId(uint32_t bin) {
 }
 
 std::string p3DhtMgr::randomBootstrapId() {
-    uint32_t rnd = DHT_NUM_BOOTSTRAP_BINS * (rand() / (RAND_MAX + 1.0));
+    uint32_t rnd = DHT_NUM_BOOTSTRAP_BINS * (qrand() / (RAND_MAX + 1.0));
 
     return BootstrapId(rnd);
 }

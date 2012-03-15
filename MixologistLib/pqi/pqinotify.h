@@ -23,24 +23,22 @@
 #ifndef PQI_NOTIFY_INTERFACE_H
 #define PQI_NOTIFY_INTERFACE_H
 
-#include "interface/notify.h"  /* for ids */
+#include "interface/notify.h"
 #include <QString>
 
-/* This class is the input interface for notification events. */
+/* This class allows MixologistLib to send popup and system notifications to the implementation of NotifyBase in MixologistGui. */
 
-class pqiNotify {
+class pqiNotify: public Notify {
 public:
 
-    pqiNotify() {
-        return;
-    }
-    virtual ~pqiNotify() {
-        return;
-    }
+    pqiNotify();
+    ~pqiNotify() {}
 
-    //These methods add messages to the pending messages lists, called from MixologistLib.
-    virtual bool AddPopupMessage(uint32_t ptype, QString name, QString msg) = 0;
-    virtual bool AddSysMessage(uint32_t sysid, uint32_t type, QString title, QString msg) = 0;
+    /* Requests the GUI to display a popup message. */
+    bool AddPopupMessage(int type, QString name, QString msg);
+
+    /* Requests the GUI to display a system message. */
+    bool AddSysMessage(int type, QString title, QString msg);
 
 };
 

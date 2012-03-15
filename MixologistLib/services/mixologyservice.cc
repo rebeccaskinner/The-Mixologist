@@ -29,7 +29,7 @@
 #include <interface/peers.h>
 #include <interface/files.h>
 #include <interface/types.h>
-#include <interface/iface.h>
+#include <interface/notify.h>
 #include <interface/settings.h>
 #include <QString>
 #include <QSettings>
@@ -100,12 +100,12 @@ int MixologyService::tick() {
                     break;
                 case LibraryMixerItem::MATCHED_TO_FILE:
                     libraryItem = files->getLibraryMixerItem(request->item_id);
-                    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_FILE_REQUEST, libraryItem->title());
+                    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_FILE_REQUEST, libraryItem->title());
                     if (prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_FILE, response)) sendItem(response);
                     break;
                 case LibraryMixerItem::MATCHED_TO_LEND:
                     libraryItem = files->getLibraryMixerItem(request->item_id);
-                    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_LEND_OFFERED, libraryItem->title());
+                    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_LEND_OFFERED, libraryItem->title());
                     if (prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_LEND, response)) sendItem(response);
                     break;
                 case LibraryMixerItem::MATCHED_TO_LENT:
@@ -131,7 +131,7 @@ int MixologyService::tick() {
                         if (!response->checkWellFormed())
                             log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Response from " + QString::number(it->friend_id) + " wasn't well-formed");
                         else files->downloadFiles(it->friend_id, it->name, response->files(), response->hashes(), response->filesizes());
-                        notifyBase->notifyUserOptional(it->friend_id, NOTIFY_USER_FILE_RESPONSE, it->name);
+                        notifyBase->notifyUserOptional(it->friend_id, NotifyBase::NOTIFY_USER_FILE_RESPONSE, it->name);
                         remove_from_mPending(it);
                         break;
                     } else if (response->itemStatus == MixologyResponse::ITEM_STATUS_MATCHED_TO_LEND) {
@@ -229,7 +229,7 @@ int MixologyService::tick() {
 }
 
 bool  MixologyService::LibraryMixerRequest(unsigned int friend_id, unsigned int item_id, const QString &name) {
-    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_REQUEST, name);
+    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_REQUEST, name);
     QMutexLocker stack(&mMixologyServiceMutex);
 
     //Remove any pre-existing requests for this one, so we start from a clean slate
@@ -281,7 +281,7 @@ void MixologyService::sendSuggestion(unsigned int friend_id, const QString &titl
     suggest->files(files);
     suggest->hashes(hashes);
     suggest->filesizes(filesizes);
-    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_SUGGEST_SENT, title);
+    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_SENT, title);
     log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(friend_id) + ".");
     sendItem(suggest);
 }
@@ -295,7 +295,7 @@ void MixologyService::sendReturn(unsigned int friend_id, int source_type, const 
     returnItem->files(files);
     returnItem->hashes(hashes);
     returnItem->filesizes(filesizes);
-    notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_SUGGEST_SENT, title);
+    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_SENT, title);
     log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Returning " + QString::number(returnItem->source_type) + ", " + returnItem->source_id + " to " + QString::number(friend_id) + ".");
     sendItem(returnItem);
 }

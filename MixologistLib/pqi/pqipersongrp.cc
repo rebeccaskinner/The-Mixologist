@@ -117,7 +117,7 @@ int pqipersongrp::tick() {
 }
 
 /* Initialise pqilistener */
-int pqipersongrp::init_listener() {
+void pqipersongrp::init_listener() {
     /* extract our information from the ConnectivityManager */
     if (initFlags & PQIPERSON_NO_LISTENER) {
         pqil = NULL;
@@ -130,7 +130,6 @@ int pqipersongrp::init_listener() {
         QMutexLocker stack(&coreMtx);
         pqil = createListener(state.localaddr);
     }
-    return 1;
 }
 
 int pqipersongrp::restart_listener() {

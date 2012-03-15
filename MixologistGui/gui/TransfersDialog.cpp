@@ -478,9 +478,9 @@ void TransfersDialog::responseLendOfferReceived(unsigned int friend_id, unsigned
                       " to you, but wants it back at some point. Continue?";
     if (QMessageBox::question(this, title, message, QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes) {
         files->borrowFiles(friend_id, title, paths, hashes, filesizes, FILE_HINTS_ITEM, QString::number(item_id));
-        mainwindow->peersDialog->insertUserOptional(friend_id, NOTIFY_USER_BORROW_ACCEPTED, title);
+        mainwindow->peersDialog->insertUserOptional(friend_id, NotifyBase::NOTIFY_USER_BORROW_ACCEPTED, title);
     } else {
-        mainwindow->peersDialog->insertUserOptional(friend_id, NOTIFY_USER_BORROW_DECLINED, title);
+        mainwindow->peersDialog->insertUserOptional(friend_id, NotifyBase::NOTIFY_USER_BORROW_DECLINED, title);
     }
 }
 

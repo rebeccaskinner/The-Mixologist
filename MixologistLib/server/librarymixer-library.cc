@@ -176,7 +176,7 @@ bool LibraryMixerLibraryManager::setLent(unsigned int friend_id, const QString &
                 for (int i = 0; i < item->fileCount(); i++) {
                     fileWatcher->stopWatching(item->paths()[i]);
                     if (!QFile::remove(item->paths()[i]))
-                        getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File remove error", "Unable to remove borrowed file " + item->paths()[i]);
+                        getPqiNotify()->AddSysMessage(SYS_WARNING, "File remove error", "Unable to remove borrowed file " + item->paths()[i]);
                 }
             }
             return true;
@@ -266,7 +266,7 @@ void LibraryMixerLibraryManager::MixologySuggest(unsigned int friend_id, int ite
             if (!libraryList[item_id]->sendToOnHashList.contains(friend_id)) {
                 libraryList[item_id]->sendToOnHashList.append(friend_id);
             }
-            notifyBase->notifyUserOptional(friend_id, NOTIFY_USER_SUGGEST_WAITING, libraryList[item_id]->title());
+            notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_WAITING, libraryList[item_id]->title());
         }
     }
 }

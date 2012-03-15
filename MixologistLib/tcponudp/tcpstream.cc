@@ -2212,8 +2212,8 @@ int TcpStream::send() {
 
 
 uint32 TcpStream::genSequenceNo() {
-    //return 1000; // TCP_MAX_SEQ - 1000; //1000; //(rand() - 100000) + time(NULL) % 100000;
-    return (rand() - 100000) + time(NULL) % 100000;
+    //return 1000; // TCP_MAX_SEQ - 1000; //1000; //(qrand() - 100000) + time(NULL) % 100000;
+    return (qrand() - 100000) + time(NULL) % 100000;
 }
 
 

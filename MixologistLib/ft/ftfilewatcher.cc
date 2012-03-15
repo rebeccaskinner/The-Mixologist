@@ -23,7 +23,7 @@
 #include <time.h>
 #include <ft/ftfilewatcher.h>
 #include <ft/ftserver.h>
-#include <interface/iface.h>
+#include <interface/notify.h>
 #include <util/dir.h>
 #include <QFileInfo>
 #include <QDateTime>

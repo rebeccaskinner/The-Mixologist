@@ -1,5 +1,6 @@
 /****************************************************************
  *  Copyright 2010, Fair Use, Inc.
+ *  Copyright 2004-8, Robert Fernie
  *
  *  This file is part of the Mixologist.
  *
@@ -19,18 +20,26 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#ifndef STUN_HANDLER_H
-#define STUN_HANDLER_H
+#include "pqi/pqinotify.h"
+#include <stdint.h>
+#include <interface/iface.h>
 
-#include <QString>
+pqiNotify *getPqiNotify() {
+    return (pqiNotify*)notify;
+}
 
-class stunAsynchronizer;
+pqiNotify::pqiNotify() {
+    connect(this, SIGNAL(notifyPopupMessage(int,QString,QString)), notifyBase, SLOT(displayPopupMessage(int,QString,QString)));
+    connect(this, SIGNAL(notifySysMessage(int,QString,QString)), notifyBase, SLOT(displaySysMessage(int,QString,QString)));
+}
 
-class stunHandler {
-public:
-    stunHandler(){};
+/* Input from MixologistLib */
+bool pqiNotify::AddPopupMessage(int type, QString name, QString msg) {
+    emit notifyPopupMessage(type, name, msg);
+    return true;
+}
 
-    int findExternalAddress(const QString &sourceAddress, unsigned short sourcePort);
-};
-
-#endif /* STUN_HANDLER_H */
+bool pqiNotify::AddSysMessage(int type, QString title, QString msg) {
+    emit notifySysMessage(type, title, msg);
+    return true;
+}

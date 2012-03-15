@@ -52,8 +52,8 @@ public:
     pqipersongrp(unsigned long flags);
 
     /*************************** Setup *************************/
-    /* pqilistener */
-    int init_listener();
+    /* Creates the listener and has it begin listening on the listen address. */
+    void init_listener();
     int restart_listener();
 
     //Loads the transfer rates from the settings files and sets them

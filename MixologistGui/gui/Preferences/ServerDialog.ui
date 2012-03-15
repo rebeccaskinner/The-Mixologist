@@ -599,60 +599,6 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="NetConfigBox">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="title">
-      <string>Network Configuration (takes effect after restart)</string>
-     </property>
-     <layout class="QHBoxLayout">
-      <item>
-       <widget class="QComboBox" name="netModeComboBox">
-        <item>
-         <property name="text">
-          <string>Automatic (with UPNP enabled)</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Firewall with UDP tunneling</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Firewall with TCP ports forwarded manually</string>
-         </property>
-        </item>
-       </widget>
-      </item>
-      <item>
-       <spacer>
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>40</width>
-          <height>20</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
-      <item>
-       <layout class="QVBoxLayout">
-        <item>
-         <layout class="QHBoxLayout"/>
-        </item>
-       </layout>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
     <widget class="QGroupBox" name="remoteBox">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">

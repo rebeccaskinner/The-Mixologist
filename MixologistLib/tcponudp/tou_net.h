@@ -70,7 +70,8 @@ extern "C" {
        with errno set to EAGAIN or EWOULDBLOCK. Otherwise, returns the amount of data retrieved. */
     ssize_t tounet_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen);
 
-    /* Sends the specified data on the socket to the address. */
+    /* Sends the specified data on the socket to the address.
+       Returns bytes sent or -1 on error. */
     ssize_t tounet_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen);
 
     /* Check if we can modify the TTL on a UDP packet. */

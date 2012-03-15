@@ -262,7 +262,7 @@ int DirUtil::returnFilesToOriginalLocations(const QStringList &currentPaths, con
         }
         if (!success) {
             allSuccess = false;
-            getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+            getPqiNotify()->AddSysMessage(SYS_WARNING,
                                           "The Mixologist",
                                           "Error while returning file " + originalPaths[originalItemIndex] + " from temporary location " + currentPaths[currentItemIndex]);
         }

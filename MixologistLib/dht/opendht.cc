@@ -261,7 +261,7 @@ bool OpenDHTClient::getServer(std::string &host, uint16_t &port, struct sockaddr
 #endif
 
     uint32_t len = mServers.size();
-    uint32_t rnd = len * (rand() / (RAND_MAX + 1.0));
+    uint32_t rnd = len * (qrand() / (RAND_MAX + 1.0));
 
     if (len < 1) {
 #ifdef  OPENDHT_DEBUG

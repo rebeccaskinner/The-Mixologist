@@ -32,7 +32,6 @@
 class p3NotifySysMsg {
 public:
 
-    uint32_t sysid;
     uint32_t type;
     QString title;
     QString msg;
@@ -51,31 +50,12 @@ public:
 class p3Notify: public Notify, public pqiNotify {
 public:
 
-    p3Notify() {
-        return;
-    }
-    virtual ~p3Notify() {
-        return;
-    }
+    p3Notify();
+    virtual ~p3Notify() {}
 
-    /* Output for gui */
-    //These pop off an element from the pending messages lists and uses it to populate the values, called from MixologistGui.
-    virtual bool NotifySysMessage(uint32_t &sysid, uint32_t &type,
-                                  QString &title, QString &msg);
-    virtual bool NotifyPopupMessage(uint32_t &ptype, QString &name, QString &msg);
-
-    /* Overloaded from pqiNotify */
     //These methods add messages to the pending messages lists, called from MixologistLib.
-    virtual bool AddPopupMessage(uint32_t ptype, QString name, QString msg);
-    virtual bool AddSysMessage(uint32_t sysid, uint32_t type, QString title, QString msg);
-
-private:
-
-    mutable QMutex noteMtx;
-
-    //These store the pending messages.
-    std::list<p3NotifySysMsg> pendingSysMsgs;
-    std::list<p3NotifyPopupMsg> pendingPopupMsgs;
+    bool AddPopupMessage(uint32_t ptype, QString name, QString msg);
+    bool AddSysMessage(SysMessageType type, QString title, QString msg);
 };
 
 

@@ -20,24 +20,20 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#include "pqi/connectivitymanager.h"
-#include "pqi/pqi_base.h"
-#include "tcponudp/tou.h"
 
-#include "upnp/upnphandler.h"
-#include "pqi/p3dhtmgr.h"
-#include "interface/init.h"
+#include <tcponudp/tou.h>
+#include <tcponudp/udpsorter.h>
 
-#include "util/net.h"
-#include "util/debug.h"
+#include <upnp/upnphandler.h>
 
-#include "pqi/pqinotify.h"
+#include <pqi/connectivitymanager.h>
+#include <pqi/pqinotify.h>
 
-#include "interface/peers.h"
-
-#include <sstream>
-
+#include <interface/peers.h>
 #include <interface/settings.h>
+
+#include <util/debug.h>
+
 
 /****
  * #define NO_TCP_CONNECTIONS 1
@@ -46,29 +42,8 @@
  * #define NO_AUTO_CONNECTION 1
  ***/
 
-
-/* Network setup States */
-const uint32_t NET_UNKNOWN = 0x0001; /* Initial startup */
-const uint32_t NET_UPNP_INIT = 0x0002; /* Initializing UPNP */
-const uint32_t NET_UPNP_SETUP = 0x0003; /* After UPNP init, when we are checking to see if UPNP has been setup, and handle success or failure and continue to UDP_SETUP */
-const uint32_t NET_UDP_SETUP = 0x0004; /* The state after UPNP_SETUP, where we set some class variables and move to DONE when the connection works. */
-const uint32_t NET_DONE = 0x0005; /* After we have a valid external address, either via UDP or UPNP. */
-
-/* Stun modes (TODO) */
-const uint32_t STUN_DHT = 0x0001;
-const uint32_t STUN_DONE = 0x0002;
-const uint32_t STUN_LIST_MIN = 100;
-const uint32_t STUN_FOUND_MIN = 10;
-
-const int MAX_UPNP_INIT = 10; /* 10 second UPnP timeout */
-
-const uint32_t TCP_DEFAULT_DELAY = 2; /* 2 Seconds? is it be enough! */
-const uint32_t UDP_DHT_DELAY = DHT_NOTIFY_PERIOD + 60; /* + 1 minute for DHT POST */
-const uint32_t UDP_PROXY_DELAY = 30;  /* 30 seconds (NOT IMPLEMENTED YET!) */
-
 #define MIN_RETRY_PERIOD 600 //10 minute wait between automatic connection retries
 #define USED_IP_WAIT_TIME 5 //5 second wait if tried to connect to an IP that was already in use in a connection attempt
-#define DOUBLE_TRY_DELAY 10 //10 second wait for friend to have updated his friends list before second try
 #define LAST_HEARD_TIMEOUT 300 //5 minute wait if haven't heard from a friend before we mark them as disconnected
 
 peerConnectAddress::peerConnectAddress()
@@ -76,167 +51,29 @@ peerConnectAddress::peerConnectAddress()
     sockaddr_clear(&addr);
 }
 
-peerAddrInfo::peerAddrInfo()
-    :found(false), type(0), ts(0) {
-    sockaddr_clear(&laddr);
-    sockaddr_clear(&raddr);
-}
-
 peerConnectState::peerConnectState()
     :name(""),
      id(""),
-     netMode(NET_MODE_UNKNOWN),
      lastcontact(0),
-     connecttype(0),
      lastattempt(0),
      doubleTried(false),
      schedulednexttry(0),
      state(0), actions(0),
-     source(0),
      inConnAttempt(0) {
     sockaddr_clear(&localaddr);
     sockaddr_clear(&serveraddr);
 }
 
 ConnectivityManager::ConnectivityManager()
-    :mNetStatus(NET_UNKNOWN),
-     mStunStatus(0), mStunFound(0), mStunMoreRequired(true),
-     mStatusChanged(false), mUpnpAddrValid(false),
-     mStunAddrValid(false), mStunAddrStable(false) {
+    :mStatusChanged(false),
+     connectionStatus(CONNECTION_STATUS_STUNNING_INITIAL),
+     udpTestSocket(NULL), udpMainSocket(NULL), mUpnpMgr(NULL),
+     stunSentTime(0) {
 
     /* Setup basics of own state.
        authMgr must have been initialized before connMgr. */
     ownState.id = authMgr->OwnCertId();
     ownState.librarymixer_id = authMgr->OwnLibraryMixerId();
-    ownState.netMode = NET_MODE_UDP;
-
-    mUpnpMgr = new upnphandler();
-
-    mDhtMgr = new p3DhtMgr(authMgr->OwnCertId(), this);
-    mDhtMgr->start();
-
-    return;
-}
-
-void ConnectivityManager::checkNetAddress() {
-    std::list<std::string> netInterfaceAddresses = getLocalInterfaces();
-    std::list<std::string>::iterator it;
-
-    QMutexLocker stack(&connMtx);
-
-    /* Set the network interface we will use for the Mixologist. */
-    ownState.localaddr.sin_addr = getPreferredInterface();
-    ownState.localaddr.sin_port = htons(getLocalPort());
-    ownState.localaddr.sin_family = AF_INET;
-    ownState.serveraddr.sin_family = AF_INET;
-
-    if ((isPrivateNet(&(ownState.localaddr.sin_addr))) ||
-        (isLoopbackNet(&(ownState.localaddr.sin_addr)))) {
-        //TODO We already know that we are firewalled at this point
-        //Should we be setting this for loopback? Hardly a clear sign.
-    }
-}
-
-void ConnectivityManager::netStartup() {
-    /* startup stuff */
-
-    /* StunInit gets a list of peers, and asks the DHT to find them...
-     * This is needed for all systems so startup straight away
-     */
-    //dht init
-    {
-        QMutexLocker stack(&connMtx);
-        mDhtMgr->enable(false); //enable dht unless vis set to no dht
-    }
-
-    //udp init
-    struct sockaddr_in iaddr;
-    {
-        QMutexLocker stack(&connMtx);
-        iaddr = ownState.localaddr;
-    }
-    TCP_over_UDP_init((struct sockaddr *) &iaddr, sizeof(iaddr));
-
-    //stun init
-    /********************************** STUN SERVERS ***********************************
-     * We maintain a list of stun servers. This is initialised with a set of random keys.
-     *
-     * This is gradually rolled over with time. We update with friends/friends of friends,
-     * and the lists that they provide (part of AutoDisc).
-     *
-     * max 100 entries?
-     */
-#ifdef false
-    {
-        QMutexLocker stack(&connMtx);
-
-        mDhtMgr->enableStun(true);
-        /* push stun list to DHT */
-        std::list<std::string>::iterator it;
-        for (it = mStunList.begin(); it != mStunList.end(); it++) {
-            mDhtMgr->addStun(*it);
-        }
-        mStunStatus = STUN_DHT;
-        mStunFound = 0;
-        mStunMoreRequired = true;
-    }
-#endif
-    //reset net status
-    netFlagOk = true;
-    netFlagUpnpOk = false;
-    netFlagDhtOk = false;
-    netFlagExtOk = false;
-    netFlagUdpOk = false;
-    netFlagTcpOk = false;
-    netFlagResetReq = false;
-
-    /* decide which net setup mode we're going into  */
-
-    QMutexLocker stack(&connMtx);
-
-    mNetInitTS = time(NULL);
-
-    /* Mask to remove the actual state bits, as any previous state is no longer useful. */
-    ownState.netMode &= ~(NET_MODE_ACTUAL);
-
-    switch (ownState.netMode & NET_MODE_TRYMODE) {
-        /* These top two netmodes are only set by the ServerConfig window, and that's disabled.
-           Therefore, we've been just going straight to default. */
-        case NET_MODE_TRY_EXT:  /* v similar to UDP */
-            ownState.netMode |= NET_MODE_EXT;
-            mNetStatus = NET_UDP_SETUP;
-            TCP_over_UDP_set_stunkeepalive(false);
-            mStunMoreRequired = false; /* only need to validate address (EXT) */
-
-            break;
-
-        case NET_MODE_TRY_UDP:
-            ownState.netMode |= NET_MODE_UDP;
-            mNetStatus = NET_UDP_SETUP;
-            TCP_over_UDP_set_stunkeepalive(true); //attempts to active tcp over udp tunnel stunning
-            break;
-
-        case NET_MODE_TRY_UPNP:
-        default:
-            /* Force it here (could be default!) */
-            ownState.netMode |= NET_MODE_UDP;      /* set to UDP, upgraded is UPnP is Okay */
-            mNetStatus = NET_UPNP_INIT;
-            TCP_over_UDP_set_stunkeepalive(true); //attempts to active tcp over udp tunnel stunning
-            break;
-    }
-}
-
-
-bool ConnectivityManager::shutdown() { /* blocking shutdown call */
-    bool upnpActive;
-    {
-        QMutexLocker stack(&connMtx);
-        upnpActive = ownState.netMode & NET_MODE_UPNP;
-    }
-
-    if (upnpActive) mUpnpMgr->shutdown();
-
-    return true;
 }
 
 void ConnectivityManager::tick() {
@@ -245,25 +82,92 @@ void ConnectivityManager::tick() {
     monitorsTick();
 }
 
+#define STUN_TEST_TIMEOUT 3
+#define UPNP_INIT_TIMEOUT 10
 void ConnectivityManager::netTick() {
+    QMutexLocker stack(&connMtx);
+    switch (connectionStatus) {
+    case CONNECTION_STATUS_STUNNING_INITIAL:
+        if (!doStun(stunServer1, udpTestSocket, ownState.localaddr.sin_port)) {
+            connectionStatus = CONNECTION_STATUS_TRYING_UPNP;
+        }
+        break;
+    case CONNECTION_STATUS_TRYING_UPNP:
+        if (!mUpnpMgr) {
+            mUpnpMgr = new upnphandler();
+            mUpnpMgr->setInternalPort(ntohs(ownState.localaddr.sin_port));
+            mUpnpMgr->setExternalPort(ntohs(ownState.localaddr.sin_port));
+            mUpnpMgr->enable(true);
+            mUpnpStartTime = time(NULL);
+        }
 
-    /* Check whether we are stuck on loopback. This happens if starts when
-       the computer is not yet connected to the internet. In such a case we
-       periodically check for a local net address. */
-    if (isLoopbackNet(&(ownState.localaddr.sin_addr))) checkNetAddress();
-
-    uint32_t netStatus;
-    {
-        QMutexLocker stack(&connMtx);
-        netStatus = mNetStatus;
+        if (mUpnpMgr->getActive()) {
+            connectionStatus = CONNECTION_STATUS_STUNNING_UPNP_TEST;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Universal Plug and Play successfully configured firewall, testing connection");
+        } else {
+            if ((time(NULL) - mUpnpStartTime) > UPNP_INIT_TIMEOUT) {
+                mUpnpMgr->shutdown();
+                delete mUpnpMgr;
+                mUpnpMgr = NULL;
+                connectionStatus = CONNECTION_STATUS_STUNNING_MAIN_PORT;
+                log(LOG_WARNING,
+                    CONNECTIVITY_MANAGER_ZONE,
+                    "Unable to configure firewall using Universal Plug and Play");
+            }
+        }
+        break;
+    case CONNECTION_STATUS_STUNNING_UPNP_TEST:
+        if (!doStun(stunServer1, udpTestSocket, ownState.localaddr.sin_port)) {
+            mUpnpMgr->shutdown();
+            delete mUpnpMgr;
+            mUpnpMgr = NULL;
+            connectionStatus = CONNECTION_STATUS_STUNNING_MAIN_PORT;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Connection test failed despite successfully configured connection, abandoning Universal Plug and Play attempt");
+        }
+        break;
+    case CONNECTION_STATUS_STUNNING_MAIN_PORT:
+        if (!doStun(stunServer2, udpMainSocket)) {
+            connectionStatus = CONNECTION_STATUS_NO_NET;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Total failure to access the Internet using Mixologist port " + QString::number(ntohs(ownState.localaddr.sin_port)));
+        }
+        break;
+    case CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST:
+        if (!doStun(stunServer1, udpTestSocket, ownState.localaddr.sin_port)) {
+            connectionStatus = CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST;
+        }
+        break;
+    case CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST:
+        if (!doStun(stunServer1, udpMainSocket)) {
+            connectionStatus = CONNECTION_STATUS_NO_NET;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Total failure to access the Internet using Mixologist port " + QString::number(ntohs(ownState.localaddr.sin_port)));
+        }
+        break;
+    case CONNECTION_STATUS_UPNP_IN_USE:
+        netUpnpMaintenance();
+        break;
+    case CONNECTION_STATUS_UDP_HOLE_PUNCHING:
+        break;
+    case CONNECTION_STATUS_RESTRICTED_CONE:
+        break;
+    case CONNECTION_STATUS_UNFIREWALLED:
+    case CONNECTION_STATUS_PORT_FORWARDED:
+    case CONNECTION_STATUS_SYMMETRIC_NAT:
+    case CONNECTION_STATUS_NO_NET:
+        break;
     }
 
+#ifdef false
     switch (netStatus) {
         case NET_UNKNOWN:
             netStartup();
-            break;
-        case NET_UPNP_INIT:
-            netUpnpInit();
             break;
         case NET_UPNP_SETUP:
             netUpnpCheck();
@@ -277,8 +181,7 @@ void ConnectivityManager::netTick() {
         default:
             break;
     }
-
-    return;
+#endif
 }
 
 void ConnectivityManager::statusTick() {
@@ -299,7 +202,7 @@ void ConnectivityManager::statusTick() {
             /* Check if connected peers need to be timed out */
             else if (mFriendList[librarymixer_id].state & PEER_S_CONNECTED) {
                 if (mFriendList[librarymixer_id].lastheard < timeoutIfOlder) {
-                    log(LOG_WARNING, CONNECTIONMANAGERZONE, QString("Connection with ") + mFriendList[librarymixer_id].name + " has timed out");
+                    log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, QString("Connection with ") + mFriendList[librarymixer_id].name + " has timed out");
 
                     mFriendList[librarymixer_id].state &= (~PEER_S_CONNECTED);
                     mFriendList[librarymixer_id].actions |= PEER_TIMEOUT;
@@ -387,222 +290,185 @@ void ConnectivityManager::monitorsTick() {
     }
 }
 
-void ConnectivityManager::netUpnpInit() {
-    uint16_t eport, iport;
+/**********************************************************************************
+ * Setup
+ **********************************************************************************/
 
-    {
-        QMutexLocker stack(&connMtx);
-        /* get the ports from the configuration */
-
-        mNetStatus = NET_UPNP_SETUP;
-        iport = ntohs(ownState.localaddr.sin_port);
-        eport = ntohs(ownState.serveraddr.sin_port);
-        if ((eport < 1000) || (eport > 30000)) {
-            eport = iport;
-        }
+void ConnectivityManager::addMonitor(pqiMonitor *mon) {
+    QMutexLocker stack(&connMtx);
+    if (monitorListeners.contains(mon)) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Internal error", "Initialization after already initialized");
+        return;
     }
-
-    mUpnpMgr->setInternalPort(iport);
-    mUpnpMgr->setExternalPort(eport);
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    mUpnpMgr->enable(settings.value("Network/UPNP", DEFAULT_UPNP).toBool());
+    monitorListeners.push_back(mon);
 }
 
-void ConnectivityManager::netUpnpCheck() {
-    /* grab timestamp */
-    time_t timeSpent;
-    {
-        QMutexLocker stack(&connMtx);
-        timeSpent = time(NULL) - mNetInitTS;
+void ConnectivityManager::connectionSetup() {
+    QMutexLocker stack(&connMtx);
+
+    /* Set the network interface we will use for the Mixologist. */
+    ownState.localaddr.sin_addr = getPreferredInterface();
+    ownState.localaddr.sin_port = htons(getLocalPort());
+    ownState.localaddr.sin_family = AF_INET;
+    ownState.serveraddr.sin_family = AF_INET;
+
+    /* We will open the udpTestSocket on a random port on our chosen interface. */
+    udpTestAddress = ownState.localaddr;
+    udpTestAddress.sin_port = htons(getRandomPortNumber());
+
+    int triesRemaining = 10;
+    while (!udpTestSocket && triesRemaining > 0) {
+        udpTestSocket = new UdpSorter(udpTestAddress);
+        if (!udpTestSocket->okay()) {
+            delete udpTestSocket;
+            udpTestSocket = NULL;
+            udpTestAddress.sin_port = htons(getRandomPortNumber());
+            triesRemaining--;
+            log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Unable to open UDP port " + QString::number(ntohs(udpTestAddress.sin_port)));
+            continue;
+        } else {
+           log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Opened UDP test port on " + QString::number(ntohs(udpTestAddress.sin_port)));
+           connect(udpTestSocket, SIGNAL(receivedStunBindingResponse(QString,QString,int,UdpSorter*)),
+                   this, SLOT(receivedStunPacket(QString,QString,int,UdpSorter*)));
+       }
+    }
+    if (!udpTestSocket) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Unable to open a UDP port");
+        exit(1);
     }
 
-    struct sockaddr_in extAddr;
-    bool upnpActive = mUpnpMgr->getActive();
-
-    if (!upnpActive && (timeSpent > MAX_UPNP_INIT)) {
-        /* fallback to UDP startup */
-        QMutexLocker stack(&connMtx);
-
-        /* UPnP Failed us! */
-        mUpnpAddrValid = false;
-        mNetStatus = NET_UDP_SETUP;
-
-        log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, "ConnectivityManager::netUpnpCheck() enabling stunkeepalive() due to UPNP failure");
-
-        TCP_over_UDP_set_stunkeepalive(true);
-    } else if (upnpActive && mUpnpMgr->getExternalAddress(extAddr)) {
-        /* switch to UDP startup */
-        QMutexLocker stack(&connMtx);
-
-        /* Set Net Status flags ....
-         * we now have external upnp address. Golden!
-         * don't set netOk flag until have seen some traffic.
-         */
-
-        netFlagUpnpOk = true;
-        netFlagExtOk = true;
-
-        mUpnpAddrValid = true;
-        mUpnpExtAddr = extAddr;
-        mNetStatus = NET_UDP_SETUP;
-        /* Fix netMode & Clear others! */
-        ownState.netMode = NET_MODE_TRY_UPNP | NET_MODE_UPNP;
-
-        log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, "ConnectivityManager::netUpnpCheck() disabling stunkeepalive() due to UPNP success");
-
-        TCP_over_UDP_set_stunkeepalive(false);
-        mStunMoreRequired = false; /* only need to validate address (UPNP) */
+    udpMainSocket = new UdpSorter(ownState.localaddr);
+    if (!udpMainSocket->okay()) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Unable to open main UDP port");
+        exit(1);
+    } else {
+        log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Opened UDP main port on " + QString::number(ntohs(ownState.localaddr.sin_port)));
+        connect(udpMainSocket, SIGNAL(receivedStunBindingResponse(QString,QString,int,UdpSorter*)),
+                this, SLOT(receivedStunPacket(QString,QString,int,UdpSorter*)));
     }
+
+    if (!LookupDNSAddr("stun.selbie.com", stunServer1)) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Unable to lookup Selbie");
+    }
+    stunServer1.sin_port = htons(3478);
+    if (!LookupDNSAddr("stun.ipns.com", stunServer2)) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Unable to lookup IPNS");
+    }
+    stunServer2.sin_port = htons(3478);
 }
 
-void ConnectivityManager::netUdpCheck() {
-    if (udpExtAddressCheck() || (mUpnpAddrValid)) {
-        bool extValid = false;
-        bool extAddrStable = false;
-        struct sockaddr_in iaddr;
-        struct sockaddr_in extAddr;
-        uint32_t mode = 0;
+bool ConnectivityManager::shutdown() { /* blocking shutdown call */
+    QMutexLocker stack(&connMtx);
+    if (mUpnpMgr) mUpnpMgr->shutdown();
 
-        {
-            QMutexLocker stack(&connMtx);
-            mNetStatus = NET_DONE;
-
-            /* get the addr from the configuration */
-            iaddr = ownState.localaddr;
-
-            if (mUpnpAddrValid) {
-                extValid = true;
-                extAddr = mUpnpExtAddr;
-                extAddrStable = true;
-            } else if (mStunAddrValid) {
-                extValid = true;
-                extAddr = mStunExtAddr;
-                extAddrStable = mStunAddrStable;
-            }
-
-            if (extValid) {
-                ownState.serveraddr = extAddr;
-                mode = NET_CONN_TCP_LOCAL;
-
-                if (!extAddrStable) {
-                    ownState.netMode &= ~(NET_MODE_ACTUAL);
-                    ownState.netMode |= NET_MODE_UNREACHABLE;
-                    TCP_over_UDP_set_stunkeepalive(false);
-                    mStunMoreRequired = false; /* no point -> unreachable (EXT) */
-
-                    /* send a system warning message */
-                    pqiNotify *notify = getPqiNotify();
-                    if (notify) {
-                        QString title =
-                            "Warning: Bad Firewall Configuration";
-
-                        QString msg;
-                        msg +=  "               **** WARNING ****     \n";
-                        msg +=  "Mixologist has detected that you are behind";
-                        msg +=  " a restrictive Firewall\n";
-                        msg +=  "\n";
-                        msg +=  "You cannot connect to other firewalled peers\n";
-                        msg +=  "\n";
-                        msg +=  "You can fix this by:\n";
-                        msg +=  "   (1) opening an External Port\n";
-                        msg +=  "   (2) enabling UPnP, or\n";
-                        msg +=  "   (3) get a newer Firewall/Router\n";
-
-                        notify->AddSysMessage(0, SYS_WARNING, title, msg);
-                    }
-
-                } else if (mUpnpAddrValid  || (ownState.netMode & NET_MODE_EXT)) {
-                    mode |= NET_CONN_TCP_EXTERNAL;
-                    mode |= NET_CONN_UDP_DHT_SYNC;
-                } else { // if (extAddrStable)
-                    /* Check if extAddr == intAddr (Not Firewalled) */
-                    if ((0 == inaddr_cmp(iaddr, extAddr)) &&
-                            isExternalNet(&(extAddr.sin_addr))) {
-                        mode |= NET_CONN_TCP_EXTERNAL;
-                    }
-
-                    mode |= NET_CONN_UDP_DHT_SYNC;
-                }
-            }
-
-        }
-
-        mDhtMgr->setExternalInterface(iaddr, extAddr, mode);
-
-        /* flag unreachables! */
-        if ((extValid) && (!extAddrStable)) {
-            netUnreachableCheck();
-        }
-    }
+    return true;
 }
 
-void ConnectivityManager::netUnreachableCheck() {
-    QMap<unsigned int, peerConnectState>::iterator it;
+bool ConnectivityManager::doStun(const sockaddr_in &stunServer, UdpSorter *sendSocket, int returnPort) {
+    if (stunSentTime != 0) {
+        if (time(NULL) - stunSentTime > STUN_TEST_TIMEOUT) {
+            stunSentTime = 0;
+            return false;
+        }
+    } else {
+        stunTransactionId = UdpStun_generate_transaction_id();
+
+        if (!sendSocket->sendStunBindingRequest(stunServer, stunTransactionId, ntohs(returnPort))) return true;
+
+        stunSentTime = time(NULL);
+    }
+    return true;
+}
+
+void ConnectivityManager::receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, UdpSorter *receivedOn) {
+    if (transactionId != stunTransactionId) {
+        log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
+            QString("Received unexpected STUN response not matching any sent request.") +
+            " Expected: " + stunTransactionId +
+            " Received: " + transactionId);
+        return;
+    }
 
     QMutexLocker stack(&connMtx);
 
-    for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
-        /* get last contact detail */
-        if (it.value().state & PEER_S_CONNECTED) {
-            continue;
-        }
+    stunTransactionId.clear();
+    stunSentTime = 0;
 
-        peerAddrInfo details;
-        switch (it.value().source) {
-            case CB_DHT:
-                details = it.value().dht;
-                break;
-            case CB_PERSON:
-                details = it.value().peer;
-                break;
-            default:
-                continue;
-                break;
-        }
-
-        std::cerr << "NUC() Peer: " << it.key() << std::endl;
-
-        /* Determine Reachability (only advisory) */
-        // if (ownState.netMode == NET_MODE_UNREACHABLE) // MUST BE TRUE!
-        {
-            if (details.type & NET_CONN_TCP_EXTERNAL) {
-                /* reachable! */
-                it.value().state &= (~PEER_S_UNREACHABLE);
-            } else {
-                /* unreachable */
-                it.value().state |= PEER_S_UNREACHABLE;
-            }
-        }
+    /* For our connection flow, we never expect to receive on any besides the main socket.
+       For the error we log, it should be generally a safe assumption the only time this problem could arise
+       would be if the STUN server ignores the response-port attribute on a STUN initiated from the udpTestSocket. */
+    if (receivedOn != udpMainSocket) {
+        log(LOG_WARNING,
+            CONNECTIVITY_MANAGER_ZONE,
+            "Error in STUN, STUN server (" + QString(inet_ntoa(stunServer1.sin_addr)) + ") ignored the response-port attribute.");
+        return;
     }
 
+    if (connectionStatus == CONNECTION_STATUS_STUNNING_INITIAL) {
+        inet_aton(mappedAddress.toStdString().c_str(), &ownState.serveraddr.sin_addr);
+        ownState.serveraddr.sin_port = ownState.localaddr.sin_port;
+        if (QString(inet_ntoa(ownState.localaddr.sin_addr)) == mappedAddress) {
+            connectionStatus = CONNECTION_STATUS_UNFIREWALLED;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "No firewall detected, connection ready to go on " + mappedAddress +
+                ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+        } else {
+            connectionStatus = CONNECTION_STATUS_PORT_FORWARDED;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Detected firewall with port-forwarding already set up, connection ready to go on " + mappedAddress +
+                ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+        }
+    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UPNP_TEST) {
+        inet_aton(mappedAddress.toStdString().c_str(), &ownState.serveraddr.sin_addr);
+        ownState.serveraddr.sin_port = ownState.localaddr.sin_port;
+        connectionStatus = CONNECTION_STATUS_UPNP_IN_USE;
+        log(LOG_WARNING,
+            CONNECTIVITY_MANAGER_ZONE,
+            "Connection test successful, Universal Plug and Play configured connection ready to go on " + mappedAddress +
+            ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_MAIN_PORT) {
+        inet_aton(mappedAddress.toStdString().c_str(), &ownState.serveraddr.sin_addr);
+        ownState.serveraddr.sin_port = htons(mappedPort);
+        connectionStatus = CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST;
+    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST) {
+        connectionStatus = CONNECTION_STATUS_UDP_HOLE_PUNCHING;
+        log(LOG_WARNING,
+            CONNECTIVITY_MANAGER_ZONE,
+            "Connection test successful, punching a UDP hole in the firewall on " + mappedAddress +
+            ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST) {
+        if (mappedPort == ntohs(ownState.serveraddr.sin_port)) {
+            connectionStatus = CONNECTION_STATUS_RESTRICTED_CONE;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Restricted cone firewall detected, punching a UDP hole (with reduced efficacy) in the firewall on " + mappedAddress +
+                ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+        } else {
+            connectionStatus = CONNECTION_STATUS_SYMMETRIC_NAT;
+            log(LOG_WARNING,
+                CONNECTIVITY_MANAGER_ZONE,
+                "Symmetric NAT firewall detected, manual configuration of the firewall will be necessary to connect to friends over the Internet.");
+        }
+    }
 }
 
+#define UPNP_MAINTENANCE_INTERVAL 300
 void ConnectivityManager::netUpnpMaintenance() {
     /* We only need to maintain if we're using UPNP,
        and this variable is only set true after UPNP is successfully configured. */
     static time_t last_call;
-    bool notTooFrequent = (time(NULL) - last_call > 300);
-    if (mUpnpAddrValid && notTooFrequent) {
+    if (time(NULL) - last_call > UPNP_MAINTENANCE_INTERVAL) {
         last_call = time(NULL);
         if (!mUpnpMgr->getActive()) {
             mUpnpMgr->restart();
             /* Return netTick loop to waiting for connection to be setup.
                Reset the clock so it has another full time-out to fix the connection. */
-            mNetStatus = NET_UPNP_SETUP;
-            mNetInitTS = time(NULL);
+            connectionStatus = CONNECTION_STATUS_TRYING_UPNP;
+            mUpnpStartTime = time(NULL);
         }
     }
-}
-
-/********************************  Network Status  *********************************
- * Configuration Loading / Saving.
- */
-
-
-void ConnectivityManager::addMonitor(pqiMonitor *mon) {
-    QMutexLocker stack(&connMtx);
-    if (monitorListeners.contains(mon)) exit(-1);
-    monitorListeners.push_back(mon);
 }
 
 bool ConnectivityManager::getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state) {
@@ -622,7 +488,7 @@ bool ConnectivityManager::getQueuedConnectAttempt(unsigned int librarymixer_id, 
 
     if (!mFriendList.contains(librarymixer_id)) {
         log(LOG_WARNING,
-            CONNECTIONMANAGERZONE,
+            CONNECTIVITY_MANAGER_ZONE,
             QString("Can't make attempt to connect to user, not in friends list, certificate id was: ").append(librarymixer_id));
         return false;
     }
@@ -631,7 +497,7 @@ bool ConnectivityManager::getQueuedConnectAttempt(unsigned int librarymixer_id, 
 
     if (connectState->connAddrs.size() < 1) {
         log(LOG_WARNING,
-            CONNECTIONMANAGERZONE,
+            CONNECTIVITY_MANAGER_ZONE,
             QString("Can't make attempt to connect to user, have no IP address: ").append(connectState->name));
         return false;
     }
@@ -656,10 +522,10 @@ bool ConnectivityManager::getQueuedConnectAttempt(unsigned int librarymixer_id, 
             return false;
         } else {
             if (ipit.value() == USED_IP_CONNECTED) {
-                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, "ConnectivityManager::connectAttempt Can not connect to " + addressToString(address.addr) + " due to existing connection.");
+                log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, "ConnectivityManager::connectAttempt Can not connect to " + addressToString(address.addr) + " due to existing connection.");
             } else if (ipit.value() == USED_IP_CONNECTING) {
                 connectState->schedulednexttry = time(NULL) + USED_IP_WAIT_TIME;
-                log(LOG_DEBUG_BASIC, CONNECTIONMANAGERZONE, "ConnectivityManager::connectAttempt Waiting to try to connect to " + addressToString(address.addr) + " due to existing attempted connection.");
+                log(LOG_DEBUG_BASIC, CONNECTIVITY_MANAGER_ZONE, "ConnectivityManager::connectAttempt Waiting to try to connect to " + addressToString(address.addr) + " due to existing attempted connection.");
             }
             return false;
         }
@@ -675,7 +541,7 @@ bool ConnectivityManager::getQueuedConnectAttempt(unsigned int librarymixer_id, 
         type = connectState->currentConnAddr.type;
 
         log(LOG_DEBUG_BASIC,
-            CONNECTIONMANAGERZONE,
+            CONNECTIVITY_MANAGER_ZONE,
             QString("ConnectivityManager::connectAttempt Returning information for connection attempt to user: ").append(connectState->name));
 
         return true;
@@ -687,7 +553,7 @@ bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, b
 
     if (!mFriendList.contains(librarymixer_id)) {
         log(LOG_WARNING,
-            CONNECTIONMANAGERZONE,
+            CONNECTIVITY_MANAGER_ZONE,
             QString("Failed to connect to user, not in friends list, friend number was: ").append(QString::number(librarymixer_id)));
         return false;
     }
@@ -705,7 +571,7 @@ bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, b
         /* update address (will come through from DISC) */
 
         log(LOG_DEBUG_BASIC,
-            CONNECTIONMANAGERZONE,
+            CONNECTIVITY_MANAGER_ZONE,
             QString("Successfully connected to: ") + connectState->name +
             " (" + inet_ntoa(connectState->currentConnAddr.addr.sin_addr) + ")");
 
@@ -715,13 +581,13 @@ bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, b
         mStatusChanged = true;
         connectState->lastcontact = time(NULL);
         connectState->lastheard = time(NULL);
-        connectState->connecttype = flags;
+        //connectState->connecttype = flags;
 
         return true;
     }
 
     log(LOG_DEBUG_BASIC,
-        CONNECTIONMANAGERZONE,
+        CONNECTIVITY_MANAGER_ZONE,
         QString("Unable to connect to friend: ") + connectState->name +
         ", flags: " + QString::number(flags));
 
@@ -734,7 +600,7 @@ bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, b
 
         connectState->lastcontact = time(NULL);  /* time of disconnect */
 
-        mDhtMgr->findPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
+        //mDhtMgr->findPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
     }
 
     /* If there are no addresses left to try, we're done. */
@@ -756,7 +622,7 @@ bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, b
 
 void ConnectivityManager::heardFrom(unsigned int librarymixer_id) {
     if (!mFriendList.contains(librarymixer_id)) {
-        log(LOG_ERROR, CONNECTIONMANAGERZONE, QString("Somehow heard from someone that is not a friend: ").append(librarymixer_id));
+        log(LOG_ERROR, CONNECTIVITY_MANAGER_ZONE, QString("Somehow heard from someone that is not a friend: ").append(librarymixer_id));
         return;
     }
     mFriendList[librarymixer_id].lastheard = time(NULL);
@@ -829,7 +695,7 @@ void ConnectivityManager::queueConnectionAttempt(peerConnectState *connectState,
             addressToConnect.addr = connectState->serveraddr;
 
         log(LOG_DEBUG_ALERT,
-            CONNECTIONMANAGERZONE,
+            CONNECTIVITY_MANAGER_ZONE,
             QString("ConnectivityManager::queueConnectionAttempt") +
             " Attempting connection to friend #" + QString::number(connectState->librarymixer_id) +
             " with type set to " + QString::number(connectionType) +
@@ -853,16 +719,6 @@ bool ConnectivityManager::retryConnectUDP(unsigned int librarymixer_id) {
 
     /* Update the lastattempt to connect time to now. */
     connectState->lastattempt = time(NULL);
-
-    if (!(ownState.netMode & NET_MODE_UNREACHABLE)) {
-        log(LOG_DEBUG_ALERT,
-            CONNECTIONMANAGERZONE,
-            QString("ConnectivityManager::retryConnectUDP()") +
-            " Notifying friend " + QString::number(librarymixer_id));
-
-        /* attempt UDP connection */
-        mDhtMgr->notifyPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
-    }
 
     return true;
 }
@@ -966,7 +822,6 @@ bool ConnectivityManager::addUpdateFriend(unsigned int librarymixer_id, QString 
             pstate.actions = PEER_NEW;
             mStatusChanged = true;
         }
-        pstate.netMode = NET_MODE_UDP;
         pstate.lastcontact = 0;
 
         /* addr & timestamps -> auto cleared */
@@ -1061,46 +916,177 @@ bool ConnectivityManager::setExtAddress(unsigned int librarymixer_id, struct soc
     return true;
 }
 
-bool ConnectivityManager::setNetworkMode(unsigned int librarymixer_id, uint32_t netMode) {
-    if (librarymixer_id == authMgr->OwnLibraryMixerId()) {
-        /* only change TRY flags */
-        ownState.netMode &= ~(NET_MODE_TRYMODE);
+/**********************************************************************************
+ * Utility methods
+ **********************************************************************************/
 
-        switch (netMode & NET_MODE_ACTUAL) {
-            case NET_MODE_EXT:
-                ownState.netMode |= NET_MODE_TRY_EXT;
-                break;
-            case NET_MODE_UPNP:
-                ownState.netMode |= NET_MODE_TRY_UPNP;
-                break;
-            default:
-            case NET_MODE_UDP:
-                ownState.netMode |= NET_MODE_TRY_UDP;
-                break;
-        }
-
-        /* if we've started up - then tweak Dht On/Off */
-        if (mNetStatus != NET_UNKNOWN) {
-            mDhtMgr->enable(false);
-        }
-
-        return true;
+int ConnectivityManager::getLocalPort() {
+    QSettings settings(*mainSettings, QSettings::IniFormat);
+    if (settings.contains("Network/PortNumber")) {
+        int storedPort = settings.value("Network/PortNumber", DEFAULT_PORT).toInt();
+        if (storedPort != SET_TO_RANDOMIZED_PORT &&
+            storedPort > Peers::MIN_PORT &&
+            storedPort < Peers::MAX_PORT) return storedPort;
+        else return getRandomPortNumber();
+    } else {
+        int randomPort = getRandomPortNumber();
+        settings.setValue("Network/PortNumber", randomPort);
+        return randomPort;
     }
+}
+
+#define MIN_RAND_PORT 10000
+#define MAX_RAND_PORT 30000
+int ConnectivityManager::getRandomPortNumber() const {
+    qsrand(time(NULL));
+    return (qrand() % (MAX_RAND_PORT - MIN_RAND_PORT) + MIN_RAND_PORT);
+}
+
+QString ConnectivityManager::addressToString(struct sockaddr_in address) {
+    return QString(inet_ntoa(address.sin_addr)) + ":" + QString::number(ntohs(address.sin_port));
+}
+
+
+
+#ifdef false
+const uint32_t STUN_DHT = 0x0001;
+
+void ConnectivityManager::netStartup() {
+    /* StunInit gets a list of peers, and asks the DHT to find them...
+     * This is needed for all systems so startup straight away
+     */
+    //dht init
+    {
+        QMutexLocker stack(&connMtx);
+        mDhtMgr->enable(false); //enable dht unless vis set to no dht
+    }
+
+    //udp init
+    struct sockaddr_in iaddr;
+    {
+        QMutexLocker stack(&connMtx);
+        iaddr = ownState.localaddr;
+    }
+    TCP_over_UDP_init((struct sockaddr *) &iaddr, sizeof(iaddr));
+
+    //stun init
+    /********************************** STUN SERVERS ***********************************
+     * We maintain a list of stun servers. This is initialised with a set of random keys.
+     *
+     * This is gradually rolled over with time. We update with friends/friends of friends,
+     * and the lists that they provide (part of AutoDisc).
+     *
+     * max 100 entries?
+     */
+    {
+        QMutexLocker stack(&connMtx);
+
+        mDhtMgr->enableStun(true);
+        /* push stun list to DHT */
+        std::list<std::string>::iterator it;
+        for (it = mStunList.begin(); it != mStunList.end(); it++) {
+            mDhtMgr->addStun(*it);
+        }
+        mStunStatus = STUN_DHT;
+        mStunFound = 0;
+        mStunMoreRequired = true;
+    }
+    //reset net status
+    netFlagOk = true;
+    netFlagUpnpOk = false;
+    netFlagDhtOk = false;
+    netFlagExtOk = false;
+    netFlagUdpOk = false;
+    netFlagTcpOk = false;
+    netFlagResetReq = false;
+
+    /* decide which net setup mode we're going into  */
 
     QMutexLocker stack(&connMtx);
 
-    /* check if it is a friend */
-    QMap<unsigned int, peerConnectState>::iterator it;
-    if (mFriendList.end() == (it = mFriendList.find(librarymixer_id))) return false;
+    mUpnpStartTime = time(NULL);
 
-    /* "it" points to peer */
-    it.value().netMode = netMode;
+    /* Mask to remove the actual state bits, as any previous state is no longer useful. */
+    ownState.netMode &= ~(NET_MODE_ACTUAL);
 
+    switch (ownState.netMode & NET_MODE_TRYMODE) {
+        /* These top two netmodes are only set by the ServerConfig window, and that's disabled.
+           Therefore, we've been just going straight to default. */
+        case NET_MODE_TRY_EXT:  /* v similar to UDP */
+            ownState.netMode |= NET_MODE_EXT;
+            mNetStatus = NET_UDP_SETUP;
+            TCP_over_UDP_set_stunkeepalive(false);
+            mStunMoreRequired = false; /* only need to validate address (EXT) */
+
+            break;
+
+        case NET_MODE_TRY_UDP:
+            ownState.netMode |= NET_MODE_UDP;
+            mNetStatus = NET_UDP_SETUP;
+            TCP_over_UDP_set_stunkeepalive(true); //attempts to active tcp over udp tunnel stunning
+            break;
+
+        case NET_MODE_TRY_UPNP:
+        default:
+            /* Force it here (could be default!) */
+            ownState.netMode |= NET_MODE_UDP;      /* set to UDP, upgraded is UPnP is Okay */
+            //mNetStatus = NET_UPNP_INIT;
+            TCP_over_UDP_set_stunkeepalive(true); //attempts to active tcp over udp tunnel stunning
+            break;
+    }
+}
+
+bool ConnectivityManager::udpExtAddressCheck() {
+    /* three possibilities:
+     * (1) not found yet.
+     * (2) Found!
+     * (3) bad udp (port switching).
+     */
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    uint8_t stable;
+
+    if (0 < TCP_over_UDP_read_extaddr((struct sockaddr *) &addr, &len, &stable)) {
+        QMutexLocker stack(&connMtx);
+
+
+        /* update UDP information */
+        mStunExtAddr = addr;
+        mStunAddrValid = true;
+        mStunAddrStable = (stable != 0);
+
+        /* update net Status flags ....
+         * we've got stun information via udp...
+         * so up is okay, and ext address is known stable or not.
+         */
+
+        if (mStunAddrStable)
+            netFlagExtOk = true;
+        netFlagUdpOk = true;
+
+        return true;
+    }
     return false;
 }
 
+class peerAddrInfo {
+public:
+    peerAddrInfo()
+        :found(false), type(0), ts(0) {
+        sockaddr_clear(&laddr);
+        sockaddr_clear(&raddr);
+    }
+
+    bool found;
+    uint32_t type;
+    struct sockaddr_in laddr, raddr;
+    time_t ts;
+};
+
+
 /******* overloaded from pqiConnectCb *************/
 //3 functions are related to DHT
+const uint32_t TCP_DEFAULT_DELAY = 2; /* 2 Seconds? is it be enough! */
 void ConnectivityManager::peerStatus (std::string cert_id, struct sockaddr_in laddr, struct sockaddr_in raddr,
                                       uint32_t type, uint32_t flags, uint32_t source) {
     QMap<unsigned int, peerConnectState>::iterator it;
@@ -1129,7 +1115,7 @@ void ConnectivityManager::peerStatus (std::string cert_id, struct sockaddr_in la
             out << " type: " << type;
             out << " flags: " << flags;
             out << " source: " << source;
-            log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
+            log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, out.str().c_str());
         }
 
         /* look up the id */
@@ -1209,7 +1195,7 @@ void ConnectivityManager::peerStatus (std::string cert_id, struct sockaddr_in la
                 /* Log */
                 std::ostringstream out;
                 out << "ConnectivityManager::peerStatus() NO CONNECT (already connected!)";
-                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, out.str().c_str());
             }
 
             return;
@@ -1260,7 +1246,7 @@ void ConnectivityManager::peerStatus (std::string cert_id, struct sockaddr_in la
                 out << " delay: " << pca.delay;
                 out << " period: " << pca.period;
                 out << " source: " << source;
-                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, out.str().c_str());
             }
 
             it.value().connAddrs.push_back(pca);
@@ -1288,7 +1274,7 @@ void ConnectivityManager::peerStatus (std::string cert_id, struct sockaddr_in la
                 out << " delay: " << pca.delay;
                 out << " period: " << pca.period;
                 out << " source: " << source;
-                log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
+                log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, out.str().c_str());
             }
 
             it.value().connAddrs.push_back(pca);
@@ -1317,6 +1303,9 @@ void ConnectivityManager::peerStatus (std::string cert_id, struct sockaddr_in la
     }
 }
 
+const uint32_t UDP_DHT_DELAY = DHT_NOTIFY_PERIOD + 60; /* + 1 minute for DHT POST */
+const uint32_t UDP_PROXY_DELAY = 30;  /* 30 seconds (NOT IMPLEMENTED YET!) */
+
 void ConnectivityManager::peerConnectRequest(std::string id, struct sockaddr_in raddr, uint32_t source) {
     {
         /* Log */
@@ -1326,7 +1315,7 @@ void ConnectivityManager::peerConnectRequest(std::string id, struct sockaddr_in 
         out << " raddr: " << inet_ntoa(raddr.sin_addr);
         out << ":" << ntohs(raddr.sin_port);
         out << " source: " << source;
-        log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, out.str().c_str());
     }
 
     /******************** TCP PART *****************************/
@@ -1374,7 +1363,7 @@ void ConnectivityManager::peerConnectRequest(std::string id, struct sockaddr_in 
             out << " type: " << pca.type;
             out << " delay: " << pca.delay;
             out << " period: " << pca.period;
-            log(LOG_DEBUG_ALERT, CONNECTIONMANAGERZONE, out.str().c_str());
+            log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, out.str().c_str());
         }
 
         /* push to the back ... TCP ones should be tried first */
@@ -1391,85 +1380,6 @@ void ConnectivityManager::peerConnectRequest(std::string id, struct sockaddr_in 
         it.value().actions |= PEER_CONNECT_REQ;
         mStatusChanged = true;
     }
-}
-
-/*******************************  UDP MAINTAINANCE  ********************************
- * Interaction with the UDP is mainly for determining the External Port.
- *
- */
-
-bool ConnectivityManager::udpInternalAddress(struct sockaddr_in) {
-    return false;
-}
-
-bool ConnectivityManager::udpExtAddressCheck() {
-    /* three possibilities:
-     * (1) not found yet.
-     * (2) Found!
-     * (3) bad udp (port switching).
-     */
-    struct sockaddr_in addr;
-    socklen_t len = sizeof(addr);
-    uint8_t stable;
-
-    if (0 < TCP_over_UDP_read_extaddr((struct sockaddr *) &addr, &len, &stable)) {
-        QMutexLocker stack(&connMtx);
-
-
-        /* update UDP information */
-        mStunExtAddr = addr;
-        mStunAddrValid = true;
-        mStunAddrStable = (stable != 0);
-
-        /* update net Status flags ....
-         * we've got stun information via udp...
-         * so up is okay, and ext address is known stable or not.
-         */
-
-        if (mStunAddrStable)
-            netFlagExtOk = true;
-        netFlagUdpOk = true;
-
-        return true;
-    }
-    return false;
-}
-
-void ConnectivityManager::udpStunPeer(std::string id, struct sockaddr_in &addr) {
-    /* add it into udp stun list */
-    TCP_over_UDP_add_stunpeer((struct sockaddr *) &addr, sizeof(addr), id.c_str());
-}
-
-bool ConnectivityManager::stunCheck() {
-    /* check if we've got a Stun result */
-    bool stunOk = false;
-
-    {
-        QMutexLocker stack(&connMtx);
-
-        /* if DONE -> return */
-        if (mStunStatus == STUN_DONE) {
-            return true;
-        }
-
-        if (mStunFound >= STUN_FOUND_MIN) {
-            mStunMoreRequired = false;
-        }
-        stunOk = (!mStunMoreRequired);
-    }
-
-
-    if (udpExtAddressCheck() && (stunOk)) {
-        /* set external UDP address */
-        mDhtMgr->enableStun(false);
-
-        QMutexLocker stack(&connMtx);
-
-        mStunStatus = STUN_DONE;
-
-        return true;
-    }
-    return false;
 }
 
 void ConnectivityManager::stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags) {
@@ -1498,72 +1408,131 @@ void ConnectivityManager::stunStatus(std::string id, struct sockaddr_in raddr, u
     }
 }
 
-/* FLAGS
+void ConnectivityManager::udpStunPeer(std::string id, struct sockaddr_in &addr) {
+    /* add it into udp stun list */
+    TCP_over_UDP_add_stunpeer((struct sockaddr *) &addr, sizeof(addr), id.c_str());
+}
 
-ONLINE
-EXT
-UPNP
-UDP
-FRIEND
-FRIEND_OF_FRIEND
-OTHER
+void ConnectivityManager::netUdpCheck() {
+    if (udpExtAddressCheck() || (mUpnpAddrValid)) {
+        bool extValid = false;
+        bool extAddrStable = false;
+        struct sockaddr_in iaddr;
+        struct sockaddr_in extAddr;
+        uint32_t mode = 0;
 
-*/
+        {
+            QMutexLocker stack(&connMtx);
+            mNetStatus = NET_DONE;
 
-void ConnectivityManager::stunCollect(std::string id, struct sockaddr_in, uint32_t flags) {
+            /* get the addr from the configuration */
+            iaddr = ownState.localaddr;
+
+            if (mUpnpAddrValid) {
+                extValid = true;
+                extAddr = mUpnpExtAddr;
+                extAddrStable = true;
+            } else if (mStunAddrValid) {
+                extValid = true;
+                extAddr = mStunExtAddr;
+                extAddrStable = mStunAddrStable;
+            }
+
+            if (extValid) {
+                ownState.serveraddr = extAddr;
+                mode = NET_CONN_TCP_LOCAL;
+
+                if (!extAddrStable) {
+                    ownState.netMode &= ~(NET_MODE_ACTUAL);
+                    ownState.netMode |= NET_MODE_UNREACHABLE;
+                    TCP_over_UDP_set_stunkeepalive(false);
+                    mStunMoreRequired = false; /* no point -> unreachable (EXT) */
+
+                    /* send a system warning message */
+                    pqiNotify *notify = getPqiNotify();
+                    if (notify) {
+                        QString title =
+                            "Warning: Bad Firewall Configuration";
+
+                        QString msg;
+                        msg +=  "               **** WARNING ****     \n";
+                        msg +=  "Mixologist has detected that you are behind";
+                        msg +=  " a restrictive Firewall\n";
+                        msg +=  "\n";
+                        msg +=  "You cannot connect to other firewalled peers\n";
+                        msg +=  "\n";
+                        msg +=  "You can fix this by:\n";
+                        msg +=  "   (1) opening an External Port\n";
+                        msg +=  "   (2) enabling UPnP, or\n";
+                        msg +=  "   (3) get a newer Firewall/Router\n";
+
+                        notify->AddSysMessage(SYS_WARNING, title, msg);
+                    }
+
+                } else if (mUpnpAddrValid  || (ownState.netMode & NET_MODE_EXT)) {
+                    mode |= NET_CONN_TCP_EXTERNAL;
+                    mode |= NET_CONN_UDP_DHT_SYNC;
+                } else { // if (extAddrStable)
+                    /* Check if extAddr == intAddr (Not Firewalled) */
+                    if ((0 == inaddr_cmp(iaddr, extAddr)) &&
+                            isExternalNet(&(extAddr.sin_addr))) {
+                        mode |= NET_CONN_TCP_EXTERNAL;
+                    }
+
+                    mode |= NET_CONN_UDP_DHT_SYNC;
+                }
+            }
+
+        }
+
+        mDhtMgr->setExternalInterface(iaddr, extAddr, mode);
+
+        /* flag unreachables! */
+        if ((extValid) && (!extAddrStable)) {
+            netUnreachableCheck();
+        }
+    }
+}
+
+void ConnectivityManager::netUnreachableCheck() {
+    QMap<unsigned int, peerConnectState>::iterator it;
+
     QMutexLocker stack(&connMtx);
 
-    std::list<std::string>::iterator it;
-    it = std::find(mStunList.begin(), mStunList.end(), id);
-    if (it == mStunList.end()) {
-        /* add it in:
-         * if FRIEND / ONLINE or if list is short.
-         */
-        if ((flags & STUN_ONLINE) || (flags & STUN_FRIEND)) {
-            /* push to the front */
-            mStunList.push_front(id);
-
-        } else if (mStunList.size() < STUN_LIST_MIN) {
-            /* push to the front */
-            mStunList.push_back(id);
+    for (it = mFriendList.begin(); it != mFriendList.end(); it++) {
+        /* get last contact detail */
+        if (it.value().state & PEER_S_CONNECTED) {
+            continue;
         }
-    } else {
-        /* if they're online ... move to the front
-         */
-        if (flags & STUN_ONLINE) {
-            /* move to front */
-            mStunList.erase(it);
-            mStunList.push_front(id);
+
+        peerAddrInfo details;
+        switch (it.value().source) {
+            case CB_DHT:
+                details = it.value().dht;
+                break;
+            case CB_PERSON:
+                details = it.value().peer;
+                break;
+            default:
+                continue;
+                break;
+        }
+
+        std::cerr << "NUC() Peer: " << it.key() << std::endl;
+
+        /* Determine Reachability (only advisory) */
+        // if (ownState.netMode == NET_MODE_UNREACHABLE) // MUST BE TRUE!
+        {
+            if (details.type & NET_CONN_TCP_EXTERNAL) {
+                /* reachable! */
+                it.value().state &= (~PEER_S_UNREACHABLE);
+            } else {
+                /* unreachable */
+                it.value().state |= PEER_S_UNREACHABLE;
+            }
         }
     }
 
 }
+#endif
 
-
-/**********************************************************************************
- * Utility methods
- **********************************************************************************/
-
-#define MIN_RAND_PORT 10000
-#define MAX_RAND_PORT 30000
-
-int ConnectivityManager::getLocalPort() {
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.contains("Network/PortNumber")) {
-        int storedPort = settings.value("Network/PortNumber", DEFAULT_PORT).toInt();
-        if (storedPort != SET_TO_RANDOMIZED_PORT &&
-            storedPort > Peers::MIN_PORT &&
-            storedPort < Peers::MAX_PORT) return storedPort;
-        srand(time(NULL));
-        return rand() % (MAX_RAND_PORT - MIN_RAND_PORT + 1) + MIN_RAND_PORT;
-    } else {
-        srand(time(NULL));
-        int randomPort = rand() % (MAX_RAND_PORT - MIN_RAND_PORT + 1) + MIN_RAND_PORT;
-        settings.setValue("Network/PortNumber", randomPort);
-        return randomPort;
-    }
-}
-
-QString ConnectivityManager::addressToString(struct sockaddr_in address) {
-    return QString(inet_ntoa(address.sin_addr)) + ":" + QString::number(ntohs(address.sin_port));
-}

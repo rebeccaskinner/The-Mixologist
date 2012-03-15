@@ -75,6 +75,8 @@ pqistreamer::pqistreamer(Serialiser *rss, std::string id, unsigned int librarymi
         out << "pqistreamer::pqistreamer()";
         out << " NULL bio, FATAL ERROR!" << std::endl;
         pqioutput(PQL_ALERT, PQISTREAMERZONE, out.str().c_str());
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Fatal error", "Unknown total failure of network interface.");
+
         exit(1);
     }
 

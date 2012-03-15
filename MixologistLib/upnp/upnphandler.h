@@ -118,11 +118,11 @@ public:
     void requestRestart();
 
 private slots:
-    void startUPnP(bool emitCompletion = true);
+    void startUPnP();
     void stopUPnP(bool emitCompletion = true);
 
 signals:
-    void startRequested(bool emitCompletion);
+    void startRequested();
     void stopRequested(bool emitCompletion);
     void workCompleted();
 

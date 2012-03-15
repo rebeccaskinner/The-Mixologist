@@ -279,7 +279,7 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
              * will mean variations in which peer
              * starts first. hopefully stop deadlocks.
              */
-            if (rand() % 10 != 0) return false;
+            if (qrand() % 10 != 0) return false;
         }
 
         /* reset, treat as if we received the last request so we can send a new request */

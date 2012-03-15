@@ -27,110 +27,21 @@
 #include "pqi/authmgr.h"
 #include "pqi/pqinetwork.h"
 
+#include <QObject>
 #include <QMutex>
 #include <QMap>
 
-/***** Framework / initial implementation for a connection manager.
- *
- * This needs a state machine for Initialisation.
- *
- * Network state:
- *   NET_UNKNOWN
- *   NET_EXT_UNKNOWN * forwarded port (but Unknown Ext IP) *
- *   NET_EXT_KNOWN   * forwarded port with known IP/Port. *
- *
- *   NET_UPNP_CHECK  * checking for UPnP *
- *   NET_UPNP_KNOWN  * confirmed UPnP ext Ip/port *
- *
- *   NET_UDP_UNKNOWN * not Ext/UPnP - to determine Ext IP/Port *
- *   NET_UDP_KNOWN   * have Stunned for Ext Addr *
- *
- *  Transitions:
- *
- *  NET_UNKNOWN -(config)-> NET_EXT_UNKNOWN
- *  NET_UNKNOWN -(config)-> NET_UPNP_UNKNOWN
- *  NET_UNKNOWN -(config)-> NET_UDP_UNKNOWN
- *
- *  NET_EXT_UNKNOWN -(DHT(ip)/Stun)-> NET_EXT_KNOWN
- *
- *  NET_UPNP_UNKNOWN -(Upnp)-> NET_UPNP_KNOWN
- *  NET_UPNP_UNKNOWN -(timout/Upnp)-> NET_UDP_UNKNOWN
- *
- *  NET_UDP_UNKNOWN -(stun)-> NET_UDP_KNOWN
- *
- *
- * STUN state:
- *  STUN_INIT * done nothing *
- *  STUN_DHT  * looking up peers *
- *  STUN_DONE * found active peer and stunned *
- *
- *
- * Steps.
- *******************************************************************
- * (1) Startup.
- *  - UDP port setup.
- *  - DHT setup.
- *  - Get Stun Keys -> add to DHT.
- *  - Feedback from DHT -> ask UDP to stun.
- *
- * (1) determine Network mode.
- *  If external Port.... Done:
- * (2)
- *******************************************************************
- * Stable operation:
- * (1) tick and check peers.
- * (2) handle callback.
- * (3) notify of new/failed connections.
- *
- *
- */
-
-/* Startup NetModes of what we should try.
-   TRYMODE is a mask for all of them. */
-const uint32_t NET_MODE_TRYMODE =    0x00f0;
-
-const uint32_t NET_MODE_TRY_EXT  =   0x0010;
-const uint32_t NET_MODE_TRY_UPNP =   0x0020;
-const uint32_t NET_MODE_TRY_UDP  =   0x0040;
-
-/* Actual NetModes that indicate the current state */
-const uint32_t NET_MODE_ACTUAL =      0x000f;
-
-const uint32_t NET_MODE_UNKNOWN =     0x0000;
-const uint32_t NET_MODE_EXT =         0x0001;
-const uint32_t NET_MODE_UPNP =        0x0002;
-const uint32_t NET_MODE_UDP =         0x0004;
-const uint32_t NET_MODE_UNREACHABLE = 0x0008;
-
-/* order of attempts ... */
+/* Used by PeerConnectState to indicate type of connection.
+   Previous comment: order of attempts ... */
 const uint32_t NET_CONN_TCP_ALL         = 0x000f;
 const uint32_t NET_CONN_UDP_ALL         = 0x00f0;
 
 /* Used by peerConnectAddress to indicate the type of connection to make. */
 const uint32_t NET_CONN_TCP_LOCAL       = 0x0001;
 const uint32_t NET_CONN_TCP_EXTERNAL    = 0x0002;
-const uint32_t NET_CONN_UDP_DHT_SYNC    = 0x0010;
 
-/* flags of peerStatus */
-/* Removed DHT related
-const uint32_t NET_FLAGS_USE_DISC       = 0x0001;
-const uint32_t NET_FLAGS_USE_DHT        = 0x0002;*/
-const uint32_t NET_FLAGS_ONLINE         = 0x0004;
-const uint32_t NET_FLAGS_EXTERNAL_ADDR  = 0x0008;
-const uint32_t NET_FLAGS_STABLE_UDP     = 0x0010;
-const uint32_t NET_FLAGS_TRUSTS_ME      = 0x0020;
-
+//Used by pqipersongrp as the timeout period for connecting to a friend over TCP
 const uint32_t TCP_STD_TIMEOUT_PERIOD   = 5; /* 5 seconds! */
-
-class peerAddrInfo {
-public:
-    peerAddrInfo();
-
-    bool found;
-    uint32_t type;
-    struct sockaddr_in laddr, raddr;
-    time_t ts;
-};
 
 class peerConnectAddress {
 public:
@@ -152,16 +63,11 @@ public:
     std::string id; //cert_id
     unsigned int librarymixer_id;
 
-    /* This contains flags for not only what our current netMode is, but also what we want to try. */
-    uint32_t netMode; /* EXT / UPNP / UDP / INVALID */
-
     struct sockaddr_in localaddr; //Local address of peer
     struct sockaddr_in serveraddr; //Global address of peer
 
     /* When connected, this will show when connected, when disconnected, show time of last disconnect. */
     time_t lastcontact;
-
-    uint32_t connecttype;  // NET_CONN_TCP_ALL / NET_CONN_UDP_ALL
 
     /* Time of last attempt to connect to an offline friend. */
     time_t lastattempt;
@@ -188,10 +94,6 @@ public:
     uint32_t state;  //The connection state
     uint32_t actions;
 
-    uint32_t source; /* most current source */
-    peerAddrInfo dht;
-    peerAddrInfo peer;
-
     bool inConnAttempt;
     peerConnectAddress currentConnAddr; //current address being tried
 
@@ -204,7 +106,7 @@ public:
 
 class ConnectivityManager;
 class upnphandler;
-class p3DhtMgr;
+class UdpSorter;
 
 /**********************************************************************************
  * This is the master connectivity manager for the Mixiologist.
@@ -216,7 +118,8 @@ class p3DhtMgr;
 
 extern ConnectivityManager *connMgr;
 
-class ConnectivityManager: public pqiConnectCb {
+class ConnectivityManager: public QObject {
+    Q_OBJECT
 
 public:
     /* users_name is the display name of the logged in user. */
@@ -233,9 +136,10 @@ public:
        Must be called only while initializing from a single-thread, as the monitors are not protected by a mutex. */
     void addMonitor(pqiMonitor *mon);
 
-    /* Sets own IP address and port that will be used by the Mixologist.
-       Called once on init, and repeatedly in netTick() while we don't have an Internet address yet. */
-    void checkNetAddress();
+    /* Sets our own initial IP address and port network interface that will be used by the Mixologist.
+       Opens the UDP (but not TCP) ports that will be used by the Mixologist.
+       Called once on init, must be called before the main server begins calling tick(). */
+    void connectionSetup();
 
     /* Blocking call that shuts down the connection manager. */
     bool shutdown();
@@ -300,22 +204,15 @@ public:
 
     bool setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
     bool setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
-    bool setNetworkMode(unsigned int librarymixer_id, uint32_t netMode);
 
-    /******* overloaded from pqiConnectCb *************/
-    //3 functions are related to DHT
-    virtual void peerStatus(std::string cert_id,
-                               struct sockaddr_in laddr, struct sockaddr_in raddr,
-                               uint32_t type, uint32_t flags, uint32_t source);
-    virtual void peerConnectRequest(std::string id,
-                                       struct sockaddr_in raddr, uint32_t source);
-    virtual void stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags);
+private slots:
+    /* Connected to the UDP layer for when we receive a STUN packet. */
+    void receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, UdpSorter* receivedOn);
 
 private:
-    /* Looks at our own netStatus and performs the required actions.
-       Basically, the netStatus can be set to be starting something up, and this will see that and do startup.
-       Other than the startup states, there is a done state for netStatus, and that simply performs
-       maintenance actions. */
+    /* Handles the set up of our own connection.
+       Walks through a number of steps to determine our own connection state. Once we have determined our state,
+       it handles any actions necessary to maintain our network connection in that state (such as UPNP or UDP hole-punching). */
     void netTick();
 
     /* Steps through the friends list and decides if it is time to retry to connect to offline friends.
@@ -326,23 +223,25 @@ private:
        Also informs the GUI of people coming online via notify. */
     void monitorsTick();
 
-    /* Called from tick on the first time tick runs. */
-    void netStartup();
-
+    /**********************************************************************************
+     * Setup Helpers
+     **********************************************************************************/
     /* If port randomization is not set, returns the saved port if it is valid.
        If port randomization is set, then generates a random port.
        If there is no saved port, generates a random port and saves it. */
     int getLocalPort();
 
-    /* Called from within netTick when mNetStatus is NET_UPNP_INIT to start UPNP. */
-    void netUpnpInit();
+    /* Returns a random number that is suitable for use as a port. */
+    int getRandomPortNumber() const;
 
-    /* Called from within netTick when mNetStatus is NET_UPNP_SETUP.
-       Will be called multiple times until either UPNP returns successfully or fails to succeed before time out. */
-    void netUpnpCheck();
+    /* If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
+       If we have sent a stun packet, checks if we have hit the timeout.
+       If we have hit the timeout, returns false, otherwise returns true.
+       If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
+    bool doStun(const struct sockaddr_in &stunServer, UdpSorter* sendSocket, int returnPort = 0);
 
-    void netUdpCheck();
-    void netUnreachableCheck();
+    /* Sends a STUN packet that will be received on the given port number. */
+    void sendStunPacket(const struct sockaddr_in &stunServer, UdpSorter* sendSocket, int returnPort = 0);
 
     /* Checks and makes sure UPNP is still properly functioning periodically.
        Called from netTick.
@@ -351,6 +250,9 @@ private:
        Should either later test this assumption, or compare against established software to see common practice. */
     void netUpnpMaintenance();
 
+    /**********************************************************************************
+     * Other helpers
+     **********************************************************************************/
     /* Retries the TCP connection.
        Called by the generic retryConnect as well as by statustick and peerConnectRequest. */
     bool retryConnectTCP(unsigned int librarymixer_id);
@@ -365,31 +267,10 @@ private:
     /* Utility function for usedIps to convert a sockaddr_in into a string representation of form ###.###.###.###:## */
     QString static addressToString(struct sockaddr_in address);
 
-    /* Udp / Stun functions */
-    bool udpInternalAddress(struct sockaddr_in iaddr);
-    bool udpExtAddressCheck();
+    mutable QMutex connMtx;
 
-    /* Adds a peer to the stun try list. */
-    void udpStunPeer(std::string id, struct sockaddr_in &addr);
-
-    void stunInit();
-    bool stunCheck();
-    void stunCollect(std::string id, struct sockaddr_in addr, uint32_t flags);
-
-    upnphandler *mUpnpMgr;
-    p3DhtMgr *mDhtMgr;
-
-    mutable QMutex connMtx; /* protects below */
-
-    time_t   mNetInitTS;
-    /* Indicates the status of setting up the network.  Will be one of
-       NET_UNKNOWN, NET_UPNP_INIT, NET_UPNP_SETUP,
-       NET_UDP_SETUP, or NET_DONE */
-    uint32_t mNetStatus;
-
-    uint32_t mStunStatus;
-    uint32_t mStunFound;
-    bool  mStunMoreRequired;
+    /* Timer used to calculate UPNP timeout. */
+    time_t  mUpnpStartTime;
 
     /* List of pqiMonitor implementors to be informed of connection status events. */
     QList<pqiMonitor *> monitorListeners;
@@ -397,32 +278,46 @@ private:
     /* True when the monitors need to be informed of a change. */
     bool  mStatusChanged;
 
-    /* external Address determination */
-    bool mUpnpAddrValid, mStunAddrValid;
-    bool mStunAddrStable;
-    struct sockaddr_in mUpnpExtAddr;
-    struct sockaddr_in mStunExtAddr;
-
-    /* network status flags (read by interface) */
-    bool netFlagOk;
-    bool netFlagUpnpOk;
-    bool netFlagDhtOk;
-    bool netFlagExtOk;
-    bool netFlagUdpOk;
-    bool netFlagTcpOk;
-    bool netFlagResetReq;
-
     peerConnectState ownState;
 
-    std::list<std::string> mStunList;
+    /* The current state of the connection's setup. */
+    enum ConnectionStatus {
+        //CONNECTION_STATUS_FINDING_STUN_SERVERS, //We're trying to see if we can get STUN responses from any of our friends
+        CONNECTION_STATUS_STUNNING_INITIAL, //STUN to friends failed, and now we are attempting to STUN public STUN servers
+        CONNECTION_STATUS_TRYING_UPNP, //Initial STUN was unsuccessful, attempting to use UPNP to open a hole in the firewall
+        CONNECTION_STATUS_STUNNING_UPNP_TEST,
+        CONNECTION_STATUS_STUNNING_MAIN_PORT,
+        CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST,
+        CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
+
+        /* The states below here are final states. */
+        CONNECTION_STATUS_UNFIREWALLED, //We've determined we're not behind a firewall, we're done
+        CONNECTION_STATUS_PORT_FORWARDED, //We've determined we're port forwarded, we're done
+        CONNECTION_STATUS_UPNP_IN_USE, //We succesfully opened a hole in the firewall using UPNP, and will maintain it over time
+        CONNECTION_STATUS_UDP_HOLE_PUNCHING, //We successfully opened a hole in our firewall using UDP hole-punching, and will maintain it over time
+        CONNECTION_STATUS_RESTRICTED_CONE, //We are behind an address restricted cone firewall, and must maintain the UDP hole punch often with each friend
+        CONNECTION_STATUS_SYMMETRIC_NAT, //We are behind a symmetric NAT, UDP hole punching is ineffective, UPNP has failed and all of this is shutdown
+        CONNECTION_STATUS_NO_NET //We are unable even to send and receive packets over STUN using our main port, either behind a blocking firewall or no Internet access
+    };
+    ConnectionStatus connectionStatus;
+
+    struct sockaddr_in udpTestAddress;
+    UdpSorter* udpTestSocket;
+    UdpSorter* udpMainSocket;
+    upnphandler *mUpnpMgr;
+
+    struct sockaddr_in stunServer1;
+    struct sockaddr_in stunServer2;
+    QString stunTransactionId;
+    time_t stunSentTime;
 
     /* This is the master friends list for the Mixologist */
     QMap<unsigned int, peerConnectState> mFriendList; //librarymixer_ids and peerConnectStates
 
-    /* A map of IP+port combo's already in use, and their state.  The first element is a string
-    representation of the IP + port combo, and the second is whether it is used because it is
-    connecting or if it because it is connected.
-    This is used to prevent multiple pqipersons from attempting to connect to the same address simultaneously */
+    /* A map of IP+port combo's already in use, and their state.
+       The first element is a string representation of the IP + port combo,
+       and the second is whether it is used because it is connecting or if it because it is connected.
+       This is used to prevent multiple pqipersons from attempting to connect to the same address simultaneously. */
     enum UsedIPState {
         USED_IP_CONNECTING,
         USED_IP_CONNECTED

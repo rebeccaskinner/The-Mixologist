@@ -160,7 +160,7 @@ bool ftController::moveFilesToDownloadPath(int groupKey) {
         /* If the group's title has an illegal character for the local OS/filesystem, this should get around that problem. */
         mDownloadGroups[groupKey].finalDestination = DirUtil::createUniqueDirectory(files->getDownloadDirectory() + QDir::separator() + "Incoming");
         if (mDownloadGroups[groupKey].finalDestination.isEmpty()){
-            getPqiNotify()->AddSysMessage(0, SYS_WARNING, "Transfer Completion Error", "Unable to create folder to put downloaded files into");
+            getPqiNotify()->AddSysMessage(SYS_WARNING, "Transfer Completion Error", "Unable to create folder to put downloaded files into");
             log(LOG_ERROR, FTCONTROLLERZONE, "Unable to create folder to put downloaded files into");
             return false;
         }
@@ -173,13 +173,13 @@ bool ftController::moveFilesToDownloadPath(int groupKey) {
         QString finalLocation = mDownloadGroups[groupKey].finalDestination + QDir::separator() + mDownloadGroups[groupKey].filenames[i];
         if (inActiveDownloadGroup(mDownloadGroups[groupKey].filesInGroup[i])) {
             if (!DirUtil::copyFile(currentLocation, finalLocation)) {
-                getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File copy error", "Error while copying file " + finalLocation + " from temporary location " + currentLocation);
+                getPqiNotify()->AddSysMessage(SYS_WARNING, "File copy error", "Error while copying file " + finalLocation + " from temporary location " + currentLocation);
                 log(LOG_ERROR, FTCONTROLLERZONE, "Error while copying file " + finalLocation + " from temporary location " + currentLocation);
                 success = false;
             }
         } else {
             if (!DirUtil::moveFile(currentLocation, finalLocation)) {
-                getPqiNotify()->AddSysMessage(0, SYS_WARNING, "File move error", "Error while moving file " + finalLocation + " from temporary location " + currentLocation);
+                getPqiNotify()->AddSysMessage(SYS_WARNING, "File move error", "Error while moving file " + finalLocation + " from temporary location " + currentLocation);
                 log(LOG_ERROR, FTCONTROLLERZONE, "Error while moving file " + finalLocation + " from temporary location " + currentLocation);
                 success = false;
             }
@@ -231,7 +231,7 @@ bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
 
     /* All of these below are failure states that we will notify the user of, and then simply place the files in the downloads directory. */
     if (result == -1) {
-        getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+        getPqiNotify()->AddSysMessage(SYS_WARNING,
                                       "The Mixologist",
                                       "The number of files you were returned by " +
                                       peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
@@ -242,7 +242,7 @@ bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
     } else if (result == -2) {
         bool plural = (mDownloadGroups[groupKey].filesInGroup.count() > 1);
         if (plural) {
-            getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+            getPqiNotify()->AddSysMessage(SYS_WARNING,
                                           "The Mixologist",
                                           "The files you were returned by " +
                                           peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
@@ -251,7 +251,7 @@ bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
                                           " have been altered and are no longer exactly the same.\n" +
                                           "All files have been left in your downloads folder.");
         } else {
-            getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+            getPqiNotify()->AddSysMessage(SYS_WARNING,
                                           "The Mixologist",
                                           "The file you were returned by " +
                                           peers->getPeerName(mDownloadGroups[groupKey].friend_id) +
@@ -261,7 +261,7 @@ bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
                                           "The file has been left in your downloads folder.");
         }
     } else if (result == -3) {
-        getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+        getPqiNotify()->AddSysMessage(SYS_WARNING,
                                       "The Mixologist",
                                       "You were returned " +
                                       mDownloadGroups[groupKey].title +
@@ -270,7 +270,7 @@ bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
                                       " but you have recently removed it from your library.\n" +
                                       "All files have been left in your downloads folder.");
     } else {
-        getPqiNotify()->AddSysMessage(0, SYS_WARNING,
+        getPqiNotify()->AddSysMessage(SYS_WARNING,
                                       "The Mixologist",
                                       "You were returned " +
                                       mDownloadGroups[groupKey].title +

@@ -81,69 +81,59 @@ void NotifyQt::UpdateGUI() {
     }
 
     lastTs = time(NULL) ;
-
-    /* Finally Check for PopupMessages / System Error Messages */
-
-    if (notify) {
-        uint32_t sysid;
-        uint32_t type;
-        QString title, name, msg;
-
-        if (notify->NotifyPopupMessage(type, name, msg)) {
-            QSettings settings(*mainSettings, QSettings::IniFormat);
-
-            switch (type) {
-                case POPUP_CONNECT:
-                    if (settings.value("Gui/NotifyConnect", DEFAULT_NOTIFY_CONNECT).toBool()) {
-                        OnlineToaster *onlineToaster = new OnlineToaster();
-                        onlineToaster->setMessage(name);
-                        onlineToaster->show();
-                    }
-                    break;
-                case POPUP_DOWNDONE:
-                    if (settings.value("Gui/NotifyDownloadDone", DEFAULT_NOTIFY_DOWNLOAD_DONE).toBool()) {
-                        mainwindow->trayOpenDownloadsFolder = true;
-                        mainwindow->trayIcon->showMessage("Download complete",
-                                                          name.append("\nhas finished downloading."),
-                                                          QSystemTrayIcon::Information, INT_MAX );
-                    }
-                    break;
-                case POPUP_NEW_VERSION_FROM_FRIEND:
-                    if (QMessageBox::question(NULL,
-                                              "New version",
-                                              name +
-                                              " connected to you with a newer version of the Mixologist (" +
-                                              VersionUtil::convert_to_display_version(msg.toLongLong()) +
-                                              "). Quit now and download the update?",
-                                              QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
-                            == QMessageBox::Yes) {
-                        QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/")));
-                        exit(1);
-                    }
-                    break;
-                case POPUP_MISC:
-                    mainwindow->trayIcon->showMessage(name,
-                                                      msg,
-                                                      QSystemTrayIcon::Information, INT_MAX);
-            }
-        }
-
-        if (notify->NotifySysMessage(sysid, type, title, msg)) {
-            /* make a warning message */
-            switch (type) {
-                case SYS_ERROR:
-                    QMessageBox::critical(0, title, msg);
-                    break;
-                case SYS_WARNING:
-                    QMessageBox::warning(0, title, msg);
-                    break;
-                default:
-                case SYS_INFO:
-                    QMessageBox::information(0, title, msg);
-                    break;
-            }
-        }
-    }
 }
 
 
+void NotifyQt::displaySysMessage(int type, QString title, QString msg) {
+    switch (type) {
+        case SYS_ERROR:
+            QMessageBox::critical(0, title, msg);
+            break;
+        case SYS_WARNING:
+            QMessageBox::warning(0, title, msg);
+            break;
+        default:
+        case SYS_INFO:
+            QMessageBox::information(0, title, msg);
+            break;
+    }
+}
+
+void NotifyQt::displayPopupMessage(int type, QString name, QString msg) {
+    QSettings settings(*mainSettings, QSettings::IniFormat);
+
+    switch (type) {
+        case POPUP_CONNECT:
+            if (settings.value("Gui/NotifyConnect", DEFAULT_NOTIFY_CONNECT).toBool()) {
+                OnlineToaster *onlineToaster = new OnlineToaster();
+                onlineToaster->setMessage(name);
+                onlineToaster->show();
+            }
+            break;
+        case POPUP_DOWNDONE:
+            if (settings.value("Gui/NotifyDownloadDone", DEFAULT_NOTIFY_DOWNLOAD_DONE).toBool()) {
+                mainwindow->trayOpenDownloadsFolder = true;
+                mainwindow->trayIcon->showMessage("Download complete",
+                                                  name.append("\nhas finished downloading."),
+                                                  QSystemTrayIcon::Information, INT_MAX );
+            }
+            break;
+        case POPUP_NEW_VERSION_FROM_FRIEND:
+            if (QMessageBox::question(NULL,
+                                      "New version",
+                                      name +
+                                      " connected to you with a newer version of the Mixologist (" +
+                                      VersionUtil::convert_to_display_version(msg.toLongLong()) +
+                                      "). Quit now and download the update?",
+                                      QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+                    == QMessageBox::Yes) {
+                QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/")));
+                exit(1);
+            }
+            break;
+        case POPUP_MISC:
+            mainwindow->trayIcon->showMessage(name,
+                                              msg,
+                                              QSystemTrayIcon::Information, INT_MAX);
+    }
+}

@@ -48,8 +48,10 @@ UdpSorter::UdpSorter(struct sockaddr_in &local)
 
     udpLayer = new UdpLayer(this, localAddress);
     udpLayer->start();
+}
 
-    log(LOG_ALERT, UDPSORTERZONE, "Opened UDP port on:" + QString(inet_ntoa(local.sin_addr)) + ":" + QString::number(ntohs(local.sin_port)) + "\n");
+UdpSorter::~UdpSorter() {
+    delete udpLayer;
 }
 
 void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
@@ -71,7 +73,7 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
     }
 }
 
-int  UdpSorter::sendPkt(void *data, int size, struct sockaddr_in &to, int ttl) {
+int UdpSorter::sendPkt(void *data, int size, const struct sockaddr_in &to, int ttl) {
     return udpLayer->sendPkt(data, size, to, ttl);
 }
 
@@ -125,14 +127,13 @@ bool UdpSorter::locked_handleStunPkt(void *data, int size, struct sockaddr_in &f
 
         return (len == sentlen);
     } else if (UdpStun_isStunResponse(data, size)) {
-        log(LOG_WARNING, UDPSORTERZONE, QString("Received STUN response from ") + inet_ntoa(from.sin_addr));
         struct sockaddr_in reportedExternalAddress;
-        bool good = UdpStun_response(data, size, reportedExternalAddress);
+        QString transactionId;
+        bool good = UdpStun_response(data, size, transactionId, reportedExternalAddress);
         if (good) {
-            log(LOG_WARNING, UDPSORTERZONE,
-                QString("Got external address from STUN: ") + inet_ntoa(reportedExternalAddress.sin_addr) +
-                QString(":") + QString::number(ntohs(reportedExternalAddress.sin_port)));
-            locked_receivedStunResponse(from, reportedExternalAddress);
+            log(LOG_WARNING, UDPSORTERZONE, QString("Received STUN response on port ") + QString::number(ntohs(localAddress.sin_port)));
+            //locked_receivedStunResponse(from, reportedExternalAddress);
+            emit receivedStunBindingResponse(transactionId, inet_ntoa(reportedExternalAddress.sin_addr), ntohs(reportedExternalAddress.sin_port), this);
 
             return true;
         }
@@ -155,15 +156,15 @@ bool UdpSorter::readExternalAddress(struct sockaddr_in &external, uint8_t &stabl
     return false;
 }
 
-#define MAX_STUN_SIZE 64
+#define STUN_REQUEST_SIZE 20
 bool UdpSorter::doStun(struct sockaddr_in stun_addr) {
     if (!okay()) return false;
 
-    char stundata[MAX_STUN_SIZE];
-    int tmplen = MAX_STUN_SIZE;
-    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, &tmplen);
+    char stundata[STUN_REQUEST_SIZE];
+    int tmplen = STUN_REQUEST_SIZE;
+    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, tmplen, UdpStun_generate_transaction_id());
     if (!packetGenerationSuccess) {
-        pqioutput(PQL_ALERT, PQISTUNZONE, "pqistunner::doStun() unable to generate packet");
+        log(LOG_ALERT, PQISTUNZONE, "pqistunner::doStun() unable to generate packet");
         return false;
     }
 
@@ -184,6 +185,33 @@ bool UdpSorter::doStun(struct sockaddr_in stun_addr) {
 #define TOU_STUN_MAX_RECV_RATE 25 /* every 25 seconds */
 
 /******************************* STUN Handling ********************************/
+
+bool UdpSorter::sendStunBindingRequest(const struct sockaddr_in &stunServer, const QString& transactionId, int returnPort) {
+    if (!okay()) return false;
+
+    int packetLength = 20;
+    if (returnPort != 0) packetLength += 8;
+
+    char stundata[packetLength];
+
+    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, packetLength, transactionId);
+    if (!packetGenerationSuccess) {
+        log(LOG_ALERT, PQISTUNZONE, "Unable to generate STUN packet");
+        return false;
+    }
+
+    if (returnPort != 0) {
+        packetGenerationSuccess = UdpStun_add_response_port_attribute(stundata, packetLength, returnPort);
+        if (!packetGenerationSuccess) {
+            log(LOG_ALERT, PQISTUNZONE, "Unable to add response-port attribute to STUN packet");
+            return false;
+        }
+    }
+
+    log(LOG_ALERT, UDPSORTERZONE, "Sending STUN binding request on port " + QString::number(ntohs(localAddress.sin_port)));
+
+    return sendPkt(stundata, packetLength, stunServer, STUN_TTL) == packetLength;
+}
 
 void UdpSorter::setStunKeepAlive(bool required) {
     QMutexLocker stack(&sortMtx);
@@ -271,11 +299,11 @@ void UdpSorter::fixedServerTest() {
 
     if (!okay()) return;
 
-    char stundata[MAX_STUN_SIZE];
-    int tmplen = MAX_STUN_SIZE;
-    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, &tmplen);
+    char stundata[STUN_REQUEST_SIZE];
+    int tmplen = STUN_REQUEST_SIZE;
+    bool packetGenerationSuccess = UdpStun_generate_stun_request(stundata, tmplen, UdpStun_generate_transaction_id());
     if (!packetGenerationSuccess) {
-        pqioutput(PQL_ALERT, PQISTUNZONE, "pqistunner::doStun() unable to generate packet");
+        log(LOG_ALERT, PQISTUNZONE, "pqistunner::doStun() unable to generate packet");
         return;
     }
 
@@ -378,13 +406,31 @@ bool UdpStun_isStunResponse(void *data, int size) {
     return false;
 }
 
-bool UdpStun_response(void *stun_pkt, int size, struct sockaddr_in &addr) {
+/* Simple utility function used to convert the digits of our transaction ID into a string. */
+QString convertToHexString(qint16 input) {
+    QString stringifiedNumber = QString::number(input, 16);
+    while(stringifiedNumber.length() < 4) {
+        stringifiedNumber.prepend("0");
+    }
+    return stringifiedNumber;
+}
+
+/* Decodes an incoming STUN response into its transaction ID and mapped address. */
+bool UdpStun_response(void *stun_pkt, int size, QString &transaction_id, struct sockaddr_in &addr) {
     if (!UdpStun_isStunResponse(stun_pkt, size)) return false;
+
+    /* Pull out of the header out of the transaction_id, which are bytes 9-20 of the header. */
+    transaction_id.clear();
+    transaction_id.append(convertToHexString(ntohs(((qint16 *) stun_pkt)[4])));
+    transaction_id.append(convertToHexString(ntohs(((qint16 *) stun_pkt)[5])));
+    transaction_id.append(convertToHexString(ntohs(((qint16 *) stun_pkt)[6])));
+    transaction_id.append(convertToHexString(ntohs(((qint16 *) stun_pkt)[7])));
+    transaction_id.append(convertToHexString(ntohs(((qint16 *) stun_pkt)[8])));
+    transaction_id.append(convertToHexString(ntohs(((qint16 *) stun_pkt)[9])));
 
     /* We are going to be stepping through the stun_pkt, this is how far in we are in bytes.
        We start at 20 in order to start at the beginning of the attributes, right after the header. */
     int index_in_stun_pkt = 20;
-
 
     bool mappedAddressFound = false;
     struct sockaddr_in mappedAddress;
@@ -473,7 +519,33 @@ bool UdpStun_response(void *stun_pkt, int size, struct sockaddr_in &addr) {
     return true;
 }
 
-bool UdpStun_generate_stun_request(void *stun_pkt, int *len) {
+
+QString UdpStun_generate_transaction_id() {
+    qsrand(time(NULL));
+    static qint16 transaction_id_1 = qrand() % 32767;
+    static qint16 transaction_id_2 = qrand() % 32767;
+    static qint16 transaction_id_3 = qrand() % 32767;
+    static qint16 transaction_id_4 = qrand() % 32767;
+    static qint16 transaction_id_5 = qrand() % 32767;
+    static qint16 transaction_id_6 = qrand() % 32767;
+    /* We increment the least significant bit.
+       As we are only incrementing 16 of our bits, we will be limited to only generating 64k unique ids.
+       That should be plenty. */
+    transaction_id_6++;
+
+    /* Convert the random numbers into a QString. */
+    QString transaction_id_string;
+    transaction_id_string
+            .append(convertToHexString(transaction_id_1))
+            .append(convertToHexString(transaction_id_2))
+            .append(convertToHexString(transaction_id_3))
+            .append(convertToHexString(transaction_id_4))
+            .append(convertToHexString(transaction_id_5))
+            .append(convertToHexString(transaction_id_6));
+    return transaction_id_string;
+}
+
+bool UdpStun_generate_stun_request(void *stun_pkt, int len, const QString &transaction_id) {
     /* A STUN packet consists of a 20-byte header followed by 0 or more attributes (we have 0).
        The first 2 bits of the header are 0.
        The second 14 bits of the header are the message type. Message type 1 represents an address binding request.
@@ -482,20 +554,42 @@ bool UdpStun_generate_stun_request(void *stun_pkt, int *len) {
        The final 96 bits are the transaction ID, which is an arbitrary number that the server will echo back in its response. */
 
     /* Too small to be a stun packet that contains a header. */
-    if (*len < 20) return false;
+    if (len < 20) return false;
+
+    if (transaction_id.length() != 24) return false;
 
     /* Just the header, we're not adding any attributes. */
     ((uint16_t *) stun_pkt)[0] = (uint16_t) htons(0x0001); //Set the 00 and the message type to request.
     ((uint16_t *) stun_pkt)[1] = (uint16_t) htons(0); //Set the length to 0, since we have no attributes
     ((uint32_t *) stun_pkt)[1] = (uint32_t) htonl(0x2112A442); //Magic cookie
-    /* Transaction ID, just some arbitrary numers */
-    ((uint32_t *) stun_pkt)[2] = (uint32_t) htonl(0x0121);
-    ((uint32_t *) stun_pkt)[3] = (uint32_t) htonl(0x0111);
-    ((uint32_t *) stun_pkt)[4] = (uint32_t) htonl(0x1010);
-    *len = 20;
+    /* Transaction ID */
+    bool ok;
+    ((uint32_t *) stun_pkt)[2] = (uint32_t) htonl(transaction_id.left(8).toLong(&ok, 16));
+    ((uint32_t *) stun_pkt)[3] = (uint32_t) htonl(transaction_id.mid(8, 8).toLong(&ok, 16));
+    ((uint32_t *) stun_pkt)[4] = (uint32_t) htonl(transaction_id.right(8).toLong(&ok, 16));
+
     return true;
 }
 
+bool UdpStun_add_response_port_attribute(void *stun_pkt, int len, uint16_t port) {
+    /* Too small to contain the response port attribute. */
+    if (len < 28) return false;
+
+    /* Update the header, first checking for any pre-existing attributes. */
+    if (((uint16_t *) stun_pkt)[1] != (uint16_t) htons(0)) return false;
+    ((uint16_t *) stun_pkt)[1] = (uint16_t) htons(8); //Update the length to 8, the length of the response-port attribute
+
+    /* The first 16 bits are the attribute type. Attribute type 0x0027 is response-port type.
+       The second 16 bits are the attribute length of the value section. This is 4 for a response-port.
+       The next 16 bits are the port that we want the response to be sent to.
+       The final 16 bits are ignored padding. */
+    ((uint16_t *) stun_pkt)[10] = htons(0x0027); //Set the attribute type response-port
+    ((uint16_t *) stun_pkt)[11] = htons(2); //Attribute length for response-port
+    ((uint16_t *) stun_pkt)[12] = htons(port);
+    ((uint16_t *) stun_pkt)[13] = htons(0); //The padding
+
+    return true;
+}
 
 void *UdpStun_generate_stun_reply(struct sockaddr_in *stun_addr, int *len) {
     /* A STUN binding response consists of a 20-byte header followed by at least the address (which is all we include).

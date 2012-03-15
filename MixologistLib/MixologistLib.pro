@@ -86,7 +86,6 @@ HEADERS += dht/b64.h \
            pqi/authmgr.h \
            pqi/connectivitymanager.h \
            pqi/p3dhtmgr.h \
-           pqi/p3notify.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
            pqi/pqihandler.h \
@@ -132,7 +131,6 @@ HEADERS += dht/b64.h \
            services/statusservice.h \
            services/p3chatservice.h \
            services/p3service.h \
-           stun/stunhandler.h \
            tcponudp/bio_tou.h \
            tcponudp/tcppacket.h \
            tcponudp/tcpstream.h \
@@ -179,9 +177,9 @@ SOURCES = \
                                 services/statusservice.cc \
 				services/p3chatservice.cc \
 				services/p3service.cc \
-				pqi/p3notify.cc \
 				pqi/pqipersongrp.cc \
 				pqi/pqihandler.cc \
+				pqi/pqinotify.cc \
 				pqi/pqiservice.cc \
 				pqi/pqiperson.cc \
 				pqi/pqissludp.cc \
@@ -203,7 +201,6 @@ SOURCES = \
 				serialiser/tlvtypes.cc \
                                 serialiser/tlvfileitem.cc \
 				serialiser/serial.cc \
-                                stun/stunhandler.cc \
                                 tcponudp/bss_tou.cc \
 				tcponudp/tcpstream.cc \
 				tcponudp/tou.cc \

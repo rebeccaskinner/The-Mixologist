@@ -263,7 +263,7 @@ public:
 private:
     bool handleFileData();
 
-    P3Interface *mP3iface;     /* THIS NEEDS PROTECTION */
+    P3Interface *persongrp;
 
     ftDataDemultiplex *mFtDataplex;
 };

@@ -23,13 +23,23 @@
 #include "tcponudp/udplayer.h"
 #include "tcponudp/tou_net.h"
 #include "util/debug.h"
+#include "pqi/pqinotify.h"
 
 static const int UDP_DEF_TTL = 64;
 
 UdpLayer::UdpLayer(UdpReceiver *udpr, struct sockaddr_in &local)
     :udpReceiver(udpr), errorState(0), ttl(UDP_DEF_TTL) {
-    openSocket(local);
+    if (!openSocket(local)) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR,
+                                      "Network failure",
+                                      QString("Unable to open UDP port ") + inet_ntoa(local.sin_addr) +
+                                      ":" + QString::number(local.sin_port));
+    }
     return;
+}
+
+UdpLayer::~UdpLayer() {
+    close();
 }
 
 void UdpLayer::close() {
@@ -69,7 +79,7 @@ void UdpLayer::run() {
     }
 }
 
-int UdpLayer::sendPkt(void *data, int size, sockaddr_in &to, int ttl) {
+int UdpLayer::sendPkt(void *data, int size, const sockaddr_in &to, int ttl) {
     /* If ttl is different then set it. */
     if (ttl != getTTL()) setTTL(ttl);
 
@@ -77,7 +87,7 @@ int UdpLayer::sendPkt(void *data, int size, sockaddr_in &to, int ttl) {
     return size;
 }
 
-int UdpLayer::openSocket(struct sockaddr_in &laddr) {
+bool UdpLayer::openSocket(struct sockaddr_in &laddr) {
     {
         QMutexLocker stack(&sockMtx);
 
@@ -87,12 +97,12 @@ int UdpLayer::openSocket(struct sockaddr_in &laddr) {
         /* Bind a listener to address. */
         if (0 != tounet_bind(sockfd, (struct sockaddr *) (&laddr), sizeof(laddr))) {
             errorState = EADDRINUSE;
-            return -1;
+            return false;
         }
 
         /* Set the socket to non-blocking. */
         if (-1 == tounet_fcntl(sockfd, F_SETFL, O_NONBLOCK)) {
-            return -1;
+            return false;
         }
 
         errorState = 0;
@@ -101,7 +111,7 @@ int UdpLayer::openSocket(struct sockaddr_in &laddr) {
     /* Set the TTL. */
     setTTL(UDP_DEF_TTL);
 
-    return 1;
+    return true;
 }
 
 int UdpLayer::setTTL(int newTTL) {
@@ -146,11 +156,11 @@ int UdpLayer::receiveUdpPacket(void *data, int *size, struct sockaddr_in &from) 
     return insize;
 }
 
-void UdpLayer::sendUdpPacket(const void *data, int size, struct sockaddr_in &to) {
+int UdpLayer::sendUdpPacket(const void *data, int size, const struct sockaddr_in &to) {
     struct sockaddr_in toaddr = to;
 
     QMutexLocker stack(&sockMtx);
-    tounet_sendto(sockfd, data, size, 0, (struct sockaddr *) &(toaddr), sizeof(toaddr));
+    return tounet_sendto(sockfd, data, size, 0, (struct sockaddr *) &(toaddr), sizeof(toaddr));
 }
 
 #ifdef false

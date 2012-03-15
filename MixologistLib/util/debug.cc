@@ -20,7 +20,7 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#include "interface/iface.h"
+#include "interface/notify.h"
 
 #include "util/debug.h"
 

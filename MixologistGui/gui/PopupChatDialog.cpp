@@ -249,39 +249,39 @@ void PopupChatDialog::insertTransferEvent(int event, const QString &transfer_nam
 void PopupChatDialog::insertUserOptional(int code, QString input) {
     QString message;
     switch(code) {
-        case NOTIFY_USER_REQUEST:
+        case NotifyBase::NOTIFY_USER_REQUEST:
             message = "Requested '" + input +
                       "' from " + friendName + ".";
             break;
-        case NOTIFY_USER_FILE_REQUEST:
+        case NotifyBase::NOTIFY_USER_FILE_REQUEST:
             message = "Auto response sending: '" + input +
                       "' to " + friendName + ".";
             break;
-        case NOTIFY_USER_FILE_RESPONSE:
+        case NotifyBase::NOTIFY_USER_FILE_RESPONSE:
             message = "Auto response receiving: '" + input +
                       "' from " + friendName + ".";
             break;
-        case NOTIFY_USER_LEND_OFFERED:
+        case NotifyBase::NOTIFY_USER_LEND_OFFERED:
             message = "Auto response offer to lend: '" + input +
                       "' to " + friendName + ".";
             break;
-        case NOTIFY_USER_BORROW_DECLINED:
+        case NotifyBase::NOTIFY_USER_BORROW_DECLINED:
             message = "Decided not to borrow '" + input +
                       "' from " + friendName + ".";
             break;
-        case NOTIFY_USER_BORROW_ACCEPTED:
+        case NotifyBase::NOTIFY_USER_BORROW_ACCEPTED:
             message = "Borrowing '" + input +
                       "' from " + friendName + ".";
             break;
-        case NOTIFY_USER_SUGGEST_WAITING:
+        case NotifyBase::NOTIFY_USER_SUGGEST_WAITING:
             message = "Reading file(s) to send to " + friendName +
                       ". Will send a download invitation automatically as soon as finished reading.";
             break;
-        case NOTIFY_USER_SUGGEST_SENT:
+        case NotifyBase::NOTIFY_USER_SUGGEST_SENT:
             message = "Sent an invitation to get '" + input +
                       "' to " + friendName + ".";
             break;
-        case NOTIFY_USER_SUGGEST_RECEIVED:
+        case NotifyBase::NOTIFY_USER_SUGGEST_RECEIVED:
             message = "Received an invitation to get '" + input +
                       "' from " + friendName + ".";
             break;

@@ -21,6 +21,7 @@
  ****************************************************************/
 
 #include "pqi/pqinetwork.h"
+#include "pqi/pqinotify.h"
 #include "util/net.h"
 
 #include <errno.h>
@@ -104,7 +105,7 @@ std::list<std::string> getLocalInterfaces() {
 
     //need a socket for ioctl()
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        pqioutput(PQL_ALERT, pqinetzone, "Cannot Determine Local Addresses!");
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Cannot determine local address");
         exit(1);
     }
 
@@ -205,10 +206,8 @@ std::list<std::string> getLocalInterfaces() {
     PMIB_IPADDRTABLE iptable =  NULL;
     DWORD dwSize = 0;
 
-    if (GetIpAddrTable(iptable, &dwSize, 0) !=
-            ERROR_INSUFFICIENT_BUFFER) {
-        pqioutput(PQL_ALERT, pqinetzone,
-                  "Cannot Find Windoze Interfaces!");
+    if (GetIpAddrTable(iptable, &dwSize, 0) != ERROR_INSUFFICIENT_BUFFER) {
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Cannot find Windows interfaces");
         exit(0);
     }
 

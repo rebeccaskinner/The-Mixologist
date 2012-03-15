@@ -379,7 +379,7 @@ bool stunPeer(struct sockaddr_in toaddr, struct sockaddr_in &ansaddr) {
     int  maxlen = 100;
     int  len = maxlen;
 
-    UdpStun_generate_stun_request((void *) stunpkt, &len);
+    //UdpStun_generate_stun_request((void *) stunpkt, &len);
 
 #ifdef BOOTSTRAP_DEBUG
     std::cerr << "stunPeer() Send packet length: " << len << std::endl;
@@ -417,7 +417,7 @@ bool stunPeer(struct sockaddr_in toaddr, struct sockaddr_in &ansaddr) {
         return false;
     }
 
-    if (UdpStun_response(stunpkt, insize, ansaddr)) {
+    /*if (UdpStun_response(stunpkt, insize, ansaddr)) {
 #ifdef BOOTSTRAP_DEBUG
         std::cerr << "received Stun Reply from : " << fromaddr;
         std::cerr << std::endl;
@@ -425,7 +425,7 @@ bool stunPeer(struct sockaddr_in toaddr, struct sockaddr_in &ansaddr) {
         std::cerr << std::endl;
 #endif
         return true;
-    }
+    }*/
 
 #ifdef BOOTSTRAP_DEBUG
     std::cerr << "received Data (not Stun Reply) from : " << fromaddr;
