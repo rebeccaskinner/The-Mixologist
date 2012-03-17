@@ -68,10 +68,7 @@ PJNATH_DIR = ../ThirdParty/src/pjproject-1.12/pjnath
 INCLUDEPATH += . $${SSL_DIR}/include $${UPNPC_DIR} $${PJNATH_DIR}/include $${PJLIB_DIR}/include $${PJLIBUTIL_DIR}/include
 
 # Input
-HEADERS += dht/b64.h \
-           dht/opendht.h \
-           dht/opendhtstr.h \
-           ft/ftcontroller.h \
+HEADERS += ft/ftcontroller.h \
            ft/fttransfermodule.h \
            ft/ftdata.h \
            ft/ftdatademultiplex.h \
@@ -85,7 +82,6 @@ HEADERS += dht/b64.h \
            ft/ftborrower.h \
            pqi/authmgr.h \
            pqi/connectivitymanager.h \
-           pqi/p3dhtmgr.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
            pqi/pqihandler.h \
@@ -132,6 +128,7 @@ HEADERS += dht/b64.h \
            services/p3chatservice.h \
            services/p3service.h \
            tcponudp/bio_tou.h \
+           tcponudp/stunbasics.h \
            tcponudp/tcppacket.h \
            tcponudp/tcpstream.h \
            tcponudp/tou.h \
@@ -148,9 +145,7 @@ HEADERS += dht/b64.h \
            util/xml.h \
 
 SOURCES = \
-				dht/dht_check_peers.cc \
-				dht/dht_bootstrap.cc \
-	   			server/librarymixer-connect.cc \
+				server/librarymixer-connect.cc \
 	   			server/librarymixer-library.cc \
 	   			server/librarymixer-friendlibrary.cc \
 				server/init.cc \
@@ -170,9 +165,6 @@ SOURCES = \
 				ft/ftborrower.cc \
                                 upnp/upnputil.cc \
 				upnp/upnphandler.cc \
-				dht/opendht.cc \
-				dht/opendhtstr.cc \
-                                dht/b64.cc \
 				services/mixologyservice.cc \
                                 services/statusservice.cc \
 				services/p3chatservice.cc \
@@ -188,7 +180,6 @@ SOURCES = \
 				pqi/pqissllistener.cc \
 				pqi/pqissl.cc \
                                 pqi/connectivitymanager.cc \
-				pqi/p3dhtmgr.cc \
 				pqi/pqistreamer.cc \
 				pqi/pqiloopback.cc \
 				pqi/pqinetwork.cc \
@@ -202,7 +193,8 @@ SOURCES = \
                                 serialiser/tlvfileitem.cc \
 				serialiser/serial.cc \
                                 tcponudp/bss_tou.cc \
-				tcponudp/tcpstream.cc \
+                                tcponudp/stunbasics.cc \
+                                tcponudp/tcpstream.cc \
 				tcponudp/tou.cc \
 				tcponudp/tcppacket.cc \
 				tcponudp/udpsorter.cc \

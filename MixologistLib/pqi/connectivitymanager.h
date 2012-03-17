@@ -30,6 +30,7 @@
 #include <QObject>
 #include <QMutex>
 #include <QMap>
+#include <QStringList>
 
 /* Used by PeerConnectState to indicate type of connection.
    Previous comment: order of attempts ... */
@@ -105,7 +106,7 @@ public:
 };
 
 class ConnectivityManager;
-class upnphandler;
+class upnpHandler;
 class UdpSorter;
 
 /**********************************************************************************
@@ -194,7 +195,9 @@ public:
     QString getPeerName(unsigned int librarymixer_id);
 
     /* Either adds a new friend, or updates the existing friend. */
-    bool addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name);
+    bool addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,
+                                 const QString &localIP, ushort localPort,
+                                 const QString &externalIP, ushort externalPort);
 
     /* Immediate retry to connect to that friend. */
     void retryConnect(unsigned int librarymixer_id);
@@ -202,12 +205,12 @@ public:
     /* Immediate retry to connect to all offline friends. */
     void retryConnectAll();
 
-    bool setLocalAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
-    bool setExtAddress(unsigned int librarymixer_id, struct sockaddr_in addr);
-
 private slots:
     /* Connected to the UDP layer for when we receive a STUN packet. */
-    void receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, UdpSorter* receivedOn);
+    void receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, ushort receivedOnPort);
+
+    /* Connected to the LibraryMixerConnect so we know when we have updated LibraryMixer with our new address. */
+    void addressUpdatedOnLibraryMixer();
 
 private:
     /* Handles the set up of our own connection.
@@ -234,14 +237,19 @@ private:
     /* Returns a random number that is suitable for use as a port. */
     int getRandomPortNumber() const;
 
-    /* If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
+    /* Sets the connectionStatus to newStatus and clears out any state-dependent variables. */
+    void setNewConnectionStatus(int newStatus);
+
+    /* Integrated method that handles basically an entire connection set up step that is based around a STUN request.
+       If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
        If we have sent a stun packet, checks if we have hit the timeout.
        If we have hit the timeout, returns false, otherwise returns true.
        If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
-    bool doStun(const struct sockaddr_in &stunServer, UdpSorter* sendSocket, int returnPort = 0);
+    bool handleStunStep(const QString& stunServerName, const struct sockaddr_in *stunServer, UdpSorter *sendSocket, ushort returnPort = 0);
 
-    /* Sends a STUN packet that will be received on the given port number. */
-    void sendStunPacket(const struct sockaddr_in &stunServer, UdpSorter* sendSocket, int returnPort = 0);
+    /* Sends a STUN packet.
+       If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
+    bool sendStunPacket(const QString& stunServerName, const struct sockaddr_in *stunServer, UdpSorter* sendSocket, ushort returnPort = 0);
 
     /* Checks and makes sure UPNP is still properly functioning periodically.
        Called from netTick.
@@ -269,9 +277,6 @@ private:
 
     mutable QMutex connMtx;
 
-    /* Timer used to calculate UPNP timeout. */
-    time_t  mUpnpStartTime;
-
     /* List of pqiMonitor implementors to be informed of connection status events. */
     QList<pqiMonitor *> monitorListeners;
 
@@ -282,7 +287,8 @@ private:
 
     /* The current state of the connection's setup. */
     enum ConnectionStatus {
-        //CONNECTION_STATUS_FINDING_STUN_SERVERS, //We're trying to see if we can get STUN responses from any of our friends
+        CONNECTION_STATUS_FINDING_STUN_FRIENDS, //We're trying to see if we can get STUN responses from any of our friends
+        CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS, //We're trying to see if we can get STUN responses from any public servers
         CONNECTION_STATUS_STUNNING_INITIAL, //STUN to friends failed, and now we are attempting to STUN public STUN servers
         CONNECTION_STATUS_TRYING_UPNP, //Initial STUN was unsuccessful, attempting to use UPNP to open a hole in the firewall
         CONNECTION_STATUS_STUNNING_UPNP_TEST,
@@ -301,15 +307,41 @@ private:
     };
     ConnectionStatus connectionStatus;
 
-    struct sockaddr_in udpTestAddress;
+    /* For each step in our connectionStatus that involves sending STUN requests, this contains when we will consider that step to be timed out and failed. */
+    time_t connectionSetupStepTimeOutAt;
+
     UdpSorter* udpTestSocket;
     UdpSorter* udpMainSocket;
-    upnphandler *mUpnpMgr;
+    upnpHandler *mUpnpMgr;
 
-    struct sockaddr_in stunServer1;
-    struct sockaddr_in stunServer2;
-    QString stunTransactionId;
-    time_t stunSentTime;
+    /* Initially NULL, but we will step through our list of friends, and then fallback STUN servers is necessary,
+       and identify two STUN servers that we will use. */
+    struct sockaddr_in* stunServer1;
+    struct sockaddr_in* stunServer2;
+
+    QStringList fallbackPublicStunServers;
+
+    /* Map by STUN transaction ID. */
+    struct pendingStunTransaction {
+        /* If we set a STUN Response-Port attribute, then this will contain the port we expect to hear back on.
+           Otherwise, this will be set to 0. */
+        ushort returnPort;
+
+        /* The address of the server we sent this to request to.
+           This is used during the initial phases where we are attempting to discover STUN servers so that when we hear back, we know which server it was. */
+        struct sockaddr_in serverAddress;
+
+        /* The name to display in the logs for this server. */
+        QString serverName;
+    };
+    QMap<QString, pendingStunTransaction> pendingStunTransactions;
+
+    enum readyToConnectToFriendsState {
+        CONNECT_FRIENDS_CONNECTION_INITIALIZING,
+        CONNECT_FRIENDS_UPDATE_LIBRARYMIXER,
+        CONNECT_FRIENDS_READY
+    };
+    readyToConnectToFriendsState readyToConnectToFriends;
 
     /* This is the master friends list for the Mixologist */
     QMap<unsigned int, peerConnectState> mFriendList; //librarymixer_ids and peerConnectStates

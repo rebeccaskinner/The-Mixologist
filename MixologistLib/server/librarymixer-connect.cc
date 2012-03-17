@@ -19,17 +19,20 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
+#include <interface/librarymixer-connect.h>
+
+#include <server/librarymixer-library.h>
+#include <server/librarymixer-friendlibrary.h>
+
+#include <pqi/pqinetwork.h>
+
+#include <interface/settings.h>
+#include <interface/peers.h> //for peers variable
+#include <interface/iface.h> //for Control variable, librarymixerconnect
+
 #include <QtGui>
-#include <QtNetwork>
 #include <QDomDocument>
 #include <QSettings>
-#include <interface/settings.h>
-#include "interface/peers.h" //for peers variable
-#include "interface/iface.h" //for Control variable, librarymixerconnect
-
-#include "interface/librarymixer-connect.h"
-#include "server/librarymixer-library.h"
-#include "server/librarymixer-friendlibrary.h"
 
 const int BLOCKING_TRANSFER_TIMEOUT = 10000; //10 seconds
 
@@ -215,20 +218,6 @@ int LibraryMixerConnect::uploadInfo(const int link_to_set, const QString &public
         uploadBuffer->write("</standard_link" + QByteArray::number(link_to_set) + ">");
     }
     uploadBuffer->write("<scratch>");
-    uploadBuffer->write("<Mixology_Local_IP>");
-    uploadBuffer->write(ownDetails.localAddr.c_str());
-    uploadBuffer->write("</Mixology_Local_IP>");
-    uploadBuffer->write("<Mixology_Local_Port>");
-    uploadBuffer->write(QByteArray::number(ownDetails.localPort));
-    uploadBuffer->write("</Mixology_Local_Port>");
-    uploadBuffer->write("<Mixology_External_IP>");
-    uploadBuffer->write("[[set_ip]]");
-    uploadBuffer->write("</Mixology_External_IP>");
-    uploadBuffer->write("<Mixology_External_Port>");
-    //Setting the external port to be the same as the internal port for now.
-    //External Port is not yet set up here
-    uploadBuffer->write(QByteArray::number(ownDetails.localPort));
-    uploadBuffer->write("</Mixology_External_Port>");
     uploadBuffer->write("<Mixology_Public_Key>");
     uploadBuffer->write(public_key.toLatin1());
     uploadBuffer->write("</Mixology_Public_Key>");
@@ -239,6 +228,35 @@ int LibraryMixerConnect::uploadInfo(const int link_to_set, const QString &public
 
     info_upload_id = uploadXML("/api/edit_user", uploadBuffer, buffer);
     return info_upload_id;
+}
+
+int LibraryMixerConnect::uploadAddress(const QString &localIP, ushort localPort, const QString &externalIP, ushort externalPort) {
+    buffer = new QBuffer();
+    if (!buffer->open(QIODevice::ReadWrite)) return -1;
+    uploadBuffer = new QBuffer();
+    if (!uploadBuffer->open(QIODevice::ReadWrite)) return -1;
+
+    uploadBuffer->write("<user>");
+    uploadBuffer->write("<scratch>");
+    uploadBuffer->write("<Mixology_Local_IP>");
+    uploadBuffer->write(localIP.toUtf8());
+    uploadBuffer->write("</Mixology_Local_IP>");
+    uploadBuffer->write("<Mixology_Local_Port>");
+    uploadBuffer->write(QByteArray::number(localPort));
+    uploadBuffer->write("</Mixology_Local_Port>");
+    uploadBuffer->write("<Mixology_External_IP>");
+    uploadBuffer->write(externalIP.toUtf8());
+    uploadBuffer->write("</Mixology_External_IP>");
+    uploadBuffer->write("<Mixology_External_Port>");
+    uploadBuffer->write(QByteArray::number(externalPort));
+    uploadBuffer->write("</Mixology_External_Port>");
+    uploadBuffer->write("</scratch>");
+    uploadBuffer->write("</user>");
+
+    uploadBuffer->seek(0);
+
+    address_upload_id = uploadXML("/api/edit_user", uploadBuffer, buffer);
+    return address_upload_id;
 }
 
 void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
@@ -343,36 +361,11 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         QDomElement uploaded_scratchNode = uploaded_rootNode.firstChildElement("scratch");
         if (uploaded_scratchNode.isNull()) goto infoUploadError;
 
-        QDomElement localIPNode = scratchNode.firstChildElement("Mixology_Local_IP");
-        QDomElement uploaded_localIPNode = uploaded_scratchNode.firstChildElement("Mixology_Local_IP");
-        if (localIPNode.isNull()) goto infoUploadError;
-        if (uploaded_localIPNode.isNull()) goto infoUploadError;
-        if (localIPNode.text() != uploaded_localIPNode.text()) goto infoUploadError;
-
-        QDomElement localPortNode = scratchNode.firstChildElement("Mixology_Local_Port");
-        QDomElement uploaded_localPortNode = uploaded_scratchNode.firstChildElement("Mixology_Local_Port");
-        if (localPortNode.isNull()) goto infoUploadError;
-        if (uploaded_localPortNode.isNull()) goto infoUploadError;
-        if (localPortNode.text() != uploaded_localPortNode.text()) goto infoUploadError;
-
-        //No need to validate, because we asked the server to set it for us.
-        QDomElement externalIPNode = scratchNode.firstChildElement("Mixology_External_IP");
-        if (externalIPNode.isNull()) goto infoUploadError;
-
-        QDomElement externalPortNode = scratchNode.firstChildElement("Mixology_External_Port");
-        QDomElement uploaded_externalPortNode = uploaded_scratchNode.firstChildElement("Mixology_External_Port");
-        if (externalPortNode.isNull()) goto infoUploadError;
-        if (uploaded_externalPortNode.isNull()) goto infoUploadError;
-        if (externalPortNode.text() != uploaded_externalPortNode.text()) goto infoUploadError;
-
         QDomElement publicNode = scratchNode.firstChildElement("Mixology_Public_Key");
         QDomElement uploaded_publicNode = uploaded_scratchNode.firstChildElement("Mixology_Public_Key");
         if (publicNode.isNull()) goto infoUploadError;
         if (uploaded_publicNode.isNull()) goto infoUploadError;
         if (publicNode.text() != uploaded_publicNode.text()) goto infoUploadError;
-
-        //Setting the external port to be the same as the internal port for now.
-        peers->setExtAddress(peers->getOwnLibraryMixerId(), externalIPNode.text().toStdString(), externalPortNode.text().toInt());
 
         emit uploadedInfo();
         return;
@@ -389,10 +382,10 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
                 !friendNode.isNull();
                 friendNode = friendNode.nextSiblingElement("user")) {
 
-            std::string local_ip, external_ip;
+            QString local_ip, external_ip;
             QString name, certificate;
             unsigned int librarymixer_id;
-            int local_port, external_port;
+            ushort local_port, external_port;
 
             if (!friendNode.firstChildElement("name").isNull()) {
                 name = friendNode.firstChildElement("name").text();
@@ -401,24 +394,22 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
                 librarymixer_id = friendNode.firstChildElement("id").text().toInt();
             } else goto friendDownloadError;
             if (!friendNode.firstChildElement("scratch").firstChildElement("Mixology_Local_IP").isNull()) {
-                local_ip = friendNode.firstChildElement("scratch").firstChildElement("Mixology_Local_IP").text().toStdString();
+                local_ip = friendNode.firstChildElement("scratch").firstChildElement("Mixology_Local_IP").text();
             } else goto friendDownloadError;
             if (!friendNode.firstChildElement("scratch").firstChildElement("Mixology_Local_Port").isNull()) {
-                local_port = friendNode.firstChildElement("scratch").firstChildElement("Mixology_Local_Port").text().toInt();
+                local_port = friendNode.firstChildElement("scratch").firstChildElement("Mixology_Local_Port").text().toUShort();
             } else goto friendDownloadError;
             if (!friendNode.firstChildElement("scratch").firstChildElement("Mixology_External_IP").isNull()) {
-                external_ip = friendNode.firstChildElement("scratch").firstChildElement("Mixology_External_IP").text().toStdString();
+                external_ip = friendNode.firstChildElement("scratch").firstChildElement("Mixology_External_IP").text();
             } else goto friendDownloadError;
             if (!friendNode.firstChildElement("scratch").firstChildElement("Mixology_External_Port").isNull()) {
-                external_port = friendNode.firstChildElement("scratch").firstChildElement("Mixology_External_Port").text().toInt();
+                external_port = friendNode.firstChildElement("scratch").firstChildElement("Mixology_External_Port").text().toUShort();
             } else goto friendDownloadError;
             if (!friendNode.firstChildElement("scratch").firstChildElement("Mixology_Public_Key").isNull()) {
                 certificate = friendNode.firstChildElement("scratch").firstChildElement("Mixology_Public_Key").text();
             } else goto friendDownloadError;
 
-            peers->addUpdateFriend(librarymixer_id, certificate, name);
-            peers->setExtAddress(librarymixer_id, external_ip, external_port);
-            peers->setLocalAddress(librarymixer_id, local_ip, local_port);
+            peers->addUpdateFriend(librarymixer_id, certificate, name, local_ip, local_port, external_ip, external_port);
             //For now, we are doing nothing to remove already connected friends that have been removed on LibraryMixexr
         }
         emit downloadedFriends();
@@ -454,6 +445,51 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         emit downloadedLibrary();
         doneTransfer = true;
         return;
+    } else if (requestId == address_upload_id) {
+        if (error) goto addressUploadError;
+
+        QDomDocument xml;
+        QDomDocument uploaded_xml;
+        buffer->seek(0);
+        uploadBuffer->seek(0);
+        if (!xml.setContent(buffer)) goto addressUploadError;
+        if (!uploaded_xml.setContent(uploadBuffer)) goto addressUploadError;
+        buffer->deleteLater();
+        uploadBuffer->deleteLater();
+        QDomElement rootNode = xml.documentElement();
+        QDomElement uploaded_rootNode = uploaded_xml.documentElement();
+        if (rootNode.tagName() != "user" ) goto addressUploadError;
+        if (uploaded_rootNode.tagName() != "user" ) goto addressUploadError;
+
+        QDomElement scratchNode = rootNode.firstChildElement("scratch");
+        if (scratchNode.isNull()) goto addressUploadError;
+        QDomElement uploaded_scratchNode = uploaded_rootNode.firstChildElement("scratch");
+        if (uploaded_scratchNode.isNull()) goto addressUploadError;
+
+        QDomElement localIPNode = scratchNode.firstChildElement("Mixology_Local_IP");
+        QDomElement uploaded_localIPNode = uploaded_scratchNode.firstChildElement("Mixology_Local_IP");
+        if (localIPNode.isNull()) goto addressUploadError;
+        if (uploaded_localIPNode.isNull()) goto addressUploadError;
+        if (localIPNode.text() != uploaded_localIPNode.text()) goto addressUploadError;
+
+        QDomElement localPortNode = scratchNode.firstChildElement("Mixology_Local_Port");
+        QDomElement uploaded_localPortNode = uploaded_scratchNode.firstChildElement("Mixology_Local_Port");
+        if (localPortNode.isNull()) goto addressUploadError;
+        if (uploaded_localPortNode.isNull()) goto addressUploadError;
+        if (localPortNode.text() != uploaded_localPortNode.text()) goto addressUploadError;
+
+        //No need to validate, because we asked the server to set it for us.
+        QDomElement externalIPNode = scratchNode.firstChildElement("Mixology_External_IP");
+        if (externalIPNode.isNull()) goto addressUploadError;
+
+        QDomElement externalPortNode = scratchNode.firstChildElement("Mixology_External_Port");
+        QDomElement uploaded_externalPortNode = uploaded_scratchNode.firstChildElement("Mixology_External_Port");
+        if (externalPortNode.isNull()) goto addressUploadError;
+        if (uploaded_externalPortNode.isNull()) goto addressUploadError;
+        if (externalPortNode.text() != uploaded_externalPortNode.text()) goto addressUploadError;
+
+        emit uploadedAddress();
+        return;
     }
 versionDownloadError:
     handleErrorReceived(version_download_error);
@@ -473,11 +509,14 @@ friendLibraryDownloadError:
 libraryDownloadError:
     handleErrorReceived(library_download_error);
     return;
+addressUploadError:
+    handleErrorReceived(address_upload_error);
 }
 
 void LibraryMixerConnect::handleErrorReceived(int error) {
     buffer->deleteLater();
-    if (httpGetId == info_upload_id) uploadBuffer->deleteLater(); //it seems like there should be a better way
+    if (httpGetId == info_upload_id || httpGetId == address_upload_id)
+        uploadBuffer->deleteLater();
     emit(errorReceived(error));
 }
 

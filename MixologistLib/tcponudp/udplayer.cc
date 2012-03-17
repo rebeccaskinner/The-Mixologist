@@ -79,7 +79,7 @@ void UdpLayer::run() {
     }
 }
 
-int UdpLayer::sendPkt(void *data, int size, const sockaddr_in &to, int ttl) {
+int UdpLayer::sendPkt(void *data, int size, const sockaddr_in *to, int ttl) {
     /* If ttl is different then set it. */
     if (ttl != getTTL()) setTTL(ttl);
 
@@ -156,11 +156,15 @@ int UdpLayer::receiveUdpPacket(void *data, int *size, struct sockaddr_in &from) 
     return insize;
 }
 
-int UdpLayer::sendUdpPacket(const void *data, int size, const struct sockaddr_in &to) {
-    struct sockaddr_in toaddr = to;
+int UdpLayer::sendUdpPacket(const void *data, int size, const struct sockaddr_in *to) {
+
+    struct sockaddr_in toaddr = *to;
 
     QMutexLocker stack(&sockMtx);
     return tounet_sendto(sockfd, data, size, 0, (struct sockaddr *) &(toaddr), sizeof(toaddr));
+
+//    QMutexLocker stack(&sockMtx);
+//    return tounet_sendto(sockfd, data, size, 0, (struct sockaddr *) to, sizeof(*to));
 }
 
 #ifdef false

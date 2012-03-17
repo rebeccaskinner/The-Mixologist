@@ -1701,7 +1701,7 @@ int TcpStream::toSend(TcpPacket *pkt, bool retrans) {
     //std::cerr << printPkt(tmpOutPkt, outPktSize) << std::endl;
 #endif
 
-    udp -> sendPkt(tmpOutPkt, outPktSize, peeraddr, ttl);
+    udp -> sendPkt(tmpOutPkt, outPktSize, &peeraddr, ttl);
 
     if (retrans) {
         /* restart timers */
@@ -1879,7 +1879,7 @@ int TcpStream::retrans() {
             }
 
 
-            udp -> sendPkt(tmpOutPkt, outPktSize, peeraddr, ttl);
+            udp -> sendPkt(tmpOutPkt, outPktSize, &peeraddr, ttl);
 
             /* restart timers */
             (*it) -> ts = cts;

@@ -124,7 +124,7 @@ bool isSameAddress(struct sockaddr_in *addr, struct sockaddr_in *addr2);
 
 in_addr_t pqi_inet_netof(struct in_addr addr); // our implementation.
 
-bool LookupDNSAddr(std::string name, struct sockaddr_in &addr);
+bool LookupDNSAddr(std::string name, struct sockaddr_in *addr);
 
 /* universal socket interface */
 

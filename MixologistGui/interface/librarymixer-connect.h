@@ -34,6 +34,9 @@
 //Number of seconds that must pass between calls to a LibraryMixer API function
 #define CONNECT_COOLDOWN 10
 
+class LibraryMixerConnect;
+extern LibraryMixerConnect *librarymixerconnect;
+
 class QHttp;
 
 class LibraryMixerConnect : public QObject {
@@ -41,30 +44,40 @@ class LibraryMixerConnect : public QObject {
 
 public:
     LibraryMixerConnect();
+
     /* Sets the login info that will be used when needed by the download/upload functions */
     void setLogin(const QString &_email,  const QString &_password);
+
     /* Retrieves the latest version information.
        Returns -1 on all failures. */
     int downloadVersion(qlonglong current);
+
     /* Retrieves id, name, all checkout_links, public_scratch1, and private_scratch1.
        Returns -1 on all failures. */
     int downloadInfo();
+
     /* If checkout_link_to_set == -1, does not set, otherwise sets that number checkout_link and checkout_link_title to STANDARD. */
     int uploadInfo(const int link_to_set, const QString &public_key);
+
     /* Downloads friends list from LibraryMixer.
       Returns -1 on all failures.
       If blocking is true, then does not return until done. Can only call blocking from a QObject.
       Rate is limited by API, and calls before the cooldown period has passed will return -1. */
     int downloadFriends(bool blocking = false);
+
     /* Downloads friends library list from LibraryMixer
        Returns -1 on all failures.
        Rate is limited by API, and calls before the cooldown period has passed will return -1. */
     int downloadFriendsLibrary();
+
     /* Downloads library from LibraryMixer.
       Returns -1 on all failures.
       If blocking is true, then does not return until done. Can only call blocking from a QObject.
       Rate is limited by API, and calls before the cooldown period has passed will return -1. */
     int downloadLibrary(bool blocking = false);
+
+    /* Updates our address info on LibraryMixer. */
+    int uploadAddress(const QString &localIP, ushort localPort, const QString &externalIP, ushort externalPort);
 
     enum errors {
         bad_login_error = 0,
@@ -74,7 +87,8 @@ public:
         info_upload_error = 4,
         friend_download_error = 5,
         friend_library_download_error = 6,
-        library_download_error = 7
+        library_download_error = 7,
+        address_upload_error = 8
     };
 
 signals:
@@ -87,6 +101,7 @@ signals:
     void downloadedFriends();
     void downloadedFriendsLibrary();
     void downloadedLibrary();
+    void uploadedAddress();
     void dataReadProgress(int read, int total);
     void errorReceived(int errorCode);
 
@@ -99,10 +114,14 @@ private slots:
 private:
     /* Downloads an XML file from the user set server. */
     int downloadXML(const QString &location, QIODevice *destination);
+
     /* Downloads an XML file to the user set server. */
     int uploadXML(const QString &path, QIODevice *source, QIODevice *destination);
+
     /* Utility function used by downloadXML and uploadXML to setup the QT connection. */
     void setupModeAndHost(QString *host, QHttp::ConnectionMode *mode);
+
+    /* Cleans up on receiving an error, and emits the errorReceived signal. */
     void handleErrorReceived(int error);
 
     int httpGetId;
@@ -112,6 +131,7 @@ private:
     int friend_download_id;
     int friend_library_download_id;
     int library_download_id;
+    int address_upload_id;
 
     QHttp *http;
     QBuffer *buffer;

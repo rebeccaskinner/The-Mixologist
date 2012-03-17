@@ -582,14 +582,6 @@ private:
  * Used to keep track of both own and friend net states
  **********************************************************************************/
 
-/* matched to the uPnP states */
-#define UPNP_STATE_UNINITIALISED  0
-#define UPNP_STATE_UNAVAILABILE   1
-#define UPNP_STATE_READY          2
-#define UPNP_STATE_FAILED_TCP     3
-#define UPNP_STATE_FAILED_UDP     4
-#define UPNP_STATE_ACTIVE         5
-
 struct NetConfig {
     std::string localAddr;
     int localPort;
@@ -600,8 +592,6 @@ struct NetConfig {
     /* older data types */
     bool DHTActive;
     bool uPnPActive;
-
-    int uPnPState;
 
     /* Flags for Network Status */
     bool netOk;     /* That we've talked to someone! */

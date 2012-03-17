@@ -60,10 +60,10 @@ private slots:
                             QString checkout_link2, QString contact_link2, QString link_title2,
                             QString checkout_link3, QString contact_link3, QString link_title3);
         //Begin 4th step to download friends
-        void downloadFriends();
+        void uploadedInfo();
         //Begin 5th step to download library of friends items
-        void downloadLibrary();
-        //Loading complete, start the Mioxlogist
+        void downloadedFriends();
+        //Loading complete, start the Mixologist
 	void finishLoading();
         //Updates the progress bar from librarymixer-connect with information on data transfer progress
         void updateDataReadProgress(int bytesRead, int totalBytes);

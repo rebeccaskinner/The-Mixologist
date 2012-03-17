@@ -71,8 +71,8 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     connect(librarymixerconnect, SIGNAL(downloadedVersion(qulonglong,QString, QString)), this, SLOT(downloadedVersion(qulonglong,QString,QString)));
     connect(librarymixerconnect, SIGNAL(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)),
             this, SLOT(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)));
-    connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(downloadFriends()));
-    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(downloadLibrary()));
+    connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(uploadedInfo()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(downloadedFriends()));
     connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(finishLoading()));
     connect(librarymixerconnect, SIGNAL(dataReadProgress(int,int)), this, SLOT(updateDataReadProgress(int,int)));
     connect(librarymixerconnect, SIGNAL(errorReceived(int)), this, SLOT(errorReceived(int)));
@@ -285,7 +285,7 @@ void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
     ui.progressBar->setValue(30);
 
     /* We can't do the tutorial much earlier because we rely upon the mainSettings variable to be initialized.
-       We can't do the tutorial much later because we need to whether off-LibraryMixer is enabled. */
+       We can't do the tutorial much later because we need to know at CreateControl whether off-LibraryMixer is enabled. */
     QSettings userSettings(*mainSettings, QSettings::IniFormat, this);
     if (!userSettings.value("Tutorial/Initial", DEFAULT_TUTORIAL_DONE_INITIAL).toBool()) {
         WelcomeWizard wiz;
@@ -303,19 +303,21 @@ void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
 
     //Must start server now so that we can get the IP address to upload in the next step
     Init::createControl(name);
+
     ui.loadStatus->setText("Updating Info");
-    ui.progressBar->setValue(50);
+    ui.progressBar->setValue(40);
+
     librarymixerconnect->uploadInfo(link_to_set, public_key);
 }
 
-void StartDialog::downloadFriends() {
+void StartDialog::uploadedInfo() {
     ui.loadStatus->setText("Downloading Friend List");
     ui.progressBar->setValue(60);
 
     librarymixerconnect->downloadFriends();
 }
 
-void StartDialog::downloadLibrary() {
+void StartDialog::downloadedFriends() {
     ui.loadStatus->setText("Downloading Mixed Library");
     ui.progressBar->setValue(80);
 

@@ -446,14 +446,7 @@ bool isSameSubnet(struct in_addr *addr1, struct in_addr *addr2) {
     return ((ntohl(addr1->s_addr) & 0xffffff00) == (ntohl(addr2->s_addr) & 0xffffff00));
 }
 
-/* This just might be portable!!! will see!!!
- * Unfortunately this is usable on winXP+, determined by: (_WIN32_WINNT >= 0x0501)
- * but not older platforms.... which must use gethostbyname.
- *
- * include it for now.....
- */
-
-bool LookupDNSAddr(std::string name, struct sockaddr_in &addr) {
+bool LookupDNSAddr(std::string name, struct sockaddr_in *addr) {
     char service[100];
     struct addrinfo hints_st;
     struct addrinfo *hints = &hints_st;
@@ -469,7 +462,7 @@ bool LookupDNSAddr(std::string name, struct sockaddr_in &addr) {
     hints->ai_next = NULL;
 
     /* get the port number */
-    sprintf(service, "%d", ntohs(addr.sin_port));
+    sprintf(service, "%d", ntohs(addr->sin_port));
 
     /* set it to IPV4 */
 #ifdef NET_DEBUG
@@ -486,7 +479,7 @@ bool LookupDNSAddr(std::string name, struct sockaddr_in &addr) {
     }
 
     if ((res) && (res->ai_family == AF_INET)) {
-        addr = *((struct sockaddr_in *) res->ai_addr);
+        *addr = *((struct sockaddr_in *) res->ai_addr);
         freeaddrinfo(res);
 
 #ifdef NET_DEBUG

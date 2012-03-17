@@ -106,7 +106,9 @@ public:
     virtual unsigned int findLibraryMixerByCertId(std::string cert_id) = 0;
 
     /* Either adds a new friend, or updates the existing friend. */
-    virtual bool addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name) = 0;
+    virtual bool addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,
+                                 const QString &localIP, ushort localPort,
+                                 const QString &externalIP, ushort externalPort) = 0;
 
     /* Immediate retry to connect to that friend. */
     virtual void connectAttempt(unsigned int librarymixer_id) = 0;
@@ -117,9 +119,6 @@ public:
     /* The maximum and minimum values for the Mixologist's ports. */
     static const int MIN_PORT = 1024;
     static const int MAX_PORT = 50000;
-
-    virtual bool setLocalAddress(unsigned int librarymixer_id, std::string addr, uint16_t port) = 0;
-    virtual bool setExtAddress(unsigned int librarymixer_id, std::string addr, uint16_t port) = 0;
 };
 
 #endif

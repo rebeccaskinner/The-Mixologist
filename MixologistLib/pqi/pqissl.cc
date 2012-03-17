@@ -599,7 +599,7 @@ int pqissl::Basic_Connection_Complete() {
     } else {
         if (err == 0) {
             std::ostringstream out;
-            out << "Established connection to " << inet_ntoa(remote_addr.sin_addr) << ":" << ntohs(remote_addr.sin_port);
+            out << "Established basic connection to " << inet_ntoa(remote_addr.sin_addr) << ":" << ntohs(remote_addr.sin_port);
             out << ", initializing encrypted connection";
             log(LOG_WARNING, PQISSLZONE, out.str().c_str());
             return 1;
@@ -694,7 +694,7 @@ int pqissl::SSL_Connection_Complete() {
             return 0;
         }
 
-        log(LOG_WARNING, PQISSLZONE, "Failure in setting up encrypted connection, possibly because friend needs to update encryption key list from server\n");
+        log(LOG_WARNING, PQISSLZONE, "Unable to set up encrypted connection, possibly because friend needs to update encryption key list from server\n");
 
         std::ostringstream out;
         out << "Issues with SSL connection (" << result << ")!" << std::endl;

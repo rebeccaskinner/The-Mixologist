@@ -32,10 +32,8 @@
 
 class Control;
 class Init;
-class LibraryMixerConnect;
 
 extern Control *control;
-extern LibraryMixerConnect *librarymixerconnect;
 
 /*
 The interface for controlling MixologistLib at a high-level.

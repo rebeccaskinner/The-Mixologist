@@ -43,7 +43,7 @@ public:
     virtual ~UdpLayer();
 
     /* Sends the specified packet. */
-    int sendPkt(void *data, int size, const struct sockaddr_in &to, int ttl);
+    int sendPkt(void *data, int size, const struct sockaddr_in *to, int ttl);
 
     /* Returns whether any errors have occurred, true on okay. */
     bool okay();
@@ -64,7 +64,7 @@ protected:
 
     /* Calls the tou_net to send the specified packet.
        Returns the amount of data sent on success, or -1 on failure. */
-    virtual int sendUdpPacket(const void *data, int size, const struct sockaddr_in &to);
+    virtual int sendUdpPacket(const void *data, int size, const struct sockaddr_in *to);
 
     /* Sets a new TTL. */
     int setTTL(int newTTL);

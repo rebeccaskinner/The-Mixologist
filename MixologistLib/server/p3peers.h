@@ -83,16 +83,15 @@ public:
     virtual unsigned int findLibraryMixerByCertId(std::string cert_id);
 
     /* Either adds a new friend, or updates the existing friend. */
-    virtual bool addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name);
+    virtual bool addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,
+                                 const QString &localIP, ushort localPort,
+                                 const QString &externalIP, ushort externalPort);
 
     /* Immediate retry to connect to that friend. */
     virtual void connectAttempt(unsigned int librarymixer_id);
 
     /* Immediate retry to connect to all offline friends. */
     virtual void connectAll();
-
-    virtual bool setLocalAddress(unsigned int librarymixer_id, std::string addr, uint16_t port);
-    virtual bool setExtAddress(unsigned int librarymixer_id, std::string addr, uint16_t port);
 
 private:
     /* Master storage in the Mixologist for a user's own name. */

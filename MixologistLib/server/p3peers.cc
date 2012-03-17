@@ -49,7 +49,6 @@ QString p3Peers::getOwnName(){
     return ownName;
 }
 
-
 void p3Peers::getOnlineList(std::list<int> &ids) {
     connMgr->getOnlineList(ids);
 }
@@ -113,8 +112,9 @@ QString p3Peers::getPeerName(unsigned int librarymixer_id) {
 }
 
 /* Add/Remove Friends */
-bool p3Peers::addUpdateFriend(unsigned int librarymixer_id, QString cert, QString name) {
-    return connMgr->addUpdateFriend(librarymixer_id, cert, name);
+bool p3Peers::addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,
+                              const QString &localIP, ushort localPort, const QString &externalIP, ushort externalPort) {
+    return connMgr->addUpdateFriend(librarymixer_id, cert, name, localIP, localPort, externalIP, externalPort);
 }
 
 /* Network Stuff */
@@ -124,32 +124,6 @@ void p3Peers::connectAttempt(unsigned int librarymixer_id) {
 
 void p3Peers::connectAll() {
     connMgr->retryConnectAll();
-}
-
-bool p3Peers::setLocalAddress(unsigned int librarymixer_id, std::string addr_str, uint16_t port) {
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-
-#ifndef WINDOWS_SYS
-    if (0 == inet_aton(addr_str.c_str(), &(addr.sin_addr))) return false;
-#else
-    addr.sin_addr.s_addr = inet_addr(addr_str.c_str());
-#endif
-    return connMgr->setLocalAddress(librarymixer_id, addr);
-}
-
-bool p3Peers::setExtAddress(unsigned int librarymixer_id, std::string addr_str, uint16_t port) {
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-
-#ifndef WINDOWS_SYS
-    if (0 == inet_aton(addr_str.c_str(), &(addr.sin_addr))) return false;
-#else
-    addr.sin_addr.s_addr = inet_addr(addr_str.c_str());
-#endif
-    return connMgr->setExtAddress(librarymixer_id, addr);
 }
 
 PeerDetails::PeerDetails()
