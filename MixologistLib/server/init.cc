@@ -82,7 +82,9 @@ void Init::InitNetConfig() {
     /* Setup more detailed logging for desired zones.
        For Testing purposes, can set any individual section to have greater logfile output. */
     //setZoneLevel(PQL_DEBUG_BASIC, PQIHANDLERZONE);
-    setZoneLevel(UPNPHANDLERZONE, LOG_DEBUG_ALERT);
+    setZoneLevel(LOG_DEBUG_ALL, UPNPHANDLERZONE);
+    setZoneLevel(LOG_DEBUG_ALL, TCP_STREAM_ZONE);
+    setZoneLevel(LOG_DEBUG_ALERT, PQISSLZONE);
 }
 
 /******************************** WINDOWS/UNIX SPECIFIC PART ******************/

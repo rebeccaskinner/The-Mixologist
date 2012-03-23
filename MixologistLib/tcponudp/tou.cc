@@ -54,62 +54,29 @@ static UdpSorter *udpSorter = NULL;
 
 static int tou_tick_all();
 
-bool TCP_over_UDP_init(const struct sockaddr *my_addr, socklen_t) {
+bool TCP_over_UDP_init(UdpSorter* udpConnection) {
     if (touInitDone) return true;
 
     /* Initialize with size 5. */
     tou_streams.resize(5);
 
     /* Initialize the underlying network transport. */
-    udpSorter = new UdpSorter( *((struct sockaddr_in *) my_addr));
-
-    /* check the bind succeeded */
-    if (!(udpSorter->okay())) {
-        delete (udpSorter);
-        udpSorter = NULL;
-        return false;
-    }
+    udpSorter = udpConnection;
 
     touInitDone = true;
     return true;
 }
 
-int TCP_over_UDP_add_stunpeer(const struct sockaddr *my_addr, socklen_t, const char *id) {
-    if (!touInitDone) return -1;
-
-    udpSorter->addStunPeer(*(struct sockaddr_in *) my_addr, id);
-    return 0;
-}
-
-int TCP_over_UDP_set_stunkeepalive(bool enabled) {
-    if (!touInitDone) return -1;
-
-    udpSorter->setStunKeepAlive(enabled);
-    return 1;
-}
-
-int TCP_over_UDP_tick_stunkeepalive() {
-    if (!touInitDone) return -1;
-
-    udpSorter->tick();
-    return 1;
-}
-
-int TCP_over_UDP_read_extaddr(struct sockaddr *ext_addr, socklen_t *, uint8_t *stable) {
-    if (!touInitDone) return -1;
-
-    if (udpSorter->readExternalAddress(*(struct sockaddr_in *) ext_addr, *stable)) return 1;
-
-    return 0;
-}
-
-
-/*  open - which does nothing */
-int tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
-    if (!touInitDone) {
-        return -1;
+void TCP_over_UDP_shutdown() {
+    for (unsigned int i = 0; i < tou_streams.size(); i++) {
+        tou_close(i);
     }
+}
 
+int tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
+    if (!touInitDone) return -1;
+
+    /* If we've got an empty space in tou_streams, fill it and return its position. */
     for (unsigned int i = 1; i < tou_streams.size(); i++) {
         if (tou_streams[i] == NULL) {
             tou_streams[i] = new TcpOnUdp();
@@ -119,6 +86,7 @@ int tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
         }
     }
 
+    /* Otherwise we'll create a new TcpOnUdp and append it on the end. */
     TcpOnUdp *tou = new TcpOnUdp();
 
     tou_streams.push_back(tou);
@@ -134,12 +102,9 @@ int tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
     return -1;
 }
 
-/*  bind - opens the udp port */
-int tou_bind(int sockfd, const struct sockaddr *,
-                 socklen_t) {
-    if (tou_streams[sockfd] == NULL) {
-        return -1;
-    }
+int tou_bind(int sockfd, const struct sockaddr *, socklen_t) {
+    if (tou_streams[sockfd] == NULL) return -1;
+
     TcpOnUdp *tous = tou_streams[sockfd];
 
     /* this now always returns an error! */
@@ -155,13 +120,10 @@ int tou_bind(int sockfd, const struct sockaddr *,
  *      will return -1 EAGAIN, until connection complete.
  *      - always non blocking.
  */
-int tou_connect(int sockfd, const struct sockaddr *serv_addr,
-                    socklen_t addrlen, uint32_t conn_period) {
-    if (tou_streams[sockfd] == NULL) {
-        return -1;
-    }
-    TcpOnUdp *tous = tou_streams[sockfd];
+int tou_connect(int sockfd, const struct sockaddr *serv_addr, socklen_t addrlen, uint32_t conn_period) {
+    if (tou_streams[sockfd] == NULL) return -1;
 
+    TcpOnUdp *tous = tou_streams[sockfd];
 
     if (addrlen != sizeof(struct sockaddr_in)) {
         tous -> lasterrno = EINVAL;
@@ -186,11 +148,9 @@ int tou_connect(int sockfd, const struct sockaddr *serv_addr,
     return -1;
 }
 
-int tou_listenfor(int sockfd, const struct sockaddr *serv_addr,
-                      socklen_t addrlen) {
-    if (tou_streams[sockfd] == NULL) {
-        return -1;
-    }
+int tou_listenfor(int sockfd, const struct sockaddr *serv_addr, socklen_t addrlen) {
+    if (tou_streams[sockfd] == NULL) return -1;
+
     TcpOnUdp *tous = tou_streams[sockfd];
 
     if (addrlen != sizeof(struct sockaddr_in)) {
@@ -201,8 +161,7 @@ int tou_listenfor(int sockfd, const struct sockaddr *serv_addr,
     /* create a TCP stream to connect with. */
     if (!tous->tcp) {
         tous->tcp = new TcpStream(udpSorter);
-        udpSorter->addUdpPeer(tous->tcp,
-                         *((const struct sockaddr_in *) serv_addr));
+        udpSorter->addUdpPeer(tous->tcp, *((const struct sockaddr_in *) serv_addr));
     }
 
     tous->tcp->listenfor(*((struct sockaddr_in *) serv_addr));

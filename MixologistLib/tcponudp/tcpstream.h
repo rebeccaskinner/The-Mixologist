@@ -33,12 +33,12 @@
 #include "tcppacket.h"
 #include "udpsorter.h"
 
-#define MAX_SEG         1500
-#define TCP_MAX_SEQ         UINT_MAX
-#define TCP_MAX_WIN     65500
-#define TCP_ALIVE_TIMEOUT   15      /* 15 sec ... < 20 sec UDP state limit on some firewalls */
-#define TCP_RETRANS_TIMEOUT 1   /* 1 sec (Initial value) */
-#define kNoPktTimeout       60  /* 1 min */
+#define MAX_SEG 1500
+#define TCP_MAX_SEQ UINT_MAX
+#define TCP_MAX_WIN 65500
+#define TCP_ALIVE_TIMEOUT 15 /* 15 sec ... < 20 sec UDP state limit on some firewalls */
+#define TCP_RETRANS_TIMEOUT 1 /* 1 sec (Initial value) */
+#define kNoPktTimeout 60 /* 1 min */
 
 
 #define TCP_CLOSED  0
@@ -72,14 +72,14 @@ public:
     }
 
     /* user interface */
-    int     status(std::ostream &out);
-    int     connect(const struct sockaddr_in &raddr, uint32_t conn_period);
-    int     listenfor(const struct sockaddr_in &raddr);
-    bool    isConnected();
+    int status(std::ostream &out);
+    int connect(const struct sockaddr_in &raddr, uint32_t conn_period);
+    int listenfor(const struct sockaddr_in &raddr);
+    bool isConnected();
 
     /* get tcp information */
-    bool    getRemoteAddress(struct sockaddr_in &raddr);
-    uint8   TcpState();
+    bool getRemoteAddress(struct sockaddr_in &raddr);
+    uint8 TcpState();
     int TcpErrorState();
 
     /* stream Interface */
@@ -98,21 +98,19 @@ public:
     /* Callback Funcion from UDP Layers */
     virtual void recvPkt(void *data, int size); /* overloaded */
 
-
-
     /* Exposed Data Counting */
-    bool    widle(); /* write idle */
-    bool    ridle(); /* read idle */
-    uint32  wbytes();
-    uint32  rbytes();
+    bool widle(); /* write idle */
+    bool ridle(); /* read idle */
+    uint32 wbytes();
+    uint32 rbytes();
 
 private:
 
     /* Internal Functions - use the Mutex (not reentrant) */
     /* Internal Functions - that don't need mutex protection */
 
-    uint32  genSequenceNo();
-    bool    isOldSequence(uint32 tst, uint32 curr);
+    uint32 genSequenceNo();
+    bool isOldSequence(uint32 tst, uint32 curr);
 
     mutable QMutex tcpMtx;
 
@@ -121,40 +119,40 @@ private:
     int cleanup();
 
     /* incoming data */
-    int     recv_check();
-    int     handleIncoming(TcpPacket *pkt);
-    int     incoming_Closed(TcpPacket *pkt);
-    int     incoming_SynSent(TcpPacket *pkt);
-    int     incoming_SynRcvd(TcpPacket *pkt);
-    int     incoming_Established(TcpPacket *pkt);
-    int     incoming_FinWait1(TcpPacket *pkt);
-    int     incoming_FinWait2(TcpPacket *pkt);
-    int     incoming_TimedWait(TcpPacket *pkt);
-    int     incoming_Closing(TcpPacket *pkt);
-    int     incoming_CloseWait(TcpPacket *pkt);
-    int     incoming_LastAck(TcpPacket *pkt);
-    int     check_InPkts();
-    int     UpdateInWinSize();
+    int recv_check();
+    int handleIncoming(TcpPacket *pkt);
+    int incoming_Closed(TcpPacket *pkt);
+    int incoming_SynSent(TcpPacket *pkt);
+    int incoming_SynRcvd(TcpPacket *pkt);
+    int incoming_Established(TcpPacket *pkt);
+    int incoming_FinWait1(TcpPacket *pkt);
+    int incoming_FinWait2(TcpPacket *pkt);
+    int incoming_TimedWait(TcpPacket *pkt);
+    int incoming_Closing(TcpPacket *pkt);
+    int incoming_CloseWait(TcpPacket *pkt);
+    int incoming_LastAck(TcpPacket *pkt);
+    int check_InPkts();
+    int UpdateInWinSize();
     int int_read_pending();
 
     /* outgoing data */
     int send();
-    int     toSend(TcpPacket *pkt, bool retrans = true);
-    void    acknowledge();
+    int toSend(TcpPacket *pkt, bool retrans = true);
+    void acknowledge();
     int retrans();
     int sendAck();
-    void    setRemoteAddress(const struct sockaddr_in &raddr);
+    void setRemoteAddress(const struct sockaddr_in &raddr);
 
     int getTTL() {
         return ttl;
     }
-    void    setTTL(int t) {
+    void setTTL(int t) {
         ttl = t;
     }
 
     /* data counting */
-    uint32  int_wbytes();
-    uint32  int_rbytes();
+    uint32 int_wbytes();
+    uint32 int_rbytes();
 
     /* Internal Data - must have mutex to access! */
 
@@ -172,15 +170,15 @@ private:
     uint32 outSizeNet;
 
     /* get packed into here as size increases */
-    std::deque<dataBuffer *>   inQueue, outQueue;
+    std::deque<dataBuffer *> inQueue, outQueue;
 
     /* packets waiting for acks */
     std::list<TcpPacket *> inPkt, outPkt;
 
 
-    uint8  state; /* stream state */
-    bool   inStreamActive;
-    bool   outStreamActive;
+    uint8 state; /* stream state */
+    bool inStreamActive;
+    bool outStreamActive;
 
     uint32 outSeqno; /* next out */
     uint32 outAcked; /* other size has received */
@@ -226,8 +224,8 @@ private:
     double mTTL_start;
     double mTTL_end;
 
-    struct sockaddr_in  peeraddr;
-    bool            peerKnown;
+    struct sockaddr_in peeraddr;
+    bool peerKnown;
 
     /* UdpSorter (has own Mutex!) */
     UdpSorter *udp;
@@ -238,7 +236,7 @@ private:
 /* for debugging */
 
 #ifdef TCP_DEBUG_STREAM_EXTRA /* for extra checking! */
-int     setupBinaryCheck(std::string fname);
+int setupBinaryCheck(std::string fname);
 #endif
 
 

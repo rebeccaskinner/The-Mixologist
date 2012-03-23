@@ -60,6 +60,7 @@ int log(unsigned int lvl, int zone, QString msg);
 #define PQISTREAMERZONE 8221
 #define STATUSSERVICEZONE 12001
 #define MIXOLOGYSERVICEZONE 12409
+#define TCP_STREAM_ZONE 28455
 #define FTTRANSFERMODULEZONE 29384
 #define FTCONTROLLERZONE 29422
 #define FTDATADEMULTIPLEXZONE 29592
@@ -74,4 +75,5 @@ int log(unsigned int lvl, int zone, QString msg);
 #define PQISTUNZONE 99503
 #define UDPLAYERZONE 99510
 #define UDPSORTERZONE 99511
+#define SSL_UDP_ZONE 99600
 #endif

@@ -42,7 +42,8 @@ public:
     UdpLayer(UdpReceiver *udpr, struct sockaddr_in &local);
     virtual ~UdpLayer();
 
-    /* Sends the specified packet. */
+    /* Sends the specified packet.
+       Returns the amount of data sent on success, or -1 on failure. */
     int sendPkt(void *data, int size, const struct sockaddr_in *to, int ttl);
 
     /* Returns whether any errors have occurred, true on okay. */

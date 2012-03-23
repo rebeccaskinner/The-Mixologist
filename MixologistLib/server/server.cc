@@ -82,7 +82,6 @@ qulonglong Server::latestKnownVersion() {
 
 void Server::oneSecondTick() {
     connMgr->tick();
-    TCP_over_UDP_tick_stunkeepalive();
 }
 
 #define MAX_SECONDS_TO_SLEEP 1

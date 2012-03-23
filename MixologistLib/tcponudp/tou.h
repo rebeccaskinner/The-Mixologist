@@ -48,42 +48,17 @@ typedef int socklen_t;
  * Standard C interface (as Unix-like as possible) for the tou (Tcp On Udp) library.
  **********************************************************************************/
 
+class UdpSorter;
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
 
-    /* The modification to a single UDP socket means that the structure of the TOU interface must be changed.
-     *
-     * STUN Procedure:
-     * (1) choose our local address. (a universal bind)
-     * bool TCP_over_UDP_init(const struct sockaddr *my_addr);
-     * (2) query if we have determined our external address.
-     * int TCP_over_UDP_read_extaddr(struct sockaddr *ext_addr, socklen_t *addrlen, uint8_t *stable);
-     * (3) offer more stunpeers, for external address determination.
-     * int TCP_over_UDP_add_stunpeer(const struct sockaddr *ext_addr, socklen_t addrlen, const char *id);
-     * (4) repeat (2)+(3) until a valid ext_addr is returned. If stable is false this means we have a symmetric NAT and STUN has failed.
-     * (5) if stunkeepalive is enabled, then periodically send out stun packets to maintain external firewall port.
-     *
-     */
-
-    /* Opens the udp port.
+    /* Sets the UDP port on which the streams will run.
        Returns true on success or if already done. */
-    bool TCP_over_UDP_init(const struct sockaddr *my_addr, socklen_t addrlen);
+    bool TCP_over_UDP_init(UdpSorter* udpConnection);
 
-    /* Adds the peer to the list of peers that we will attempt to use as STUN servers. */
-    int TCP_over_UDP_add_stunpeer(const struct sockaddr *ext_addr, socklen_t addrlen, const char *cert_id);
-
-    /* Populates the external address (and its length), as well as if it is stable.
-       If stable is false, means we have a symmetric NAT, and STUN will be ineffective in finding our external port.
-       Can be called repeatedly until address is found.
-       Returns 1 on success, 0 on failure, -1 if not yet init. */
-    int TCP_over_UDP_read_extaddr(struct sockaddr *ext_addr, socklen_t *addrlen, uint8_t *stable);
-
-    /* Sets whether we should periodically send STUN keep alive packets. */
-    int TCP_over_UDP_set_stunkeepalive(bool enabled);
-
-    /* Maintains STUN keep alive. */
-    int TCP_over_UDP_tick_stunkeepalive();
+    void TCP_over_UDP_shutdown();
 
     /* Connections are as similar to UNIX as possible
      * (1) create a socket: tou_socket() this reserves a socket id.

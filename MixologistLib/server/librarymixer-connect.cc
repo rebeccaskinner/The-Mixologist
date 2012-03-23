@@ -25,6 +25,7 @@
 #include <server/librarymixer-friendlibrary.h>
 
 #include <pqi/pqinetwork.h>
+#include <pqi/connectivitymanager.h>
 
 #include <interface/settings.h>
 #include <interface/peers.h> //for peers variable
@@ -245,7 +246,10 @@ int LibraryMixerConnect::uploadAddress(const QString &localIP, ushort localPort,
     uploadBuffer->write(QByteArray::number(localPort));
     uploadBuffer->write("</Mixology_Local_Port>");
     uploadBuffer->write("<Mixology_External_IP>");
-    uploadBuffer->write(externalIP.toUtf8());
+    if (externalIP.isEmpty())
+        uploadBuffer->write("[[set_ip]]");
+    else
+        uploadBuffer->write(externalIP.toUtf8());
     uploadBuffer->write("</Mixology_External_IP>");
     uploadBuffer->write("<Mixology_External_Port>");
     uploadBuffer->write(QByteArray::number(externalPort));
@@ -478,9 +482,15 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         if (uploaded_localPortNode.isNull()) goto addressUploadError;
         if (localPortNode.text() != uploaded_localPortNode.text()) goto addressUploadError;
 
-        //No need to validate, because we asked the server to set it for us.
         QDomElement externalIPNode = scratchNode.firstChildElement("Mixology_External_IP");
+        QDomElement uploaded_externalIPNode = uploaded_scratchNode.firstChildElement("Mixology_External_IP");
         if (externalIPNode.isNull()) goto addressUploadError;
+        if (uploaded_externalIPNode.isNull()) goto addressUploadError;
+        if (uploaded_externalIPNode.text() == "[[set_ip]]") {
+            connMgr->setFallbackExternalIP(externalIPNode.text());
+        } else {
+            if (externalIPNode.text() != uploaded_externalIPNode.text()) goto addressUploadError;
+        }
 
         QDomElement externalPortNode = scratchNode.firstChildElement("Mixology_External_Port");
         QDomElement uploaded_externalPortNode = uploaded_scratchNode.firstChildElement("Mixology_External_Port");

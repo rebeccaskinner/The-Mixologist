@@ -53,8 +53,7 @@ void DisplayInfos(struct UPNPUrls *urls,
     unsigned int uptime;
     unsigned int brUp, brDown;
     UPNP_GetConnectionTypeInfo(urls->controlURL,
-                               //data->first.servicetype,
-                               data->servicetype,
+                               data->first.servicetype,
                                connectionType);
 #ifdef DEBUGUPNPUTIL
     if(connectionType[0])
@@ -63,19 +62,17 @@ void DisplayInfos(struct UPNPUrls *urls,
         printf("GetConnectionTypeInfo failed.\n");
 #endif
     UPNP_GetStatusInfo(urls->controlURL,
-                       //data->first.servicetype,
-                       data->servicetype,
+                       data->first.servicetype,
                        status, &uptime, lastconnerror);
 #ifdef DEBUGUPNPUTIL
     printf("Status : %s, uptime=%u LastConnError %s\n", status, uptime, lastconnerror);
     printf("MaxBitRateDown : %u bps   MaxBitRateUp %u bps\n", brDown, brUp);
 #endif
     UPNP_GetLinkLayerMaxBitRates(urls->controlURL_CIF,
-                                 data->servicetype, //data->servicetype,
+                                 data->first.servicetype,
                                  &brDown, &brUp);
     UPNP_GetExternalIPAddress(urls->controlURL,
-                              //data->first.servicetype,
-                              data->servicetype,
+                              data->first.servicetype,
                               externalIPAddress);
 #ifdef DEBUGUPNPUTIL
     if(externalIPAddress[0])
@@ -89,10 +86,10 @@ void GetConnectionStatus(struct UPNPUrls *urls,
                          struct IGDdatas *data) {
     unsigned int bytessent, bytesreceived, packetsreceived, packetssent;
     DisplayInfos(urls, data);
-    bytessent = UPNP_GetTotalBytesSent(urls->controlURL_CIF, data->servicetype);//data->CIF.servicetype);
-    bytesreceived = UPNP_GetTotalBytesReceived(urls->controlURL_CIF, data->servicetype);//data->CIF.servicetype);
-    packetssent = UPNP_GetTotalPacketsSent(urls->controlURL_CIF, data->servicetype);//data->CIF.servicetype);
-    packetsreceived = UPNP_GetTotalPacketsReceived(urls->controlURL_CIF, data->servicetype);//data->CIF.servicetype);
+    bytessent = UPNP_GetTotalBytesSent(urls->controlURL_CIF, data->CIF.servicetype);;
+    bytesreceived = UPNP_GetTotalBytesReceived(urls->controlURL_CIF, data->CIF.servicetype);
+    packetssent = UPNP_GetTotalPacketsSent(urls->controlURL_CIF, data->CIF.servicetype);
+    packetsreceived = UPNP_GetTotalPacketsReceived(urls->controlURL_CIF, data->CIF.servicetype);
 #ifdef DEBUGUPNPUTIL
     printf("Bytes:   Sent: %8u\tRecv: %8u\n", bytessent, bytesreceived);
     printf("Packets: Sent: %8u\tRecv: %8u\n", packetssent, packetsreceived);
@@ -125,8 +122,7 @@ void ListRedirections(struct UPNPUrls *urls,
         intPort[0] = '\0';
         intClient[0] = '\0';
         r = UPNP_GetGenericPortMappingEntry(urls->controlURL,
-                                            //data->first.servicetype,
-                                            data->servicetype,
+                                            data->first.servicetype,
                                             index, extPort, intClient, intPort,
                                             protocol, desc, enabled,
                                             rHost, duration);
@@ -175,8 +171,7 @@ bool SetRedirectAndTest(struct UPNPUrls *urls,
     }
 
     UPNP_GetExternalIPAddress(urls->controlURL,
-                              //data->first.servicetype,
-                              data->servicetype,
+                              data->first.servicetype,
                               externalIPAddress);
 #ifdef DEBUGUPNPUTIL
     if(externalIPAddress[0])
@@ -185,9 +180,8 @@ bool SetRedirectAndTest(struct UPNPUrls *urls,
         printf("GetExternalIPAddress failed.\n");
 #endif
     // Unix at the moment!
-    /* Starting from miniupnpc version 1.2, lease duration parameter is gone */
-    r = UPNP_AddPortMapping(urls->controlURL, data->servicetype,//data->first.servicetype,
-                            eport, iport, iaddr, "Mixologist", proto, NULL);
+    r = UPNP_AddPortMapping(urls->controlURL, data->first.servicetype,
+                            eport, iport, iaddr, "Mixologist", proto, NULL, NULL);
 #ifdef DEBUGUPNPUTIL
     if(r==0) {
         printf("AddPortMapping(%s, %s, %s) failed\n", eport, iport, iaddr);
@@ -198,10 +192,9 @@ bool SetRedirectAndTest(struct UPNPUrls *urls,
     }
 #endif
     UPNP_GetSpecificPortMappingEntry(urls->controlURL,
-                                     //data->first.servicetype,
-                                     data->servicetype,
+                                     data->first.servicetype,
                                      eport, proto,
-                                     intClient, intPort);
+                                     intClient, intPort, NULL, NULL, NULL);
 #ifdef DEBUGUPNPUTIL
     if(intClient[0])
         printf("InternalIP:Port = %s:%s\n", intClient, intPort);
@@ -263,10 +256,9 @@ bool TestRedirect(struct UPNPUrls *urls,
     }
 
     UPNP_GetSpecificPortMappingEntry(urls->controlURL,
-                                     //data->first.servicetype,
-                                     data->servicetype,
+                                     data->first.servicetype,
                                      eport, proto,
-                                     intClient, intPort);
+                                     intClient, intPort, NULL, NULL, NULL);
     if(intClient[0]) {
 #ifdef DEBUGUPNPUTIL
         printf("uPnP Check: InternalIP:Port = %s:%s\n", intClient, intPort);
@@ -311,8 +303,7 @@ RemoveRedirect(struct UPNPUrls *urls,
 #endif
         return 0;
     }
-    //UPNP_DeletePortMapping(urls->controlURL, data->first.servicetype, eport, proto, NULL);
-    UPNP_DeletePortMapping(urls->controlURL, data->servicetype, eport, proto, NULL);
+    UPNP_DeletePortMapping(urls->controlURL, data->first.servicetype, eport, proto, NULL);
     return 1;
 }
 

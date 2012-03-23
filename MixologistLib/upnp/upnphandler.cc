@@ -87,11 +87,18 @@ void upnpHandler::setTargetPort(unsigned short newPort) {
     targetPort = newPort;
 }
 
+#define UPNP_DISCOVERY_TIMEOUT 2000
 bool upnpHandler::initUPnPState() {
     /* allocate memory */
     UPnPConfigData *newConfigData = new UPnPConfigData;
 
-    newConfigData->devlist = upnpDiscover(2000, NULL, NULL, 0);
+    int error;
+    newConfigData->devlist = upnpDiscover(UPNP_DISCOVERY_TIMEOUT, NULL, NULL, NULL, NULL, &error);
+
+    if (error != UPNPDISCOVER_SUCCESS) {
+        log(LOG_ERROR, UPNPHANDLERZONE, "Error initializing UPNP discovery, error code: " + QString::number(error));
+        return false;
+    }
 
     if (newConfigData->devlist) {
         struct UPNPDev *device;

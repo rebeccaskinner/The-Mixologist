@@ -266,8 +266,7 @@ end:
 
 /********** SSL ERROR STUFF ******************************************/
 
-int printSSLError(SSL *, int retval, int err, unsigned long err2,
-                  std::ostream &out) {
+int printSSLError(SSL *, int retval, int err, unsigned long err2, std::ostream &out) {
     std::string mainreason = std::string("UNKNOWN ERROR CODE");
     if (err == SSL_ERROR_NONE) {
         mainreason =  std::string("SSL_ERROR_NONE");

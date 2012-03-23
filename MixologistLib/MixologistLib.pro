@@ -57,10 +57,8 @@ macx {
 }
 ################################### COMMON stuff ##################################
 
-DEFINES *= MINIUPNPC_VERSION=14
-
 SSL_DIR= ../ThirdParty/src/openssl-1.0.0a
-UPNPC_DIR= ../ThirdParty/src/miniupnpc-1.4.20100202
+UPNPC_DIR= ../ThirdParty/src/miniupnpc-1.6
 PJLIB_DIR = ../ThirdParty/src/pjproject-1.12/pjlib
 PJLIBUTIL_DIR = ../ThirdParty/src/pjproject-1.12/pjlib-util
 PJNATH_DIR = ../ThirdParty/src/pjproject-1.12/pjnath

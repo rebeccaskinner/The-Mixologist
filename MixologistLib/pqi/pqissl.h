@@ -151,6 +151,7 @@ protected:
        Then initiates the SSL connection.
        Returns 1 on success, -1 on errors. */
     int Initiate_SSL_Connection();
+
     /* Completes the basic TCP connection to the target address.
        Returns 1 on success, 0 if not ready, -1 on errors. */
     virtual int Basic_Connection_Complete();
@@ -176,7 +177,7 @@ protected:
     /* Informs the parent that the connection attempt ended in failure. */
     virtual int Failed_Connection();
 
-    /* protected internal fns that are overloaded for udp case. */
+    /* Protected internal functions that are overloaded for TCP over UDP. */
     virtual int net_internal_close(int fd_to_close) {return unix_close(fd_to_close);}
     virtual int net_internal_SSL_set_fd(SSL *ssl, int fd) {return SSL_set_fd(ssl, fd);}
     virtual int net_internal_fcntl_nonblock(int fd) {return unix_fcntl_nonblock(fd);}
@@ -184,10 +185,10 @@ protected:
     /* Whether this connection has already been fully set up. */
     bool currentlyConnected;
 
-    /* Whether this is a passive UDP connection or an active TCP connection. */
+    /* Whether this is a passive UDP connection or an active TCP OR UDP connection. */
     enum SSLModes {
-        PQISSL_PASSIVE = 0x00, //UDP Connection
-        PQISSL_ACTIVE = 0x01 //TCP Connection
+        PQISSL_PASSIVE = 0x00,
+        PQISSL_ACTIVE = 0x01
     };
     SSLModes sslmode;
 

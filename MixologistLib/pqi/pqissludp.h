@@ -23,77 +23,78 @@
 #ifndef MRK_PQI_SSL_UDP_HEADER
 #define MRK_PQI_SSL_UDP_HEADER
 
-#include <openssl/ssl.h>
-
-// operating system specific network header.
-#include "pqi/pqinetwork.h"
-
-#include <string>
-#include <map>
-
 #include "pqi/pqissl.h"
 
-/* So pqissludp is the special firewall breaking protocol.
- * This class will implement the basics of streaming
- * ssl over udp using a tcponudp library....
- * and a small extension to ssl.
- */
-
-class pqissludp;
-class cert;
-
-/* This provides a NetBinInterface, which is
- * primarily inherited from pqissl.
- * fns declared here are different -> all others are identical.
+/*
+ * pqissludp
+ *
+ * Extends an ordinary pqissl to create a pqissl that works over a TCP over UDP connection.
+ *
  */
 
 class pqissludp: public pqissl {
 public:
     pqissludp(PQInterface *parent);
-
     virtual ~pqissludp();
 
-    // NetInterface.
-    // listen fns call the udpproxy.
-    virtual int listen();
-    virtual int stoplistening();
-    virtual int tick();
-    virtual void reset();
+    /* Functions declared here are different, all others are identical. */
 
+    /**********************************************************************************
+     * NetInterface
+     **********************************************************************************/
+
+    /* Begin listening for connections from this friend.
+       Returns 1 on success, 0 on not ready, and -1 on error. */
+    virtual int listen();
+
+    /* Stops listening for connections from this friend.
+       Returns 1 on success or if already not listening, and -1 on error. */
+    virtual int stoplistening();
+
+    /* Stops listening for connections from this friend.
+       Returns 1 on success or if already not listening, and -1 on error.
+       Utilizing this to set the NET_PARAM_CONNECT_PERIOD is essential before attempting connections. */
     virtual bool setConnectionParameter(netParameters type, uint32_t value);
 
-    // BinInterface.
-    // These are reimplemented.
-    virtual bool moretoread();
-    virtual bool cansend();
-    /* UDP always through firewalls -> always bandwidth Limited */
-    virtual bool bandwidthLimited() {
-        return true;
-    }
+    /**********************************************************************************
+     * BinInterface
+     **********************************************************************************/
 
-    // pqissludp specific.
-    // called to initiate a connection;
-    int     attach();
+    /* Returns true when there is more data available to be read by the connection. */
+    virtual bool moretoread();
+
+    /* Returns true when more data is ready to be sent by the connection. */
+    virtual bool cansend();
+
+    /* If a connection is with a friend on the same LAN, then we'll let that connection be excused from bandwidth balancing in pqistreamer.
+       TCP over UDP is always through firewalls, so this will always return true. */
+    virtual bool bandwidthLimited() {return true;}
 
 protected:
+    /**********************************************************************************
+     * Internals of the SSL connection
+     **********************************************************************************/
 
+    /* Opens a socket, makes it non-blocking, then connects it to the target address.
+       Returns 1 on success, 0 if not ready, -1 on errors. */
     virtual int Initiate_Connection();
+
+    /* Completes the basic TCP connection to the target address.
+       Returns 1 on success, 0 if not ready, -1 on errors. */
     virtual int Basic_Connection_Complete();
 
-    //protected internal fns that are overloaded for udp case.
+    /* Protected internal functions that are overloaded for TCP over UDP. */
     virtual int net_internal_close(int fd);
     virtual int net_internal_SSL_set_fd(SSL *ssl, int fd);
     virtual int net_internal_fcntl_nonblock(int fd);
 
 private:
+    /* Called to initiate a connection. */
+    int attach();
 
-    BIO *tou_bio;  // specific to ssludp.
+    BIO *tou_bio;
 
-    //int remote_timeout;
-    //int proxy_timeout;
-
-    long listen_checktime;
-
+    /* Timeout period to try the TCP over UDP connection before giving up. */
     uint32_t mConnectPeriod;
 };
 

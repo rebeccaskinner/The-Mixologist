@@ -5,7 +5,7 @@ MixologistGui/Mixologist.app/*
 MixologistGui/Mixologist
 MixologistLib/temp/*
 MixologistLib/qtc-gdbmacros/*
-ThirdParty/src/miniupnpc-1.4.20100202/*
+ThirdParty/src/miniupnpc-1.6/*
 ThirdParty/src/openssl-1.0.0a/*
 ThirdParty/src/pjproject-1.12/*
 ThirdParty/lib/*.a

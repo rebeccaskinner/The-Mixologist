@@ -32,10 +32,18 @@
 #include <QMap>
 #include <QStringList>
 
-/* Used by PeerConnectState to indicate type of connection.
-   Previous comment: order of attempts ... */
-const uint32_t NET_CONN_TCP_ALL         = 0x000f;
-const uint32_t NET_CONN_UDP_ALL         = 0x00f0;
+/* Used in inter-class communications with pqipersongrp to describe the type of transport layer used. */
+enum TransportLayerType {
+    CONNECTION_TCP_TRANSPORT,
+    CONNECTION_UDP_TRANSPORT
+};
+
+/* Used to indicate whether a pending TCP connection attempt will be to an internal or external address. */
+enum TCPLocalOrExternal {
+    NOT_TCP,
+    TCP_LOCAL_ADDRESS,
+    TCP_EXTERNAL_ADDRESS
+};
 
 /* Used by peerConnectAddress to indicate the type of connection to make. */
 const uint32_t NET_CONN_TCP_LOCAL       = 0x0001;
@@ -44,14 +52,21 @@ const uint32_t NET_CONN_TCP_EXTERNAL    = 0x0002;
 //Used by pqipersongrp as the timeout period for connecting to a friend over TCP
 const uint32_t TCP_STD_TIMEOUT_PERIOD   = 5; /* 5 seconds! */
 
+/* A pending connection attempt. */
 class peerConnectAddress {
 public:
     peerConnectAddress();
 
     struct sockaddr_in addr;
     uint32_t delay;  /* to stop simultaneous connects */
-    uint32_t period; /* UDP only */
-    uint32_t type; //Directives on how the connection should be made
+
+    TransportLayerType transportLayerType;
+
+    /* UDP only */
+    uint32_t period;
+
+    /* TCP only - whether the address we will be connecting to is internal or external IP */
+    TCPLocalOrExternal tcpLocalOrExternal;
 };
 
 /* There is one of these for each friend, stored in mFriendsList to record status of connection.
@@ -95,14 +110,13 @@ public:
     uint32_t state;  //The connection state
     uint32_t actions;
 
-    bool inConnAttempt;
-    peerConnectAddress currentConnAddr; //current address being tried
-
     /* A list of connect attempts to make (in order).
        Items are added by retryConnectTCP, which adds the localaddr and serveraddr,
        as well as by the DHT functions.  Items are removed when used. */
     std::list<peerConnectAddress> connAddrs;
 
+    bool inConnAttempt;
+    peerConnectAddress currentConnAddr; //current address being tried
 };
 
 class ConnectivityManager;
@@ -159,7 +173,7 @@ public:
        connect to a given friend, this is called by pqipersongrp on the friend to pop off the next member of connAddrs,
        which is used to populate the references so that it can use that information to actually connect.
        Returns true if the address information was successfully set into the references. */
-    bool getQueuedConnectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr, uint32_t &delay, uint32_t &period, uint32_t &type);
+    bool getQueuedConnectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr, uint32_t &delay, uint32_t &period, TransportLayerType &transportLayerType);
 
     /* Called by pqipersongrp to report a change in connectivity with a friend.
        This could result from a connection request initiated by getQueuedConnectAttempt(), or it could be an update on an already existing connection.
@@ -171,6 +185,12 @@ public:
 
     /* Called by pqistreamer whenever we received a packet from a friend, updates their peerConnectState so we know not to time them out. */
     void heardFrom(unsigned int librarymixer_id);
+
+    /* In the case of a total failure to get our address info ourself, instead of uploading our address,
+       we will request that LibraryMixer sets our shared external IP to be whatever it sees.
+       It then returns this to us so we can set it here as well.
+       This is fine for the address, as that will be reliable, but if we reach this point, that means we have totally failed to verify our port. */
+    void setFallbackExternalIP(QString address);
 
     /**********************************************************************************
      * Body of public-facing API functions called through p3peers
@@ -207,7 +227,7 @@ public:
 
 private slots:
     /* Connected to the UDP layer for when we receive a STUN packet. */
-    void receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, ushort receivedOnPort);
+    void receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, ushort receivedOnPort, QString receivedFromAddress);
 
     /* Connected to the LibraryMixerConnect so we know when we have updated LibraryMixer with our new address. */
     void addressUpdatedOnLibraryMixer();
@@ -243,9 +263,9 @@ private:
     /* Integrated method that handles basically an entire connection set up step that is based around a STUN request.
        If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
        If we have sent a stun packet, checks if we have hit the timeout.
-       If we have hit the timeout, returns false, otherwise returns true.
+       If we have hit the timeout, returns -1, if we sent a STUN packet returns 1, otherwise if we're waiting, returns 0.
        If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
-    bool handleStunStep(const QString& stunServerName, const struct sockaddr_in *stunServer, UdpSorter *sendSocket, ushort returnPort = 0);
+    int handleStunStep(const QString& stunServerName, const struct sockaddr_in *stunServer, UdpSorter *sendSocket, ushort returnPort = 0);
 
     /* Sends a STUN packet.
        If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
@@ -253,9 +273,7 @@ private:
 
     /* Checks and makes sure UPNP is still properly functioning periodically.
        Called from netTick.
-       Does not perform any action if called within the past 5 minutes.
-       Tick happens 1/second or more, seems excessive to be testing the connection health that frequently.
-       Should either later test this assumption, or compare against established software to see common practice. */
+       Does not perform any action if called within the past 5 minutes. */
     void netUpnpMaintenance();
 
     /**********************************************************************************
@@ -269,8 +287,9 @@ private:
        Called by generic retryConnect. */
     bool retryConnectUDP(unsigned int librarymixer_id);
 
-    /* Queues the given connectionType of a friend identified by connectState for a connection attempt. */
-    void queueConnectionAttempt(peerConnectState* connectState, uint32_t connectionType);
+    /* Queues the given connectionType of a friend identified by connectState for a connection attempt.
+       localOrExternal is only used if transportLayerType is TCP. */
+    void queueConnectionAttempt(peerConnectState* connectState, TransportLayerType transportLayerType, TCPLocalOrExternal localOrExternal);
 
     /* Utility function for usedIps to convert a sockaddr_in into a string representation of form ###.###.###.###:## */
     QString static addressToString(struct sockaddr_in address);
@@ -285,25 +304,41 @@ private:
 
     peerConnectState ownState;
 
-    /* The current state of the connection's setup. */
+    /* The current state of the connection's setup, i.e. the current state of netTick. */
     enum ConnectionStatus {
-        CONNECTION_STATUS_FINDING_STUN_FRIENDS, //We're trying to see if we can get STUN responses from any of our friends
-        CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS, //We're trying to see if we can get STUN responses from any public servers
-        CONNECTION_STATUS_STUNNING_INITIAL, //STUN to friends failed, and now we are attempting to STUN public STUN servers
-        CONNECTION_STATUS_TRYING_UPNP, //Initial STUN was unsuccessful, attempting to use UPNP to open a hole in the firewall
+        /* The states below here are initial set up states. */
+        //We're trying to see if we can get STUN responses from any of our friends so we can use them as STUN servers
+        CONNECTION_STATUS_FINDING_STUN_FRIENDS,
+        //As a fallback without two friends that responded, we're trying to see if we can get STUN responses from any public servers
+        CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS,
+        //Attempting to STUN from our test port to our main port to test for a firewall
+        CONNECTION_STATUS_STUNNING_INITIAL,
+        //Attempting to configure our firewall with UPNP
+        CONNECTION_STATUS_TRYING_UPNP,
+        //Successfully configured our firewall with UPNP, confirm with STUN that it actually worked
         CONNECTION_STATUS_STUNNING_UPNP_TEST,
+        //We haven't received any STUN responses, confirm we have any Internet conneciton at all with a normal STUN to the secondary server
         CONNECTION_STATUS_STUNNING_MAIN_PORT,
+        //We just heard back with the normal STUN, see if we are behind a full-cone NAT and have just punched a hole in it
         CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST,
+        //We didn't hear back from the full-cone test, check if our port is consistent between STUN servers to test for a symmetric NAT
         CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
 
         /* The states below here are final states. */
-        CONNECTION_STATUS_UNFIREWALLED, //We've determined we're not behind a firewall, we're done
-        CONNECTION_STATUS_PORT_FORWARDED, //We've determined we're port forwarded, we're done
-        CONNECTION_STATUS_UPNP_IN_USE, //We succesfully opened a hole in the firewall using UPNP, and will maintain it over time
-        CONNECTION_STATUS_UDP_HOLE_PUNCHING, //We successfully opened a hole in our firewall using UDP hole-punching, and will maintain it over time
-        CONNECTION_STATUS_RESTRICTED_CONE, //We are behind an address restricted cone firewall, and must maintain the UDP hole punch often with each friend
-        CONNECTION_STATUS_SYMMETRIC_NAT, //We are behind a symmetric NAT, UDP hole punching is ineffective, UPNP has failed and all of this is shutdown
-        CONNECTION_STATUS_NO_NET //We are unable even to send and receive packets over STUN using our main port, either behind a blocking firewall or no Internet access
+        //We've determined we're not behind a firewall, we're done
+        CONNECTION_STATUS_UNFIREWALLED,
+        //We've determined we're port forwarded, we're done
+        CONNECTION_STATUS_PORT_FORWARDED,
+        //We've succesfully opened a hole in the firewall using UPNP, and will maintain it over time
+        CONNECTION_STATUS_UPNP_IN_USE,
+        //We've successfully opened a hole in our firewall using UDP hole-punching, and will maintain it over time
+        CONNECTION_STATUS_UDP_HOLE_PUNCHING,
+        //We are behind an address restricted cone firewall, and must maintain the UDP hole punch often with each friend
+        CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING,
+        //We are behind a symmetric NAT, UDP hole punching is ineffective, UPNP has failed and the user is on his own
+        CONNECTION_STATUS_SYMMETRIC_NAT,
+        //We are unable even to send and receive packets over STUN using our main port, either behind a blocking firewall or no Internet access
+        CONNECTION_STATUS_NO_NET
     };
     ConnectionStatus connectionStatus;
 
@@ -336,9 +371,15 @@ private:
     };
     QMap<QString, pendingStunTransaction> pendingStunTransactions;
 
+    /* These states indicate the current state of the statusTick(), i.e. whether we are ready to begin trying to connect to friends. */
     enum readyToConnectToFriendsState {
+        //Our own connection state is still being determined, so hold off on connection attempts with friends
         CONNECT_FRIENDS_CONNECTION_INITIALIZING,
+        //Our own connection state is discovered, so update LibraryMixer with that information
         CONNECT_FRIENDS_UPDATE_LIBRARYMIXER,
+        //Our own connection state discovery was a total failure, as a fallback have LibraryMixer set our IP information itself
+        CONNECT_FRIENDS_GET_ADDRESS_FROM_LIBRARYMIXER,
+        //Everything normal, attempt to connect to friends normally
         CONNECT_FRIENDS_READY
     };
     readyToConnectToFriendsState readyToConnectToFriends;

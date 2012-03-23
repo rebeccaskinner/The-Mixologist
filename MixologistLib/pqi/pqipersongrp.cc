@@ -55,8 +55,7 @@ int pqipersongrp::tickServiceRecv() {
 
     while (NULL != (pqi = GetRawItem())) {
         ++i;
-        pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone,
-                  "pqipersongrp::tickTunnelServer() Incoming TunnelItem");
+        pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone, "pqipersongrp::tickTunnelServer() Incoming TunnelItem");
         incoming(pqi);
     }
 
@@ -76,8 +75,7 @@ int pqipersongrp::tickServiceSend() {
 
     while (NULL != (pqi = outgoing())) { /* outgoing has own locking */
         ++i;
-        pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone,
-                  "pqipersongrp::tickTunnelServer() OutGoing NetItem");
+        pqioutput(PQL_DEBUG_BASIC, pqipersongrpzone, "pqipersongrp::tickTunnelServer() OutGoing NetItem");
 
         SendRawItem(pqi); /* Locked by pqihandler */
     }
@@ -222,40 +220,37 @@ int pqipersongrp::removePeer(std::string id) {
 #endif
 
 int pqipersongrp::connectPeer(std::string cert_id, unsigned int librarymixer_id) {
-    /* get status from ConnectivityManager */
+    QMutexLocker stack(&coreMtx);
+    std::map<std::string, PQInterface *>::iterator it;
+    it = pqis.find(cert_id);
+    if (it == pqis.end()) return 0;
 
-    {
-        QMutexLocker stack(&coreMtx);
-        std::map<std::string, PQInterface *>::iterator it;
-        it = pqis.find(cert_id);
-        if (it == pqis.end()) return 0;
+    /* get the connect attempt details from the ConnectivityManager. */
+    pqiperson *p = (pqiperson *) it->second;
 
-        /* get the connect attempt details from the ConnectivityManager. */
-        pqiperson *p = (pqiperson *) it->second;
+    /* get address from ConnectivityManager */
+    if (!connMgr) return 0;
 
-        /* get address from ConnectivityManager */
-        if (!connMgr) return 0;
+    struct sockaddr_in addr;
+    uint32_t delay, period;
+    TransportLayerType transportLayerType;
 
-        struct sockaddr_in addr;
-        uint32_t delay, period, type;
+    if (!connMgr->getQueuedConnectAttempt(librarymixer_id, addr, delay, period, transportLayerType)) {
+        return 0;
+    }
 
-        if (!connMgr->getQueuedConnectAttempt(librarymixer_id, addr, delay, period, type)) {
-            return 0;
-        }
+    uint32_t ptype, timeout;
+    if (transportLayerType == CONNECTION_TCP_TRANSPORT) {
+        ptype = PQI_CONNECT_TCP;
+        timeout = TCP_STD_TIMEOUT_PERIOD;
+    } else if (transportLayerType == CONNECTION_UDP_TRANSPORT) {
+        ptype = PQI_CONNECT_UDP;
+        timeout = period * 2;
+    } else
+        return 0;
 
-        uint32_t ptype, timeout;
-        if (type & NET_CONN_TCP_ALL) {
-            ptype = PQI_CONNECT_TCP;
-            timeout = TCP_STD_TIMEOUT_PERIOD;
-        } else if (type & NET_CONN_UDP_ALL) {
-            ptype = PQI_CONNECT_UDP;
-            timeout = period * 2;
-        } else
-            return 0;
+    p->connect(ptype, addr, delay, period, timeout);
 
-        p->connect(ptype, addr, delay, period, timeout);
-
-    } /* UNLOCKED */
     return 1;
 }
 
@@ -271,12 +266,12 @@ void pqipersongrp::timeoutPeer(std::string cert_id) {
     p->reset();
 }
 
-bool    pqipersongrp::notifyConnect(std::string id, uint32_t ptype, bool success) {
+bool pqipersongrp::notifyConnect(std::string id, uint32_t ptype, bool success) {
     uint32_t type = 0;
     if (ptype == PQI_CONNECT_TCP) {
-        type = NET_CONN_TCP_ALL;
+        type = CONNECTION_TCP_TRANSPORT;
     } else {
-        type = NET_CONN_UDP_ALL;
+        type = CONNECTION_UDP_TRANSPORT;
     }
 
     if (connMgr) connMgr->reportConnectionUpdate(authMgr->findLibraryMixerByCertId(id), success, type);

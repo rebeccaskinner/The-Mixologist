@@ -76,7 +76,8 @@ public:
       Rate is limited by API, and calls before the cooldown period has passed will return -1. */
     int downloadLibrary(bool blocking = false);
 
-    /* Updates our address info on LibraryMixer. */
+    /* Updates our address info on LibraryMixer.
+       If externalIP is empty, will ask LibraryMixer to set the address. */
     int uploadAddress(const QString &localIP, ushort localPort, const QString &externalIP, ushort externalPort);
 
     enum errors {

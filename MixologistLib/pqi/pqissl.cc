@@ -459,7 +459,7 @@ int pqissl::Initiate_Connection() {
     /* Initiate connection to remote address. */
     {
         std::ostringstream out;
-        out << "pqissl::Initiate_Connection() Connecting to: " << PeerId();
+        out << "pqissl::Initiate_Connection() Connecting to: " << LibraryMixerId();
         out << " via: " << inet_ntoa(address.sin_addr) << ":" << ntohs(address.sin_port);
         log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
     }
@@ -488,7 +488,7 @@ int pqissl::Initiate_Connection() {
 
             return 0;
         } else if ((errno == ENETUNREACH) || (errno == ETIMEDOUT)) {
-            out << "ENETUNREACHABLE: cert: " << PeerId();
+            out << "ENETUNREACHABLE: cert: " << LibraryMixerId();
             log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             net_internal_close(socket);
@@ -525,7 +525,7 @@ int pqissl::Basic_Connection_Complete() {
     if (time(NULL) > mConnectionAttemptTimeoutAt) {
         std::ostringstream out;
         out << "pqissl::Basic_Connection_Complete() Connection timed out. ";
-        out << "Peer: " << PeerId() << " Period: ";
+        out << "Peer: " << LibraryMixerId() << " Period: ";
         out << mConnectionAttemptTimeout;
 
         log(LOG_DEBUG_BASIC, PQISSLZONE, out.str().c_str());
@@ -606,17 +606,17 @@ int pqissl::Basic_Connection_Complete() {
         }
 
         if (err == EINPROGRESS) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EINPROGRESS: cert: ") + PeerId().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EINPROGRESS: cert: ") + LibraryMixerId());
             return 0;
         }
 
         /* Handle the various error states. */
         if ((err == ENETUNREACH) || (err == ETIMEDOUT)) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ENETUNREACH/ETIMEDOUT: cert: ") + PeerId().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ENETUNREACH/ETIMEDOUT: cert: ") + LibraryMixerId());
         } else if ((err == EHOSTUNREACH) || (err == EHOSTDOWN)) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EHOSTUNREACH/EHOSTDOWN: cert: ") + PeerId().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EHOSTUNREACH/EHOSTDOWN: cert: ") + LibraryMixerId());
         } else if ((err == ECONNREFUSED)) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ECONNREFUSED: cert: ") + PeerId().c_str());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ECONNREFUSED: cert: ") + LibraryMixerId());
         } else {
             log(LOG_DEBUG_ALERT, PQISSLZONE, "Error: Connection Failed UNKNOWN ERROR: " + QString::number(err) +
                                              " - " + socket_errorType(err).c_str());
@@ -684,7 +684,7 @@ int pqissl::SSL_Connection_Complete() {
     }
 
     if (result == 1) {
-        log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::SSL_Connection_Complete() Success!: Peer: ") + PeerId().c_str());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::SSL_Connection_Complete() Success!: Peer: ") + LibraryMixerId());
         connectionState = STATE_WAITING_FOR_SSL_AUTHORIZE;
         return 1;
     } else {
@@ -697,7 +697,7 @@ int pqissl::SSL_Connection_Complete() {
         log(LOG_WARNING, PQISSLZONE, "Unable to set up encrypted connection, possibly because friend needs to update encryption key list from server\n");
 
         std::ostringstream out;
-        out << "Issues with SSL connection (" << result << ")!" << std::endl;
+        out << "Issues with SSL connection (mode: " << sslmode << ")!" << std::endl;
         printSSLError(ssl_connection, result, sslError, ERR_get_error(), out);
         log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
@@ -741,7 +741,7 @@ int pqissl::Authorize_SSL_Connection() {
        can always take STATE_IDLE to indicate no problems. */
     connectionState = STATE_IDLE;
 
-    log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Authorize_SSL_Connection() Accepting Conn. Peer: ") + PeerId().c_str());
+    log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Authorize_SSL_Connection() Accepting Conn. Peer: ") + LibraryMixerId());
 
     accept(ssl_connection, mOpenSocket, remote_addr);
     return 1;
