@@ -50,8 +50,17 @@ public:
        If returnPort is specified, then will set the Response-Port STUN attribute and request the response go to that port.
        If no returnPort is specified, will return to this UdpSorter's port.
        Before calling this, a listener should be set up for the receivedStunBindingResponse signal.
-       Returns true on success or -1 on failure. */
+       Returns true on success. */
     bool sendStunBindingRequest(const struct sockaddr_in *stunServer, const QString &transactionId, int returnPort = 0);
+
+    /* Sends a UDP Tunneler packet to the specified friendAddress. */
+    bool sendUdpTunneler(const struct sockaddr_in *friendAddress, const struct sockaddr_in *ownExternalAddress, unsigned int own_librarymixer_id);
+
+    /* Sends a UDP Connection Notice packet to the specified friendAddress. */
+    bool sendUdpConnectionNotice(const struct sockaddr_in *friendAddress, const struct sockaddr_in *ownExternalAddress, unsigned int own_librarymixer_id);
+
+    /* Sends a TCP Connection Request packet to the specified friendAddress. */
+    bool sendTcpConnectionRequest(const struct sockaddr_in *friendAddress, const struct sockaddr_in *ownExternalAddress, unsigned int own_librarymixer_id);
 
     /* Pass-through to the UDP layer to send packets.
        Returns the amount of data sent on success, or -1 on failure. */
@@ -67,17 +76,23 @@ public:
     bool removeUdpPeer(UdpPeer *peer);
 
 signals:
+    /* When a UDP tunnel punching packet is received. */
+    void receivedUdpTunneler(unsigned int librarymixer_id, QString address, ushort port);
+
+    /* When a UDP Connection Notice packet is received. */
+    void receivedUdpConnectionNotice(unsigned int librarymixer_id, QString address, ushort port);
+
+    /* When a connect-back-via-TCP request is received. */
+    void receivedTcpConnectionRequest(unsigned int librarymixer_id, QString address, ushort port);
+
     /* When a STUN response packet is received, this is emitted with the mappedAddress. */
-    void receivedStunBindingResponse(QString transactionId, QString mappedAddress, int mappedPort, ushort receivedOnPort, QString receivedFromAddress);
+    void receivedStunBindingResponse(QString transactionId, QString mappedAddress, ushort mappedPort, ushort receivedOnPort, QString receivedFromAddress);
 
 private:
     /* Called when there is an incoming packet by UdpLayer.
        If it's a stun packet, passes it to locked_handleStunPkt.
        If it's a UDP packet, passes it to the appropriate UdpPeer. */
     virtual void recvPkt(void *data, int size, struct sockaddr_in &from);
-
-    /* Called when there is an incoming STUN packet. */
-    bool locked_handleStunPkt(void *data, int size, struct sockaddr_in &from);
 
     /* The underlying UDP layer via which we are sending and receiving packets. */
     UdpLayer *udpLayer;

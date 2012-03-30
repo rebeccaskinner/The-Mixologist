@@ -25,22 +25,28 @@
 
 #include "pqi/pqi.h"
 
-#include <map>
-#include <list>
+#include <QMap>
+#include <QList>
 
 #include <QMutex>
 
 /*
-Aggregates the PQInterfaces (i.e. pqipersons, each of which corresponds to a peer/pqiloopback, for self),
-creating a single interface from which to call to send or get NetItems.
-Manages total bandwidth limits and enforces them on the PQInterfaces.
-In practice, this is used in pqipersongrp as a class it extends.
-*/
+ * pqihandler
+ *
+ * A component of the AggregatedConnectionsWithFriends.
+ *
+ * Holds the actual connections to friends. Contains the functions related to this.
+ *
+ * Controls settings-driven bandwidth limiting, both as a whole and for individual friends.
+ *
+ * Also holds the functions used to send and receive data.
+ *
+ */
+
 class pqihandler: public P3Interface {
 public:
     pqihandler();
     bool AddPQI(PQInterface *mod);
-    bool RemovePQI(PQInterface *mod);
 
     // file i/o
     virtual int SendFileRequest(FileRequest *ns);
@@ -49,11 +55,11 @@ public:
     virtual FileData *GetFileData();
 
     // Rest of P3Interface
-    /* In practice, this tick is called from pqipersongrp, which implemented pqihandler */
+    /* In practice, this tick is called from AggregatedConnectionsToFriends, which implemented pqihandler */
     virtual int tick();
 
     // Service Data Interface
-    virtual int  SendRawItem(RawItem *);
+    virtual int SendRawItem(RawItem *);
     virtual RawItem *GetRawItem();
 
     // rate control.
@@ -77,10 +83,12 @@ protected:
 
     mutable QMutex coreMtx;
 
-    //Where all the aggregated PQInterfaces are held
-    std::map<std::string, PQInterface *> pqis; //cert_ids / PQInterface
+    /* Where all the aggregated PQInterfaces are held.
+       In practice, this is all the connection to our friends, as well as one loopback for ourself.
+       map is by cert_id. */
+    QMap<std::string, PQInterface *> connectionsToFriends;
     //Incoming queues
-    std::list<NetItem *> in_request, in_data, in_service;
+    QList<NetItem *> in_request, in_data, in_service;
 
 private:
 
@@ -88,7 +96,7 @@ private:
     //Attempts to apportion bandwidth fairly among pqis.
     void updateRateCaps();
     //Called by UpdateRateCaps to handle either the downloading or uploading side of the rate caps
-    void setRateCaps(bool downloading, float total_max_rate, float indiv_max_rate, float shared_max_rate, float used_bw, float extra_bw, int maxed, int num_pqis);
+    void setRateCaps(bool downloading, float total_max_rate, float indiv_max_rate, float shared_max_rate, float used_bw, float extra_bw, int maxed, int numberFriends);
 
     float maxIndivIn;
     float maxIndivOut;

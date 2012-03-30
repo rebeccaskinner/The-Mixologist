@@ -71,8 +71,8 @@ public:
     virtual void clear() = 0;
     virtual std::ostream &print(std::ostream &out, uint16_t indent = 0) = 0;
 
-    /* When creating a NetItem for sending, this is the recipient's cert_id, which is not actually sent as part of the packet, but is used to sort the packet to the appropriate pqiperson.
-       The NetItem is then serialized and send in raw form before being handed to the pqiperson.
+    /* When creating a NetItem for sending, this is the recipient's cert_id, which is not actually sent as part of the packet, but is used to sort the packet to the appropriate ConnectionToFriend.
+       The NetItem is then serialized and send in raw form before being handed to the ConnectionToFriend.
        Likewise, when creating a NetItem upon receiving, this is the sender's cert_id, which was not sent as part of the packet, but is instead added in pqistreamer based on the sender. */
     std::string PeerId();
     void  PeerId(std::string id);

@@ -156,9 +156,6 @@ int UdpLayer::receiveUdpPacket(void *data, int *size, struct sockaddr_in &from) 
 }
 
 int UdpLayer::sendUdpPacket(const void *data, int size, const struct sockaddr_in *to) {
-
-    struct sockaddr_in toaddr = *to;
-
     QMutexLocker stack(&sockMtx);
     return tounet_sendto(sockfd, data, size, 0, (struct sockaddr *) to, sizeof(*to));
 }

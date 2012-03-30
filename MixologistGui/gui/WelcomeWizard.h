@@ -40,11 +40,6 @@ public:
     IntroPage(QWidget *parent = 0);
 };
 
-class MiddlePage :public QWizardPage {
-public:
-    MiddlePage(QWidget *parent = 0);
-};
-
 class ConclusionPage :public QWizardPage {
 public:
     ConclusionPage(QWidget *parent = 0);

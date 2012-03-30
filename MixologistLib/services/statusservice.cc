@@ -98,13 +98,13 @@ void StatusService::sendStatusUpdateToAll() {
     timeOfLastTry = 0;
 }
 
-void StatusService::statusChange(const std::list<pqipeer> &plist) {
+void StatusService::statusChange(const std::list<pqipeer> &changedFriends) {
     QMutexLocker stack(&statusMutex);
     QString offLMXmlHash = "";
     qlonglong offLMXmlSize = 0;
     if (offLMList) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
 
-    foreach(pqipeer currentPeer, plist) {
+    foreach(pqipeer currentPeer, changedFriends) {
         if (currentPeer.actions & PEER_CONNECTED) {
             OnConnectStatusItem *item = new OnConnectStatusItem(control->clientName(), control->clientVersion());
             item->offLMXmlHash = offLMXmlHash;

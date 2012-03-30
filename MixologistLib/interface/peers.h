@@ -27,6 +27,7 @@
 #include <string>
 #include <list>
 #include <QString>
+#include <QObject>
 
 /* The Main Interface Class - for information about your Peers */
 class Peers;
@@ -36,9 +37,56 @@ extern Peers *peers;
 enum PeerDetailsState {
     PEER_STATE_CONNECTED,
     PEER_STATE_TRYING,
-    PEER_STATE_WAITING_FOR_RETRY,
     PEER_STATE_OFFLINE,
     PEER_STATE_NO_CERT
+};
+
+/* The current state of the connection's setup. */
+enum ConnectionStatus {
+    /* The states below here are initial set up states. */
+    /* We attempt to find two STUN servers that we will use.
+       First we check if we can get two of our friends who are online and available to be our STUN servers. */
+    CONNECTION_STATUS_FINDING_STUN_FRIENDS,
+    /* If we failed to get at least two friends as STUN servers, we fall back to public STUN servers in order to fill us out.
+       If we can't get two STUN servers then we can't auto-configure and are CONNECTION_STATUS_UNKNOWN. */
+    CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS,
+    /* Using our primary STUN server, send a STUN request from our test port, requesting to receive the response on our main port.
+       If we receive it, if the local IP matches the external IP, we are CONNECTION_STATUS_UNFIREWALLED, otherwise we are CONNECTION_STATUS_PORT_FORWARDED. */
+    CONNECTION_STATUS_STUNNING_INITIAL,
+    /* Out initial STUN did not return, so we attempt to use UPNP to reach out and configure the firewall. */
+    CONNECTION_STATUS_TRYING_UPNP,
+    /* We received a positive response from the firewall that a mapping was added for us, and now we test the result by again
+       using our primary STUN server to send a STUN request from our test port, requesting to receive the response on our main port.
+       If we receive it this time, we know UPNP worked and we are CONNECTION_STATUS_UPNP_IN_USE. */
+    CONNECTION_STATUS_STUNNING_UPNP_TEST,
+    /* We get here if UPNP was non-existent or otherwise failed.
+       We send a STUN request from our main port requesting back on the main port to the secondary STUN server.
+       We use the secondary server here because we want to be able to detect using the primary STUN server in the next step
+       whether sending to a single destination is enough to open a hole in our firewall for all senders, i.e. we are behind a full-cone NAT.
+       If we fail here auto-configuration has failed as our STUN servers are behaving errctically and we are CONNECTION_STATUS_UNKNOWN. */
+    CONNECTION_STATUS_STUNNING_MAIN_PORT,
+    /* We just heard back with the normal STUN, so we now know we are definitely behind a firewall of some sort, as we can receive traffic on a given port
+       that we directly requested, but cannot receive unrequested traffic.
+       We again test by using our primary STUN server to send a STUN request from our test port, requesting to receive the response on our main port.
+       If we receive it this time, we know we are behind a full-cone NAT, where simply sending one outbound packet is enough to open the firewall
+       for all senders to reach us. Commence CONNECTION_STATUS_UDP_HOLE_PUNCHING. */
+    CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST,
+    /* We didn't hear back from the full-cone test, so we now will open a hole in the firewall for the primary STUN server to our main port.
+       Using our primary STUN server, send a STUN request from our main port, requesting to receive the response on our main port.
+       If the response has the same port number as from our CONNECTION_STATUS_STUNNING_MAIN_PORT test, we are CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING,
+       and in order to be reachable, we will need to periodically contact each of our friends at the address they will use to contact us.
+       If the response has a changed port, we are CONNECTION_STATUS_SYMMETRIC_NAT, and will be completely unreachable from outside.
+       If we receive no response, our STUN servers are again behaving erratically and we are CONNECTION_STATUS_UNKNOWN. */
+    CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
+
+    /* The states below here are final states. */
+    CONNECTION_STATUS_UNFIREWALLED,
+    CONNECTION_STATUS_PORT_FORWARDED,
+    CONNECTION_STATUS_UPNP_IN_USE,
+    CONNECTION_STATUS_UDP_HOLE_PUNCHING,
+    CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING,
+    CONNECTION_STATUS_SYMMETRIC_NAT,
+    CONNECTION_STATUS_UNKNOWN
 };
 
 /* Details class */
@@ -64,7 +112,9 @@ public:
     uint32_t lastConnect; /* how long ago */
 };
 
-class Peers {
+class Peers: public QObject {
+    Q_OBJECT
+
 public:
     /* Returns the logged in Mixologist user's own encryption certificate id. */
     virtual std::string getOwnCertId() = 0;
@@ -110,15 +160,17 @@ public:
                                  const QString &localIP, ushort localPort,
                                  const QString &externalIP, ushort externalPort) = 0;
 
-    /* Immediate retry to connect to that friend. */
-    virtual void connectAttempt(unsigned int librarymixer_id) = 0;
-
     /* Immediate retry to connect to all offline friends. */
     virtual void connectAll() = 0;
 
     /* The maximum and minimum values for the Mixologist's ports. */
     static const int MIN_PORT = 1024;
     static const int MAX_PORT = 50000;
+
+signals:
+    /* Used to inform the GUI of changes to the current ConnectionStatus.
+       All values of newStatus should be members of ConnectionStatus. */
+    void connectionStateChanged(int newStatus);
 };
 
 #endif

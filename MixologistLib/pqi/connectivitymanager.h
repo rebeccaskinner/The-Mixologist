@@ -23,50 +23,50 @@
 #ifndef MRK_PQI_CONNECTION_MANAGER_HEADER
 #define MRK_PQI_CONNECTION_MANAGER_HEADER
 
-#include "pqi/pqimonitor.h"
-#include "pqi/authmgr.h"
-#include "pqi/pqinetwork.h"
+#include <pqi/pqimonitor.h>
+#include <pqi/authmgr.h>
+#include <pqi/pqinetwork.h>
+#include <interface/peers.h>
 
 #include <QObject>
 #include <QMutex>
 #include <QMap>
 #include <QStringList>
 
-/* Used in inter-class communications with pqipersongrp to describe the type of transport layer used. */
-enum TransportLayerType {
-    CONNECTION_TCP_TRANSPORT,
-    CONNECTION_UDP_TRANSPORT
+/* Used in inter-class communications with AggregatedConnectionsToFriends to describe the type of connection to make with the attempt. */
+enum QueuedConnectionType {
+    /* Connect to the friend via TCP using their local address. */
+    CONNECTION_TYPE_TCP_LOCAL,
+    /* Connect to the friend via TCP using their Internet address. */
+    CONNECTION_TYPE_TCP_EXTERNAL,
+    /* Send a UDP packet to the friend's Internet address requesting they connect back via TCP. */
+    CONNECTION_TYPE_TCP_BACK,
+    /* Connect to the friend via UDP using their Internet address. */
+    CONNECTION_TYPE_UDP
 };
 
-/* Used to indicate whether a pending TCP connection attempt will be to an internal or external address. */
-enum TCPLocalOrExternal {
-    NOT_TCP,
-    TCP_LOCAL_ADDRESS,
-    TCP_EXTERNAL_ADDRESS
+/* Used with PeerConnectionState to indicate the state of friends.
+   Not Mixologist enabled is set when we don't have an encryption cert for the friend, because they haven't ever used the Mixologist
+   (but are friends on LibraryMixer). */
+enum friendConnectState {
+    FCS_NOT_MIXOLOGIST_ENABLED,
+    FCS_NOT_CONNECTED,
+    FCS_CONNECTED
 };
-
-/* Used by peerConnectAddress to indicate the type of connection to make. */
-const uint32_t NET_CONN_TCP_LOCAL       = 0x0001;
-const uint32_t NET_CONN_TCP_EXTERNAL    = 0x0002;
-
-//Used by pqipersongrp as the timeout period for connecting to a friend over TCP
-const uint32_t TCP_STD_TIMEOUT_PERIOD   = 5; /* 5 seconds! */
 
 /* A pending connection attempt. */
-class peerConnectAddress {
+class QueuedConnectionAttempt {
 public:
-    peerConnectAddress();
+    QueuedConnectionAttempt();
 
+    /* The address to connect to. */
     struct sockaddr_in addr;
-    uint32_t delay;  /* to stop simultaneous connects */
 
-    TransportLayerType transportLayerType;
+    /* to stop simultaneous connects */
+    uint32_t delay;
 
-    /* UDP only */
-    uint32_t period;
-
-    /* TCP only - whether the address we will be connecting to is internal or external IP */
-    TCPLocalOrExternal tcpLocalOrExternal;
+    /* What type of connection attempt should be made when dequeued. */
+    QueuedConnectionType queuedConnectionType;
 };
 
 /* There is one of these for each friend, stored in mFriendsList to record status of connection.
@@ -75,48 +75,38 @@ class peerConnectState {
 public:
     peerConnectState();
 
-    QString name; //Display name of friend, not set for self
-    std::string id; //cert_id
+    QString name;
+    std::string id;
     unsigned int librarymixer_id;
 
-    struct sockaddr_in localaddr; //Local address of peer
-    struct sockaddr_in serveraddr; //Global address of peer
+    /* The local and external addresses of the friend. */
+    struct sockaddr_in localaddr;
+    struct sockaddr_in serveraddr;
 
     /* When connected, this will show when connected, when disconnected, show time of last disconnect. */
     time_t lastcontact;
 
-    /* Time of last attempt to connect to an offline friend. */
-    time_t lastattempt;
-
-    /* Time of last received packet from a friend. */
+    /* Time of last received packet from a friend, used to calculate timeout. */
     time_t lastheard;
 
-    /* Under the current connection algorithm, each try is actually two back-to-back tries.
-       This is because if the Mixologist restarts it will generate a new encryption certificate.
-       The first attempt to connect will be rejected because of an invalid certificate, which
-       prompts the other side's Mixologist to update its encryption key list from LibraryMixer.
-       The other side will then automatically try to connect to all friends with changes (which
-       would include us).
-       However, if we are firewalled but the other side is not, this will fail, but a second
-       attempt to connect after a set amount of time will succeed.
-
-       If this is false upon completion of a connection attempt, a schedulednexttry is setup.*/
-    bool doubleTried;
-
     /* Request a next try to connect at a specific time. Disabled if set to 0.
-       Used with usedIps for when an IP is in use during a connection attempt and retry must be scheduled. */
-    time_t schedulednexttry;
+       Used with usedSockets for when an IP is in use during a connection attempt and retry must be scheduled.
+       Also used when a connection fails due to the other side not recognizing our encryption certificate,
+       and then we schedule a try so that they have time to update their friend list before we connect again. */
+    time_t nextTcpTryAt;
 
-    uint32_t state;  //The connection state
+    /* Indicates the state of the friend, such as if we are connected or if they are not signed up for the Mixologist. */
+    friendConnectState state;
+
+    /* Bitwise flags for actions that need to be taken. The flags are defined in pqimonitors.h. */
     uint32_t actions;
 
-    /* A list of connect attempts to make (in order).
-       Items are added by retryConnectTCP, which adds the localaddr and serveraddr,
-       as well as by the DHT functions.  Items are removed when used. */
-    std::list<peerConnectAddress> connAddrs;
+    /* A list of connect attempts to make (in order). */
+    QList<QueuedConnectionAttempt> queuedConnectionAttempts;
 
-    bool inConnAttempt;
-    peerConnectAddress currentConnAddr; //current address being tried
+    /* Whether we are currently trying to connect to this friend, and if so the current attempt being tried. */
+    bool inConnectionAttempt;
+    QueuedConnectionAttempt currentConnectionAttempt;
 };
 
 class ConnectivityManager;
@@ -129,6 +119,41 @@ class UdpSorter;
  * Also contains a friends list that tracks the connectivity of each friend.
  * The tick method steps through list of friends and controls retry of connections with them, as well as timeouts.
  * Other classes can register with the connMgr as a monitor in order to be informed of friends' connectivity status changes.
+ *
+ * The main idea of our connection to friends strategy is as follows:
+ * After our connection is set up, attempt TCP connections to all friends, which will connect all non-firewalled friends.
+ *
+ * If we are unfirewalled, we send a TCP connect back request, which will catalyze connections with all full-
+ * cone firewalled friends as well as restrictive-cone firewalled friends if our IP/port haven't changed.
+ *
+ * If we are firewalled, we begin sending a UDP tunneler packet every 20 seconds,
+ * which not only opens a hole in our firewall for them, but serves as a combined
+ * TCP/UDP connection request as well, which will catalyze connections with all full-
+ * cone firewalled friends as well as restrictive-cone firewalled friends if our IP/port
+ * haven't changed.
+ *
+ * On receipt of one of these, those friends now know we are online and firewalled, as
+ * only firewalled friends send these.
+ *
+ * If they believe themselves to be firewalled, they will begin connecting to us via UDP
+ * and send a UDP connect back request so we can connect back simultaneously.
+ *
+ * If they do not believe themselves to be firewalled, before they begin their UDP
+ * sequence, they send a TCP connect back request so we can try again to connect them
+ * via TCP. This could come in handy if they are unfirewalled, just came online, and
+ * were unable to connect to us over TCP because we were firewalled and then they
+ * received our UDP tunneler. Also could be helpful if our TCP connection attempt to
+ * them was lost.
+ *
+ * Whether or not we are firewalled, the worst case is firewalled friends behind either restrictive-cone NATs when we have
+ * changed IP/port or behind symmetric NAT firewalls. In the former case, we will have
+ * to wait for them to update their friends list and connect to us over either TCP or
+ * UDP. In the latter case, they will only be able to connect to us over TCP, (i.e. only
+ * if we are unfirewalled) and only after they update their friends list to find us
+ * again.
+ *
+ * We ordinarily update our friends list
+ *
  **********************************************************************************/
 
 extern ConnectivityManager *connMgr;
@@ -159,6 +184,12 @@ public:
     /* Blocking call that shuts down the connection manager. */
     bool shutdown();
 
+    /* In the case of a total failure to get our address info ourself, instead of uploading our address,
+       we will request that LibraryMixer sets our shared external IP to be whatever it sees.
+       It then returns this to us so we can set it here as well.
+       This is fine for the address, as that will be reliable, but if we reach this point, that means we have totally failed to verify our port. */
+    void setFallbackExternalIP(QString address);
+
     /**********************************************************************************
      * MixologistLib functions, not shared via interface with GUI
      **********************************************************************************/
@@ -168,33 +199,40 @@ public:
        Returns true, or false if unable to find user with librarymixer_id. */
     bool getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state);
 
-    /* pqipersongrp is closer to the actual network connections than the ConnectivityManager.
-       pqipersongrp is a Monitor of statuses, and whenever the ConnectivityManager signals with PEER_CONNECT_REQ that we should try to
-       connect to a given friend, this is called by pqipersongrp on the friend to pop off the next member of connAddrs,
-       which is used to populate the references so that it can use that information to actually connect.
-       Returns true if the address information was successfully set into the references. */
-    bool getQueuedConnectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr, uint32_t &delay, uint32_t &period, TransportLayerType &transportLayerType);
-
-    /* Called by pqipersongrp to report a change in connectivity with a friend.
-       This could result from a connection request initiated by getQueuedConnectAttempt(), or it could be an update on an already existing connection.
-       Updates the friend's state in the ConnectivityManager appropriately.
-       If the report was not of success, if there are more connAddrs to try in peerConnecctState, sets its action to PEER_CONNECT_REQ.
-       If we haven't doubleTried yet, then schedules our second try.
-       Returns false if unable to find the friend, true in all other cases. */
-    bool reportConnectionUpdate(unsigned int librarymixer_id, bool success, uint32_t flags);
+    /* Returns our own local address. */
+    struct sockaddr_in* getOwnLocalAddress() {return &ownLocalAddress;}
 
     /* Called by pqistreamer whenever we received a packet from a friend, updates their peerConnectState so we know not to time them out. */
     void heardFrom(unsigned int librarymixer_id);
 
-    /* In the case of a total failure to get our address info ourself, instead of uploading our address,
-       we will request that LibraryMixer sets our shared external IP to be whatever it sees.
-       It then returns this to us so we can set it here as well.
-       This is fine for the address, as that will be reliable, but if we reach this point, that means we have totally failed to verify our port. */
-    void setFallbackExternalIP(QString address);
+    /**********************************************************************************
+     * The interface to AggregatedConnectionsToFriends
+     **********************************************************************************/
+    /* AggregatedConnectionsToFriends holds the actual network connections to friends, and receives order to connect/disconnect from the ConnectivityManager.
+       Whenever we want to connect to a friend via a certain method, we queue an attempt into that friend's peerConnectState.
+       We then inform the monitors, of which AggregatedConnectionsToFriends is one, that a pending connection request exists. */
+public:
+    /* Called by AggregatedConnectionsToFriends to pop off a given friend's next queuedConnectionAttempt,
+       which is used to populate the references so that it can use that information to actually connect.
+       Returns true if the address information was successfully set into the references. */
+    bool getQueuedConnectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr, uint32_t &delay, QueuedConnectionType &queuedConnectionType);
+
+    /* Called by AggregatedConnectionsToFriends to report a change in connectivity with a friend.
+       This could result from a connection request initiated by getQueuedConnectAttempt(), or it could be an update on an already existing connection.
+       If result is 1 it indicates connection, -1 is either disconnect or connection failure, 0 is failure but request to schedule another try via TCP.
+       If the report was not of success, if there are more addresses to try, informs the monitors a pending connection request exists.
+       Returns false if unable to find the friend, true in all other cases. */
+    bool reportConnectionUpdate(unsigned int librarymixer_id, int result, bool tcpConnection);
+
+private:
+    /* Queues the given connectionType of a friend identified by connectState for a connection attempt.
+       localOrExternal is only used if queuedConnectionType is TCP. */
+    void queueConnectionAttempt(peerConnectState* connectState, QueuedConnectionType queuedConnectionType);
 
     /**********************************************************************************
      * Body of public-facing API functions called through p3peers
      **********************************************************************************/
+public:
     /* List of LibraryMixer ids for all online friends. */
     void getOnlineList(std::list<int> &ids);
 
@@ -219,18 +257,32 @@ public:
                                  const QString &localIP, ushort localPort,
                                  const QString &externalIP, ushort externalPort);
 
-    /* Immediate retry to connect to that friend. */
-    void retryConnect(unsigned int librarymixer_id);
-
     /* Immediate retry to connect to all offline friends. */
-    void retryConnectAll();
+    void tryConnectAll();
+
+signals:
+    /* Used to inform the GUI of changes to the current ConnectionStatus.
+       All values of newStatus should be members of ConnectionStatus. */
+    void connectionStateChanged(int newStatus);
 
 private slots:
-    /* Connected to the UDP layer for when we receive a STUN packet. */
-    void receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, ushort receivedOnPort, QString receivedFromAddress);
+    /* Connected to the UDP Sorter for when we receive a STUN packet. */
+    void receivedStunBindingResponse(QString transactionId, QString mappedAddress, ushort mappedPort, ushort receivedOnPort, QString receivedFromAddress);
+
+    /* Connected to the UDP Sorter for when we receive a UDP Tunneler packet. */
+    void receivedUdpTunneler(unsigned int librarymixer_id, QString address, ushort port);
+
+    /* Connected to the UDP Sorter for when we receive a UDP Connection Notice packet. */
+    void receivedUdpConnectionNotice(unsigned int librarymixer_id, QString address, ushort port);
+
+    /* Connected to the UDP Sorter for when we receive a request to connect-back-via-TCP. */
+    void receivedTcpConnectionRequest(unsigned int librarymixer_id, QString address, ushort port);
 
     /* Connected to the LibraryMixerConnect so we know when we have updated LibraryMixer with our new address. */
     void addressUpdatedOnLibraryMixer();
+
+    /* Connected to the LibraryMixerConnect so we know when we have updated our friends list. */
+    void friendsListUpdated();
 
 private:
     /* Handles the set up of our own connection.
@@ -238,7 +290,9 @@ private:
        it handles any actions necessary to maintain our network connection in that state (such as UPNP or UDP hole-punching). */
     void netTick();
 
-    /* Steps through the friends list and decides if it is time to retry to connect to offline friends.
+    /* Handles connectivity with friends after our own connection is set up.
+       Steps through the friends list and decides if it is time to retry a TCP conection to offline friends.
+       We do not handle UDP connections as those are only begun when we receive a UDP Tunneler packet.
        Also times out friends that haven't been heard from in a while. */
     void statusTick();
 
@@ -257,8 +311,8 @@ private:
     /* Returns a random number that is suitable for use as a port. */
     int getRandomPortNumber() const;
 
-    /* Sets the connectionStatus to newStatus and clears out any state-dependent variables. */
-    void setNewConnectionStatus(int newStatus);
+    /* Sets the connectionStatus to newStatus and clears out any state-dependent variables and emits the signal. */
+    void setNewConnectionStatus(ConnectionStatus newStatus);
 
     /* Integrated method that handles basically an entire connection set up step that is based around a STUN request.
        If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
@@ -273,25 +327,30 @@ private:
 
     /* Checks and makes sure UPNP is still properly functioning periodically.
        Called from netTick.
-       Does not perform any action if called within the past 5 minutes. */
-    void netUpnpMaintenance();
+       Can be called any number of times between interval periods and will not fire more than once per interval. */
+    void upnpMaintenance();
+
+    /* Once every set interval punches a UDP hole to each friend in the firewall.
+       Called from netTick.
+       Can be called any number of times between interval periods and will not fire more than once per interval. */
+    void udpHolePunchMaintenance();
 
     /**********************************************************************************
      * Other helpers
      **********************************************************************************/
-    /* Retries the TCP connection.
-       Called by the generic retryConnect as well as by statustick and peerConnectRequest. */
-    bool retryConnectTCP(unsigned int librarymixer_id);
+    /* Tries the TCP connection with the given friend.
+       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY. */
+    bool tryConnectTCP(unsigned int librarymixer_id);
 
-    /* Retries the UDP connection.
-       Called by generic retryConnect. */
-    bool retryConnectUDP(unsigned int librarymixer_id);
+    /* Sends a UDP packet requesting a connect back via TCP connection with the given friend.
+       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY. */
+    bool tryConnectBackTCP(unsigned int librarymixer_id);
 
-    /* Queues the given connectionType of a friend identified by connectState for a connection attempt.
-       localOrExternal is only used if transportLayerType is TCP. */
-    void queueConnectionAttempt(peerConnectState* connectState, TransportLayerType transportLayerType, TCPLocalOrExternal localOrExternal);
+    /* Tries the UDP connection with the given friend.
+       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY. */
+    bool tryConnectUDP(unsigned int librarymixer_id);
 
-    /* Utility function for usedIps to convert a sockaddr_in into a string representation of form ###.###.###.###:## */
+    /* Utility function for usedSockets to convert a sockaddr_in into a string representation of form ###.###.###.###:## */
     QString static addressToString(struct sockaddr_in address);
 
     mutable QMutex connMtx;
@@ -302,51 +361,23 @@ private:
     /* True when the monitors need to be informed of a change. */
     bool  mStatusChanged;
 
-    peerConnectState ownState;
+    /* Information about our own connection. */
+    struct sockaddr_in ownLocalAddress;
+    struct sockaddr_in ownExternalAddress;
 
-    /* The current state of the connection's setup, i.e. the current state of netTick. */
-    enum ConnectionStatus {
-        /* The states below here are initial set up states. */
-        //We're trying to see if we can get STUN responses from any of our friends so we can use them as STUN servers
-        CONNECTION_STATUS_FINDING_STUN_FRIENDS,
-        //As a fallback without two friends that responded, we're trying to see if we can get STUN responses from any public servers
-        CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS,
-        //Attempting to STUN from our test port to our main port to test for a firewall
-        CONNECTION_STATUS_STUNNING_INITIAL,
-        //Attempting to configure our firewall with UPNP
-        CONNECTION_STATUS_TRYING_UPNP,
-        //Successfully configured our firewall with UPNP, confirm with STUN that it actually worked
-        CONNECTION_STATUS_STUNNING_UPNP_TEST,
-        //We haven't received any STUN responses, confirm we have any Internet conneciton at all with a normal STUN to the secondary server
-        CONNECTION_STATUS_STUNNING_MAIN_PORT,
-        //We just heard back with the normal STUN, see if we are behind a full-cone NAT and have just punched a hole in it
-        CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST,
-        //We didn't hear back from the full-cone test, check if our port is consistent between STUN servers to test for a symmetric NAT
-        CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
-
-        /* The states below here are final states. */
-        //We've determined we're not behind a firewall, we're done
-        CONNECTION_STATUS_UNFIREWALLED,
-        //We've determined we're port forwarded, we're done
-        CONNECTION_STATUS_PORT_FORWARDED,
-        //We've succesfully opened a hole in the firewall using UPNP, and will maintain it over time
-        CONNECTION_STATUS_UPNP_IN_USE,
-        //We've successfully opened a hole in our firewall using UDP hole-punching, and will maintain it over time
-        CONNECTION_STATUS_UDP_HOLE_PUNCHING,
-        //We are behind an address restricted cone firewall, and must maintain the UDP hole punch often with each friend
-        CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING,
-        //We are behind a symmetric NAT, UDP hole punching is ineffective, UPNP has failed and the user is on his own
-        CONNECTION_STATUS_SYMMETRIC_NAT,
-        //We are unable even to send and receive packets over STUN using our main port, either behind a blocking firewall or no Internet access
-        CONNECTION_STATUS_NO_NET
-    };
+    /* The current state of the connection's setup, i.e. the state of netTick().
+       The ConnectionStatus enum is defined in the peers interface and shared with the GUI. */
     ConnectionStatus connectionStatus;
 
     /* For each step in our connectionStatus that involves sending STUN requests, this contains when we will consider that step to be timed out and failed. */
     time_t connectionSetupStepTimeOutAt;
 
+    /* In the initialization of the ConnectivityManager, we initialize two UDP ports, one on our main listening port, that will actually be used to transfer data later,
+       and a second on a random port that we will use only for testing in our auto-connection configuration. */
     UdpSorter* udpTestSocket;
     UdpSorter* udpMainSocket;
+
+    /* Interface to UPNP connectivity. */
     upnpHandler *mUpnpMgr;
 
     /* Initially NULL, but we will step through our list of friends, and then fallback STUN servers is necessary,
@@ -354,9 +385,10 @@ private:
     struct sockaddr_in* stunServer1;
     struct sockaddr_in* stunServer2;
 
-    QStringList fallbackPublicStunServers;
+    /* STUN servers that will be used if we can't get two peers to act as STUN servers. */
+    QStringList fallbackStunServers;
 
-    /* Map by STUN transaction ID. */
+    /* Map by STUN transaction ID, these are STUN requests we have sent for our current connection configuration step. */
     struct pendingStunTransaction {
         /* If we set a STUN Response-Port attribute, then this will contain the port we expect to hear back on.
            Otherwise, this will be set to 0. */
@@ -373,29 +405,32 @@ private:
 
     /* These states indicate the current state of the statusTick(), i.e. whether we are ready to begin trying to connect to friends. */
     enum readyToConnectToFriendsState {
-        //Our own connection state is still being determined, so hold off on connection attempts with friends
+        /* Our own connection state is still being auto configured, so hold off on connection attempts with friends. */
         CONNECT_FRIENDS_CONNECTION_INITIALIZING,
-        //Our own connection state is discovered, so update LibraryMixer with that information
+        /* Our own connection state is discovered, so update LibraryMixer with that information. */
         CONNECT_FRIENDS_UPDATE_LIBRARYMIXER,
-        //Our own connection state discovery was a total failure, as a fallback have LibraryMixer set our IP information itself
+        /* Our own connection state discovery was a total failure, as a fallback have LibraryMixer set our IP information itself. */
         CONNECT_FRIENDS_GET_ADDRESS_FROM_LIBRARYMIXER,
-        //Everything normal, attempt to connect to friends normally
+        /* Everything ready to go, attempt to connect to friends normally. */
         CONNECT_FRIENDS_READY
     };
     readyToConnectToFriendsState readyToConnectToFriends;
 
-    /* This is the master friends list for the Mixologist */
+    /* When the last time our friends list was updated from LibraryMixer. */
+    time_t friendsListUpdateTime;
+
+    /* This is the master friends list for the Mixologist, and also tracks their connectivity. */
     QMap<unsigned int, peerConnectState> mFriendList; //librarymixer_ids and peerConnectStates
 
     /* A map of IP+port combo's already in use, and their state.
        The first element is a string representation of the IP + port combo,
        and the second is whether it is used because it is connecting or if it because it is connected.
-       This is used to prevent multiple pqipersons from attempting to connect to the same address simultaneously. */
-    enum UsedIPState {
+       This is used to prevent multiple ConnectionToFriends from attempting to connect to the same IP+port simultaneously. */
+    enum UsedSocketState {
         USED_IP_CONNECTING,
         USED_IP_CONNECTED
     };
-    QMap<QString, UsedIPState> usedIps;
+    QMap<QString, UsedSocketState> usedSockets;
 
 };
 

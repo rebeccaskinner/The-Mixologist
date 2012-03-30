@@ -32,18 +32,11 @@
 #include "util/debug.h"
 #include "util/net.h"
 
-/* a final timeout, to ensure this never blocks completely
- * 300 secs to complete udp/tcp/ssl connection.
- * This is long as the udp connect can take some time.
- */
-
-/********** PQI SSL UDP STUFF **************************************/
-
 pqissludp::pqissludp(PQInterface *parent)
     :pqissl(NULL, parent), tou_bio(NULL), mConnectPeriod(0) {
     sockaddr_clear(&remote_addr);
+    isTcpOverUdpConnection = true;
 }
-
 
 pqissludp::~pqissludp() {
     log(LOG_ALERT, SSL_UDP_ZONE, "pqissludp::~pqissludp -> destroying pqissludp");
@@ -62,47 +55,27 @@ pqissludp::~pqissludp() {
     }
 }
 
-/* <===================== UDP Difference *******************/
-// The Proxy Version takes a few more step
-//
-// connectInterface is sent via message from the proxy.
-// and is set here.
-/* <===================== UDP Difference *******************/
-
-int pqissludp::attach() {
-    mOpenSocket = tou_socket(0,0,0);
-
-    if (mOpenSocket < 0) {
-        log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::attach() failed to create a socket");
-        return -1;
-    }
-    log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::attach() Opened local UDP socket");
-
-    return 1;
-}
-
-
 // The Address determination is done centrally
 int pqissludp::Initiate_Connection() {
     int err;
 
-    attach(); /* open socket */
+    mOpenSocket = tou_socket(0,0,0);
+    if (mOpenSocket < 0) {
+        log(LOG_ALERT, SSL_UDP_ZONE, "Unable to open TCP over UDP socket!");
+        connectionState = STATE_FAILED;
+        return -1;
+    }
+
     remote_addr.sin_family = AF_INET;
 
     log(LOG_DEBUG_BASIC, SSL_UDP_ZONE, "pqissludp::Initiate_Connection() Attempting Outgoing Connection");
 
     /* decide if we're active or passive */
-    if (PeerId() < authMgr->OwnCertId()) sslmode = PQISSL_ACTIVE;
+    if (LibraryMixerId() < authMgr->OwnLibraryMixerId()) sslmode = PQISSL_ACTIVE;
     else sslmode = PQISSL_PASSIVE;
 
     if (connectionState != STATE_INITIALIZED) {
         log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::Initiate_Connection() Already Attempt in Progress!");
-        return -1;
-    }
-
-    if (mOpenSocket < 0) {
-        log(LOG_ALERT, SSL_UDP_ZONE, "Unable to open TCP over UDP socket!");
-        connectionState = STATE_FAILED;
         return -1;
     }
 
@@ -111,7 +84,7 @@ int pqissludp::Initiate_Connection() {
     {
         QString out("pqissludp::Initiate_Connection() ");
         out.append("Connecting To: " + QString::number(LibraryMixerId()));
-        out.append(" via: " + QString(inet_ntoa(remote_addr.sin_addr)) + ":" + QString(ntohs(remote_addr.sin_port)));
+        out.append(" via: " + QString(inet_ntoa(remote_addr.sin_addr)) + ":" + QString::number(ntohs(remote_addr.sin_port)));
         if (sslmode == PQISSL_ACTIVE) {
             out.append(" ACTIVE Connect (SSL_Connect)");
         } else {
@@ -143,7 +116,6 @@ int pqissludp::Initiate_Connection() {
             log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::Initiate_Connection() ENETUNREACHABLE for friend " +  QString::number(LibraryMixerId()));
 
             connectionState = STATE_FAILED;
-            net_unreachable |= net_attempt;
         }
 
         log(LOG_DEBUG_ALERT, SSL_UDP_ZONE,
@@ -163,7 +135,6 @@ int pqissludp::Initiate_Connection() {
     return 1;
 }
 
-/********* VERY DIFFERENT **********/
 int pqissludp::Basic_Connection_Complete() {
     log(LOG_DEBUG_BASIC, SSL_UDP_ZONE, "pqissludp::Basic_Connection_Complete()");
 
@@ -191,7 +162,6 @@ int pqissludp::Basic_Connection_Complete() {
         } else if ((err == ENETUNREACH) || (err == ETIMEDOUT)) {
             log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::Basic_Connection_Complete() ENETUNREACH/ETIMEDOUT: friend " + QString::number(LibraryMixerId()));
 
-            net_unreachable |= net_attempt;
             reset();
 
             connectionState = STATE_FAILED;
@@ -215,8 +185,6 @@ int pqissludp::Basic_Connection_Complete() {
 }
 
 
-/* Internal Functions required to generalise tcp/udp version of the programs. */
-
 int pqissludp::net_internal_close(int fd) {
     log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::net_internal_close() -> tou_close()");
     return tou_close(fd);
@@ -239,7 +207,6 @@ int pqissludp::net_internal_fcntl_nonblock(int) {
     return 0;
 }
 
-// listen fns call the udpproxy.
 int pqissludp::listen() {
     log(LOG_DEBUG_BASIC, SSL_UDP_ZONE, "pqissludp::listen() (NULLOP)");
     return 1; //udpproxy->listen();
@@ -262,8 +229,6 @@ bool pqissludp::setConnectionParameter(netParameters type, uint32_t value) {
     }
     return pqissl::setConnectionParameter(type, value);
 }
-
-/********** PQI STREAMER OVERLOADING *********************************/
 
 bool pqissludp::moretoread() {
     log(LOG_DEBUG_ALL, SSL_UDP_ZONE, "pqissludp::moretoread() polling socket (" + QString::number(mOpenSocket) + ")");

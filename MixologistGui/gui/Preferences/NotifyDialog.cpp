@@ -29,10 +29,6 @@
 #include <gui/Preferences/NotifyDialog.h>
 #include <gui/MainWindow.h> //for settings files
 
-
-
-
-/** Constructor */
 NotifyDialog::NotifyDialog(QWidget *parent)
     : ConfigPage(parent) {
     /* Invoke the Qt Designer generated object setup routine */
@@ -40,15 +36,16 @@ NotifyDialog::NotifyDialog(QWidget *parent)
 
     /* Setup display */
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
-    ui.popup_Connect->setChecked(settings.value("Gui/NotifyConnect", DEFAULT_NOTIFY_CONNECT).toBool());
     ui.tray_DownDone->setChecked(settings.value("Gui/NotifyDownloadDone", DEFAULT_NOTIFY_DOWNLOAD_DONE).toBool());
+    ui.tray_BadInternet->setChecked(settings.value("Gui/NotifyBadInternet", DEFAULT_NOTIFY_BAD_INTERNET).toBool());
+    ui.popup_Connect->setChecked(settings.value("Gui/NotifyConnect", DEFAULT_NOTIFY_CONNECT).toBool());
 }
 
-/** Saves the changes on this page */
 bool NotifyDialog::save() {
     /* extract from notify the flags */
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
-    settings.setValue("Gui/NotifyConnect", ui.popup_Connect->isChecked());
     settings.setValue("Gui/NotifyDownloadDone", ui.tray_DownDone->isChecked());
+    settings.setValue("Gui/NotifyBadInternet", ui.tray_BadInternet->isChecked());
+    settings.setValue("Gui/NotifyConnect", ui.popup_Connect->isChecked());
     return true;
 }

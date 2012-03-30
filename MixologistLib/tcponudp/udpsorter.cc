@@ -24,12 +24,13 @@
 #include "pqi/pqinetwork.h"
 
 #include "tcponudp/udpsorter.h"
-#include "tcponudp/stunbasics.h"
+#include "tcponudp/stunpacket.h"
+#include "tcponudp/connectionrequestpacket.h"
 #include "util/net.h"
 #include "util/debug.h"
 #include "time.h"
 
-static const int STUN_TTL = 64;
+static const int DEFAULT_TTL = 64;
 
 /* We need this to be able to have streams be a map where the key is a sockaddr_in. */
 bool operator<(const struct sockaddr_in &addr, const struct sockaddr_in &addr2) {
@@ -56,13 +57,67 @@ UdpSorter::~UdpSorter() {
 void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
     QMutexLocker stack(&sortMtx);
 
-    /* check for STUN packet */
-    if (UdpStun_isStunRequest(data, size) || UdpStun_isStunResponse(data, size)) {
-        locked_handleStunPkt(data, size, from);
+    if (isUdpTunneler(data, size)) {
+        unsigned int librarymixer_id;
+        struct sockaddr_in friendAddress;
+        if (parseUdpTunneler(data, size, &friendAddress, &librarymixer_id)) {
+            log(LOG_WARNING, UDPSORTERZONE,
+                QString("Received a packet indicating ") + QString::number(librarymixer_id) +
+                " has punched a UDP hole in their firewall for us to connect to at address " + inet_ntoa(friendAddress.sin_addr) +
+                ":" + QString::number(ntohs(friendAddress.sin_port)));
+            emit receivedUdpTunneler(librarymixer_id, inet_ntoa(friendAddress.sin_addr), ntohs(friendAddress.sin_port));
+        }
+        return;
+    } else if (isUdpConnectionNotice(data, size)) {
+        unsigned int librarymixer_id;
+        struct sockaddr_in friendAddress;
+        if (parseUdpConnectionNotice(data, size, &friendAddress, &librarymixer_id)) {
+            log(LOG_WARNING, UDPSORTERZONE,
+                QString("Received request to connect via UDP from ") + QString::number(librarymixer_id) +
+                " at address " + inet_ntoa(friendAddress.sin_addr) +
+                ":" + QString::number(ntohs(friendAddress.sin_port)));
+            emit receivedUdpConnectionNotice(librarymixer_id, inet_ntoa(friendAddress.sin_addr), ntohs(friendAddress.sin_port));
+        }
+        return;
+    } else if (isTcpConnectionRequest(data, size)) {
+        unsigned int librarymixer_id;
+        struct sockaddr_in friendAddress;
+        if (parseTcpConnectionRequest(data, size, &friendAddress, &librarymixer_id)) {
+            log(LOG_WARNING, UDPSORTERZONE,
+                QString("Received request to connect back via TCP from ") + QString::number(librarymixer_id) +
+                " at address " + inet_ntoa(friendAddress.sin_addr) +
+                ":" + QString::number(ntohs(friendAddress.sin_port)));
+            emit receivedTcpConnectionRequest(librarymixer_id, inet_ntoa(friendAddress.sin_addr), ntohs(friendAddress.sin_port));
+        }
+        return;
+    } else if (UdpStun_isStunRequest(data, size)) {
+        QString transactionId;
+        if (UdpStun_request(data, size, transactionId, from)) {
+            log(LOG_WARNING, UDPSORTERZONE, QString("Received STUN request from ") + inet_ntoa(from.sin_addr) + ", responding");
+
+            int len;
+            void *pkt = UdpStun_generate_stun_response(&from, &len, transactionId);
+            if (!pkt) return;
+
+            sendPkt(pkt, len, &from, DEFAULT_TTL);
+            free(pkt);
+        }
+        return;
+    } else if (UdpStun_isStunResponse(data, size)) {
+        QString transactionId;
+        struct sockaddr_in reportedExternalAddress;
+        if (UdpStun_response(data, size, transactionId, reportedExternalAddress)) {
+            log(LOG_DEBUG_ALERT, UDPSORTERZONE, QString("Received STUN response on port ") + QString::number(ntohs(localAddress.sin_port)));
+
+            emit receivedStunBindingResponse(transactionId,
+                                             inet_ntoa(reportedExternalAddress.sin_addr), ntohs(reportedExternalAddress.sin_port),
+                                             ntohs(localAddress.sin_port), inet_ntoa(from.sin_addr));
+
+        }
         return;
     }
 
-    /* look for a peer */
+    /* If we get to here, it's not a special UDP packet, but instead should be a part of a TCP over UDP stream. */
     foreach (struct sockaddr_in recognizedAddress, streams.keys()) {
         if (QString(inet_ntoa(recognizedAddress.sin_addr)) == QString(inet_ntoa(from.sin_addr))) {
             streams[recognizedAddress]->recvPkt(data, size);
@@ -70,19 +125,7 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
         }
     }
 
-    log(LOG_WARNING, UDPSORTERZONE, QString("Received UDP packet from unknown address ") + inet_ntoa(from.sin_addr));
-
-#ifdef false
-    QMap<struct sockaddr_in, UdpPeer *>::iterator it;
-    it = streams.find(from);
-
-    if (it != streams.end()) {
-        /* forward to them */
-        it.value()->recvPkt(data, size);
-    } else {
-        log(LOG_WARNING, UDPSORTERZONE, QString("Received UDP packet from unknown address ") + inet_ntoa(from.sin_addr));
-    }
-#endif
+    log(LOG_DEBUG_ALERT, UDPSORTERZONE, QString("Received UDP packet from unknown address ") + inet_ntoa(from.sin_addr));
 }
 
 int UdpSorter::sendPkt(void *data, int size, const struct sockaddr_in *to, int ttl) {
@@ -117,39 +160,6 @@ bool UdpSorter::removeUdpPeer(UdpPeer *peer) {
     return false;
 }
 
-bool UdpSorter::locked_handleStunPkt(void *data, int size, struct sockaddr_in &from) {
-    QString transactionId;
-
-    if (UdpStun_isStunRequest(data, size)) {
-        if (UdpStun_request(data, size, transactionId, from)) {
-            log(LOG_WARNING, UDPSORTERZONE, QString("Received STUN request from ") + inet_ntoa(from.sin_addr) + ", responding");
-
-            int len;
-            void *pkt = UdpStun_generate_stun_response(&from, &len, transactionId);
-            if (!pkt) return false;
-
-            int sentlen = sendPkt(pkt, len, &from, STUN_TTL);
-            free(pkt);
-
-            return (len == sentlen);
-        }
-    } else if (UdpStun_isStunResponse(data, size)) {
-        struct sockaddr_in reportedExternalAddress;
-        if (UdpStun_response(data, size, transactionId, reportedExternalAddress)) {
-            log(LOG_DEBUG_ALERT, UDPSORTERZONE, QString("Received STUN response on port ") + QString::number(ntohs(localAddress.sin_port)));
-
-            emit receivedStunBindingResponse(transactionId,
-                                             inet_ntoa(reportedExternalAddress.sin_addr), ntohs(reportedExternalAddress.sin_port),
-                                             ntohs(localAddress.sin_port), inet_ntoa(from.sin_addr));
-
-            return true;
-        }
-    }
-
-    log(LOG_DEBUG_ALERT, UDPSORTERZONE, "UdpSorter::handleStunPkt() Bad Packet");
-    return false;
-}
-
 bool UdpSorter::sendStunBindingRequest(const struct sockaddr_in *stunServer, const QString& transactionId, int returnPort) {
     if (!okay()) return false;
 
@@ -172,7 +182,51 @@ bool UdpSorter::sendStunBindingRequest(const struct sockaddr_in *stunServer, con
         }
     }
 
-    log(LOG_DEBUG_ALERT, UDPSORTERZONE, "Sending STUN binding request on port " + QString::number(ntohs(localAddress.sin_port)));
+    log(LOG_DEBUG_ALERT, UDPSORTERZONE,
+        "Sending STUN binding request on port " + QString::number(ntohs(localAddress.sin_port)) +
+        " to " + inet_ntoa(stunServer->sin_addr));
 
-    return sendPkt(stundata, packetLength, stunServer, STUN_TTL) == packetLength;
+    return sendPkt(stundata, packetLength, stunServer, DEFAULT_TTL) == packetLength;
+}
+
+bool UdpSorter::sendUdpTunneler(const struct sockaddr_in *friendAddress, const struct sockaddr_in *ownExternalAddress, unsigned int own_librarymixer_id) {
+    if (!okay()) return false;
+
+    int packetLength;
+    void* newPacket = generateUdpTunneler(&packetLength, ownExternalAddress, own_librarymixer_id);
+
+    log(LOG_DEBUG_ALERT, UDPSORTERZONE,
+        QString("Sending UDP Tunneler to ") + inet_ntoa(friendAddress->sin_addr) +
+        ":" + QString::number(ntohs(friendAddress->sin_port)) +
+        " via " + QString::number(ntohs(localAddress.sin_port)));
+
+    return sendPkt(newPacket, packetLength, friendAddress, DEFAULT_TTL);
+}
+
+bool UdpSorter::sendUdpConnectionNotice(const struct sockaddr_in *friendAddress, const struct sockaddr_in *ownExternalAddress, unsigned int own_librarymixer_id) {
+    if (!okay()) return false;
+
+    int packetLength;
+    void* newPacket = generateUdpConnectionNotice(&packetLength, ownExternalAddress, own_librarymixer_id);
+
+    log(LOG_DEBUG_ALERT, UDPSORTERZONE,
+        QString("Sending UDP Connection Notice to ") + inet_ntoa(friendAddress->sin_addr) +
+        ":" + QString::number(ntohs(friendAddress->sin_port)) +
+        " via " + QString::number(ntohs(localAddress.sin_port)));
+
+    return sendPkt(newPacket, packetLength, friendAddress, DEFAULT_TTL);
+}
+
+bool UdpSorter::sendTcpConnectionRequest(const struct sockaddr_in *friendAddress, const struct sockaddr_in *ownExternalAddress, unsigned int own_librarymixer_id) {
+    if (!okay()) return false;
+
+    int packetLength;
+    void* newPacket = generateTcpConnectionRequest(&packetLength, ownExternalAddress, own_librarymixer_id);
+
+    log(LOG_DEBUG_ALERT, UDPSORTERZONE,
+        QString("Sending TCP Connection Request to ") + inet_ntoa(friendAddress->sin_addr) +
+        ":" + QString::number(ntohs(friendAddress->sin_port)) +
+        " via " + QString::number(ntohs(localAddress.sin_port)));
+
+    return sendPkt(newPacket, packetLength, friendAddress, DEFAULT_TTL);
 }

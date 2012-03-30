@@ -22,29 +22,20 @@
 
 
 #include "ServerDialog.h"
-#include "gui/MainWindow.h" //for settings files
-#include <QSettings>
-#include <iostream>
-#include <sstream>
+#include "interface/settings.h"
 
 #include "interface/iface.h"
 #include "interface/peers.h"
 
-#include <QTimer>
-
-/** Constructor */
 ServerDialog::ServerDialog(QWidget *parent)
     : ConfigPage(parent) {
     /* Invoke the Qt Designer generated object setup routine */
     ui.setupUi(this);
 
     connect(ui.mixologyServer, SIGNAL(editingFinished()), this, SLOT(editedServer()));
-    connect(ui.randomizePorts, SIGNAL(toggled(bool)), this, SLOT(randomizeToggled(bool)));
 
     /* Setup display */
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
-    ui.UPNP->setChecked(settings.value("Network/UPNP", DEFAULT_UPNP).toBool());
-    ui.randomizePorts->setChecked(settings.value("Network/PortNumber", DEFAULT_PORT).toInt() == SET_TO_RANDOMIZED_PORT);
 
     /* Load up actual port number  */
     PeerDetails detail;
@@ -53,18 +44,14 @@ ServerDialog::ServerDialog(QWidget *parent)
     }
     ui.portNumber->setMinimum(Peers::MIN_PORT);
     ui.portNumber->setMaximum(Peers::MAX_PORT);
-    ui.portNumber->setEnabled(settings.value("Network/PortNumber", DEFAULT_PORT).toInt() != SET_TO_RANDOMIZED_PORT);
 
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     ui.mixologyServer->setText(serverSettings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString());
 }
 
-/** Saves the changes on this page */
 bool ServerDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
-    settings.setValue("Network/UPNP", ui.UPNP->isChecked());
-    if (ui.randomizePorts->isChecked()) settings.setValue("Network/PortNumber", -1);
-    else settings.setValue("Network/PortNumber", ui.portNumber->value());
+    settings.setValue("Network/PortNumber", ui.portNumber->value());
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     serverSettings.setValue("MixologyServer", ui.mixologyServer->text());
 
@@ -75,8 +62,4 @@ void ServerDialog::editedServer(){
     if (ui.mixologyServer->text().isEmpty()){
         ui.mixologyServer->setText(DEFAULT_MIXOLOGY_SERVER);
     }
-}
-
-void ServerDialog::randomizeToggled(bool set){
-    ui.portNumber->setEnabled(!set);
 }

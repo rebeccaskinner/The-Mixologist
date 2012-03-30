@@ -68,7 +68,7 @@ bool TCP_over_UDP_init(UdpSorter* udpConnection) {
 }
 
 void TCP_over_UDP_shutdown() {
-    for (unsigned int i = 0; i < tou_streams.size(); i++) {
+    for (unsigned int i = 1; i < tou_streams.size(); i++) {
         tou_close(i);
     }
 }
@@ -99,16 +99,6 @@ int tou_socket(int /*domain*/, int /*type*/, int /*protocol*/) {
 
     tou -> lasterrno = EUSERS;
 
-    return -1;
-}
-
-int tou_bind(int sockfd, const struct sockaddr *, socklen_t) {
-    if (tou_streams[sockfd] == NULL) return -1;
-
-    TcpOnUdp *tous = tou_streams[sockfd];
-
-    /* this now always returns an error! */
-    tous -> lasterrno = EADDRINUSE;
     return -1;
 }
 
@@ -170,12 +160,6 @@ int tou_listenfor(int sockfd, const struct sockaddr *serv_addr, socklen_t addrle
 
     return 0;
 }
-
-int tou_listen(int, int) {
-    tou_tick_all();
-    return 1;
-}
-
 
 /* slightly different - returns sockfd on connection */
 int tou_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
@@ -299,6 +283,8 @@ int tou_close(int sockfd) {
     tou_tick_all();
 
     if (tous->tcp) {
+        tous->tcp->reset();
+
         tous->tcp->tick();
 
         /* shut it down */

@@ -28,7 +28,7 @@
 
 /*
 Interface to be implemented by the master listening socket for
-the pqipersongrp.
+the AggregatedConnectionsToFriends.
 
 Implementations include pqissllistener.
 */

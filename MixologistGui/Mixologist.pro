@@ -1,12 +1,13 @@
 CONFIG += qt \
-    gui \
-    uic \
-    qrc \
-    resources \
-    uitools
+          gui \
+          uic \
+          qrc \
+          resources \
+          uitools
 QT += network \
-    xml \
-    script
+      xml \
+      script
+QTPLUGIN += qgif
 TEMPLATE = app
 TARGET = Mixologist
 RCC_DIR = temp/qrc
@@ -133,7 +134,6 @@ HEADERS += version.h \
     gui/Toaster/OnlineToaster.h \
     gui/Toaster/QtToaster.h \
     gui/Toaster/IQtToaster.h \
-    gui/Statusbar/peerstatus.h \
     gui/Statusbar/ratesstatus.h \
     gui/Util/GuiSettingsUtil.h \
     gui/Util/Helpers.h \
@@ -173,7 +173,6 @@ SOURCES += main.cpp \
     gui/Preferences/PreferencesWindow.cpp \
     gui/Preferences/ServerDialog.cpp \
     gui/Preferences/NotifyDialog.cpp \
-    gui/Statusbar/peerstatus.cpp \
     gui/Statusbar/ratesstatus.cpp \
     gui/Toaster/OnlineToaster.cpp \
     gui/Toaster/QtToaster.cpp \

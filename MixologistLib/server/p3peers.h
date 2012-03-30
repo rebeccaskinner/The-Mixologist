@@ -87,9 +87,6 @@ public:
                                  const QString &localIP, ushort localPort,
                                  const QString &externalIP, ushort externalPort);
 
-    /* Immediate retry to connect to that friend. */
-    virtual void connectAttempt(unsigned int librarymixer_id);
-
     /* Immediate retry to connect to all offline friends. */
     virtual void connectAll();
 

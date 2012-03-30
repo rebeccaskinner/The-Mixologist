@@ -45,7 +45,7 @@
  * This provides the base OpenSSL-wrapping interface class for an individual connection
  * (AuthMgr wraps some other non-individual connection OpenSSL functions.)
  *
- * Each certificate has a pqissl, created in pqisslpersongrp when a friend is added,
+ * Each certificate has a pqissl, created in AggregatedConnectionsToFriends when a friend is added,
  * which represents the SSL TCP connection to the friend represented by that certificate.
  * A pqissl isn't updated when a friend gets a new certificate, instead a new one is created for that friend.
  *
@@ -91,7 +91,7 @@ public:
     /**********************************************************************************
      * BinInterface
      **********************************************************************************/
-    /* Ticked by the containing pqiperson.
+    /* Ticked by the containing ConnectionToFriend.
        Attempts to connect */
     virtual int tick();
 
@@ -130,7 +130,8 @@ protected:
         STATE_WAITING_FOR_SOCKET_CONNECT = 2,
         STATE_WAITING_FOR_SSL_CONNECT = 3,
         STATE_WAITING_FOR_SSL_AUTHORIZE = 4,
-        STATE_FAILED = 5
+        STATE_FAILED = 5,
+        STATE_FAILED_REQUEST_DELAYED_RETRY
     };
     connectionStates connectionState;
 
@@ -167,7 +168,7 @@ protected:
     /* Final internal processing of the SSL connection.
        By the time this is called, the connection is already set up.
        This performs all the necessary actions to internally mark the connection as completed,
-       as well as informed the parent pqiperson that the connection is complete.
+       as well as informed the parent ConnectionToFriend that the connection is complete.
        Called both by pqissl from Authorize_SSL_Connection() and also by pqissllistener from acceptInbound() to finalize connections. */
     int accept(SSL *ssl, int fd, struct sockaddr_in foreign_addr);
     /* Simply calls accept() but wraps it in a mutex.
@@ -204,13 +205,11 @@ protected:
        This stores how far in we've made it into our read so far. */
     int readSoFar;
 
-    /* Some flags that indicate the status of the various interfaces (local), (server).
-       Unused by TCP, only used by UDP. */
-    unsigned int net_attempt;
-    unsigned int net_failure;
-    unsigned int net_unreachable;
+    /* Whether we are on the same subnet as this friend. Used to exempt from bandwidth balancing. */
+    bool sameLAN;
 
-    bool sameLAN; //Whether we are on the same subnet as this friend. Used to exempt from bandwidth balancing.
+    /* Can be set when we've failed a connection, and will indicate that we want a connection retry to be requested. */
+    bool failedButRetry;
 
     /* SSL will throw an error called zero return when the connection is closed.
        If this repeatedly occurs, the connection should be marked dead, so this tracks the number of occurrences. */
@@ -227,6 +226,9 @@ protected:
     /* When the SSL connection on top of the basic connection should timeout.
        Ensures that we don't get stuck (can happen on udp!) */
     time_t mSSLConnectionAttemptTimeoutAt;
+
+    /* False for normal TCP connections, true for TCP over UDP connections. */
+    bool isTcpOverUdpConnection;
 
 private:
     mutable QMutex pqisslMtx; /* accept can be called from a separate thread, so we need mutex protection */

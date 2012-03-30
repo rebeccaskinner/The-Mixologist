@@ -90,7 +90,9 @@ public:
     int write_allowed();
     int read_pending();
 
-    int closeWrite(); /* non-standard, but for clean exit */
+    /* Non-standard, but forces an immediate disconnect by sending a packet with rst set.
+       In the future, we may want to disconnect more gracefully, but for now this is used when the Mixologist is shutting down. */
+    int reset();
     int close(); /* standard unix behaviour */
 
     int tick(); /* check iface etc */

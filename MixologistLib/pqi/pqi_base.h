@@ -35,22 +35,30 @@
 /*** Base DataTypes: ****/
 #include "serialiser/serial.h"
 
-/**** Consts for pqiperson */
-
-const uint32_t PQI_CONNECT_TCP = 0x0001;
-const uint32_t PQI_CONNECT_UDP = 0x0002;
-
-int getPQIsearchId();
-int fixme(char *str, int n);
+/**** Consts for ConnectionToFriend */
+enum ConnectionType {
+    TCP_CONNECTION,
+    UDP_CONNECTION
+};
 
 /*********************** PQI INTERFACE ******************************\
 The basic exchange interface.
 Includes methods for getting and sending items, ongoing maintenance,
 notification from NetInterfaces and bandwidth control.
 Types include pqistreamer for taking structured data and converting it into binary data to send over a network,
-pqiperson which holds multiple pqistreamers (one for each connection method) and uses PQInterface as an interface to pass through to them,
+ConnectionToFriend which holds multiple pqistreamers (one for each connection method) and uses PQInterface as an interface to pass through to them,
 and pqiloopback.
 */
+
+/* These are used by a NetInterface to inform its PQInterface about connection results. */
+enum NetNotificationEvent {
+    /* When we connect to a friend. */
+    NET_CONNECT_SUCCESS,
+    /* When we fail to connect. */
+    NET_CONNECT_FAILED,
+    /* When we fail to connect but would like to request an outbound retry to be rescheduled. */
+    NET_CONNECT_FAILED_RETRY
+};
 
 class NetInterface;
 
@@ -74,7 +82,7 @@ public:
     virtual int LibraryMixerId() {return librarymixer_id;}
 
     //Called by NetInterfaces to inform the PQInterface of connection events.
-    virtual int notifyEvent(NetInterface *ni, int event) {
+    virtual int notifyEvent(NetInterface *ni, NetNotificationEvent event) {
         (void)ni;
         (void)(event);
         return 0;
@@ -117,13 +125,6 @@ private:
  * It is passed a pointer to a PQInterface *parent, which it uses to notify the system of connect/disconnect Events.
  */
 
-//Possible notification events
-static const int NET_CONNECT_RECEIVED     = 1;
-static const int NET_CONNECT_SUCCESS      = 2;
-static const int NET_CONNECT_UNREACHABLE  = 3;
-static const int NET_CONNECT_FIREWALLED   = 4;
-static const int NET_CONNECT_FAILED       = 5;
-
 class NetInterface {
 public:
     NetInterface(PQInterface *p_in, std::string cert, int _librarymixer_id)
@@ -153,7 +154,7 @@ public:
 
     virtual std::string PeerId() {return cert;}
 
-    virtual int LibraryMixerId() {return librarymixer_id;}
+    virtual unsigned int LibraryMixerId() {return librarymixer_id;}
 
     /* Sets the specified parameter to value.
        Returns false if no such parameter applies to the NetInterface.
@@ -242,11 +243,6 @@ public:
         return;
     }
 };
-
-#define CHAN_SIGN_SIZE 16
-#define CERTSIGNLEN 16       /* actual byte length of signature */
-#define PQI_PEERID_LENGTH 32 /* When expanded into a string */
-
 
 #endif // PQI_BASE_ITEM_HEADER
 

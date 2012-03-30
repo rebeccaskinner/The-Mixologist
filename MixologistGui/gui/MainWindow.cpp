@@ -28,21 +28,20 @@
 #include "LibraryDialog.h"
 #include "FriendsLibraryDialog.h"
 #include "gui/Util/GuiSettingsUtil.h"
-#include "Statusbar/peerstatus.h"
 #include "Statusbar/ratesstatus.h"
 
 #include <interface/iface.h>
-#include <interface/notify.h>
+#include <interface/notifyqt.h>
 #include <interface/settings.h>
 
 /* Images for toolbar icons */
 #define IMAGE_CLOSE ":/images/close_normal.png"
 
-/** Constructor */
-MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
-    :notify(_notify) {
+MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     /* Invoke the Qt Designer generated QObject setup routine */
     ui.setupUi(this);
+
+    connect(peers, SIGNAL(connectionStateChanged(int)), this, SLOT(updateConnectionStatus(int)));
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
@@ -81,7 +80,7 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
         networkDialog = new NetworkDialog(ui.stackPages);
         actionPages.insert(ui.actionNetwork, networkDialog);
         ui.stackPages->insertWidget(ui.stackPages->count(), networkDialog);
-        QObject::connect(notify, SIGNAL(logInfoChanged(QString)),
+        QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)),
                          networkDialog, SLOT(setLogInfo(QString)));
 
     } else ui.actionNetwork->setVisible(false);
@@ -100,27 +99,45 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
     preferencesWindow = NULL;
 
     /* StatusBar */
-    peerstatus = new PeerStatus();
-    ui.statusbar->addWidget(peerstatus);
+    connectionStatus = new ClickableQWidget();
+    QSizePolicy connectionStatusSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+    connectionStatusSizePolicy.setHorizontalStretch(0);
+    connectionStatusSizePolicy.setVerticalStretch(0);
+    connectionStatusSizePolicy.setHeightForWidth(connectionStatus->sizePolicy().hasHeightForWidth());
+    connectionStatus->setSizePolicy(connectionStatusSizePolicy);
+    QHBoxLayout *connectionStatusHorizontalLayout = new QHBoxLayout(connectionStatus);
+    connectionStatusHorizontalLayout->setContentsMargins(10, 0, 0, 0); //left margin 10
+    connectionStatusMovieLabel = new QLabel(connectionStatus);
+    QMovie *movie = new QMovie(":/Images/AnimatedLoading.gif");
+    connectionStatusMovieLabel->setMovie(movie);
+    movie->start();
+    movie->setSpeed(100); // 2x speed
+    connectionStatusHorizontalLayout->addWidget(connectionStatusMovieLabel);
+    connectionStatusLabel = new QLabel(connectionStatus);
+    connectionStatusLabel->setText("Initializing");
+    connectionStatusLabel->setMargin(5);
+    connectionStatusHorizontalLayout->addWidget(connectionStatusLabel);
+    ui.statusbar->addWidget(connectionStatus);
 
-    QWidget *widget = new QWidget();
-    QSizePolicy sizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+    hashingHolder = new QWidget();
+    QSizePolicy sizePolicy(QSizePolicy::Maximum, QSizePolicy::Expanding);
     sizePolicy.setHorizontalStretch(0);
     sizePolicy.setVerticalStretch(0);
-    sizePolicy.setHeightForWidth(widget->sizePolicy().hasHeightForWidth());
-    widget->setSizePolicy(sizePolicy);
-    QHBoxLayout *horizontalLayout = new QHBoxLayout(widget);
+    sizePolicy.setHeightForWidth(hashingHolder->sizePolicy().hasHeightForWidth());
+    hashingHolder->setSizePolicy(sizePolicy);
+    QHBoxLayout *horizontalLayout = new QHBoxLayout(hashingHolder);
     horizontalLayout->setContentsMargins(0, 0, 0, 0);
     horizontalLayout->setObjectName(QString::fromUtf8("horizontalLayout"));
-    _hashing_info_label = new QLabel(widget) ;
-    _hashing_info_label->setObjectName(QString::fromUtf8("label"));
-
-    horizontalLayout->addWidget(_hashing_info_label);
+    hashingInfoLabel = new QLabel(hashingHolder);
+    hashingInfoLabel->setObjectName(QString::fromUtf8("label"));
+    horizontalLayout->addWidget(hashingInfoLabel);
     QSpacerItem *horizontalSpacer = new QSpacerItem(1000, 0, QSizePolicy::Expanding, QSizePolicy::Minimum);
     horizontalLayout->addItem(horizontalSpacer);
 
-    ui.statusbar->addPermanentWidget(widget);
-    _hashing_info_label->hide() ;
+    ui.statusbar->addPermanentWidget(hashingHolder);
+    hashingInfoLabel->hide() ;
+    hashingHolder->hide();
+    QObject::connect(guiNotify, SIGNAL(hashingInfoChanged(QString)), this, SLOT(updateHashingInfo(QString)));
 
     ratesstatus = new RatesStatus();
     ui.statusbar->addPermanentWidget(ratesstatus);
@@ -142,8 +159,6 @@ MainWindow::MainWindow(NotifyQt *_notify, QWidget *, Qt::WFlags)
             SLOT(toggleVisibility(QSystemTrayIcon::ActivationReason)));
     connect(trayIcon, SIGNAL(messageClicked()), this, SLOT(trayMsgClicked()));
 
-    trayOpenDownloadsFolder = false;
-
     trayIcon->show();
 
     //Load backed up window settings
@@ -154,15 +169,6 @@ void MainWindow::switchToDialog(QWidget *dialog) {
     if (actionPages.key(dialog) != NULL) {
         ui.stackPages->setCurrentWidget(dialog);
         actionPages.key(dialog)->setChecked(true);
-    }
-}
-
-void MainWindow::updateHashingInfo(const QString &s) {
-    if (s == "")
-        _hashing_info_label->hide() ;
-    else {
-        _hashing_info_label->setText("Hashing file " + s) ;
-        _hashing_info_label->show() ;
     }
 }
 
@@ -220,7 +226,6 @@ void MainWindow::doQuit() {
     qApp->quit();
 }
 
-/** Shows the Main page associated with the activated action. */
 void MainWindow::showPage(QAction *pageAction) {
     ui.stackPages->setCurrentWidget(actionPages.value(pageAction));
 
@@ -256,6 +261,116 @@ void MainWindow::showPage(QAction *pageAction) {
     }
 }
 
+/* Status Bar */
+
+void MainWindow::connectionStatusClicked() {
+    displayInfoText(infoTextTypeToDisplay);
+}
+
+void MainWindow::updateHashingInfo(const QString &newText) {
+    if (newText == "")
+        hashingInfoLabel->hide() ;
+    else {
+        hashingInfoLabel->setText("Hashing file " + newText) ;
+        hashingInfoLabel->show() ;
+    }
+}
+
+void MainWindow::updateConnectionStatus(int newStatus) {
+    switch (newStatus) {
+    case CONNECTION_STATUS_FINDING_STUN_FRIENDS:
+    case CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS:
+        connectionStatusLabel->setText("Auto Connection Config");
+        break;
+    case CONNECTION_STATUS_STUNNING_INITIAL:
+        connectionStatusLabel->setText("Auto Connection Config: Probing");
+        break;
+    case CONNECTION_STATUS_TRYING_UPNP:
+    case CONNECTION_STATUS_STUNNING_UPNP_TEST:
+        connectionStatusLabel->setText("Auto Connection Config: Trying UPNP");
+        break;
+    case CONNECTION_STATUS_STUNNING_MAIN_PORT:
+    case CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST:
+    case CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST:
+        connectionStatusLabel->setText("Auto Connection Config: Trying UDP Firewall Hole Punching");
+        break;
+    /* If we get here, we are done with connection set up. */
+    case CONNECTION_STATUS_UNFIREWALLED:
+        connectionStatusLabel->setText("Internet: Direct Connection");
+        infoTextTypeToDisplay = INFO_TEXT_UNFIREWALLED;
+        break;
+    case CONNECTION_STATUS_PORT_FORWARDED:
+        connectionStatusLabel->setText("Internet: Port-forwarded Connection");
+        infoTextTypeToDisplay = INFO_TEXT_PORT_FORWARDED;
+        break;
+    case CONNECTION_STATUS_UPNP_IN_USE:
+        connectionStatusLabel->setText("Internet: UPNP-configured Connection");
+        infoTextTypeToDisplay = INFO_TEXT_UPNP;
+        break;
+    case CONNECTION_STATUS_UDP_HOLE_PUNCHING:
+        connectionStatusLabel->setText("Internet: UDP Hole-Punching");
+        infoTextTypeToDisplay = INFO_TEXT_UDP_HOLE_PUNCHING;
+        if (isNotifyBadInternet()) {
+            mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_FULL_CONE_NAT_INFO;
+            mainwindow->trayIcon->showMessage("Connection good to go!",
+                                              QString("However, a restrictive firewall has been detected.\n") +
+                                              "You can configure your firewall to get better transfer rates and more reliable connections with other friends that are firewalled.\n" +
+                                              "Do you want to fix this?",
+                                              QSystemTrayIcon::Information, 30);
+        }
+        break;
+    case CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING:
+        connectionStatusLabel->setText("Internet: UDP Hole-Punching (restricted-cone)");
+        infoTextTypeToDisplay = INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING;
+        if (isNotifyBadInternet()) {
+            mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_RESTRICTED_NAT_INFO;
+            mainwindow->trayIcon->showMessage("Connection good to go!",
+                                              QString("However, a restrictive firewall has been detected.\n") +
+                                              "You can configure your firewall to get better transfer rates, faster connection times, and more reliable connections with other friends that are firewalled.\n" +
+                                              "Do you want to fix this?",
+                                              QSystemTrayIcon::Information, 30);
+        }
+        break;
+    case CONNECTION_STATUS_SYMMETRIC_NAT:
+        connectionStatusLabel->setText("Internet: Symmetric NAT (outbound connections only)");
+        infoTextTypeToDisplay = INFO_TEXT_SYMMETRIC_NAT;
+        if (isNotifyBadInternet()) {
+            mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_SYMMETRIC_NAT_INFO;
+            mainwindow->trayIcon->showMessage("Connection good to go!",
+                                              QString("However, a very restrictive firewall has been detected.\n") +
+                                              "If you do not configure your firewall you will not be able to connect to any firewalled friends and connecting to unfirewalled friends will be slow.\n" +
+                                              "Do you want to fix this?",
+                                              QSystemTrayIcon::Information, 30);
+        }
+        break;
+    case CONNECTION_STATUS_UNKNOWN:
+    default:
+        connectionStatusLabel->setText("Internet: Unknown");
+        infoTextTypeToDisplay = INFO_TEXT_UNKNOWN_CONNECTION;
+        if (isNotifyBadInternet())
+            mainwindow->trayIcon->showMessage("Connection Warning",
+                                              QString("The Mixologist was not able to automatically configure your connection. ") +
+                                              "You may experience problems connecting to friends.",
+                                              QSystemTrayIcon::Information, 30);
+    }
+
+    if (newStatus >= CONNECTION_STATUS_UNFIREWALLED) {
+        /* Enable clicking now to display more info. */
+        connectionStatus->setToolTip("Click for more info");
+        connect(connectionStatus, SIGNAL(clicked()), this, SLOT(connectionStatusClicked()));
+        connectionStatus->layout()->removeWidget(connectionStatusMovieLabel);
+        connectionStatusMovieLabel->deleteLater();
+        hashingHolder->show();
+    }
+}
+
+bool MainWindow::isNotifyBadInternet() {
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    return settings.value("Gui/NotifyBadInternet", DEFAULT_NOTIFY_BAD_INTERNET).toBool();
+}
+
+/* System Tray */
+
 void MainWindow::updateMenu() {
     toggleVisibilityAction->setText(isVisible() ? tr("Hide") : tr("Show"));
 }
@@ -280,15 +395,84 @@ void MainWindow::toggleVisibilitycontextmenu() {
 }
 
 void MainWindow::trayMsgClicked() {
-    if(trayOpenDownloadsFolder){
-        trayOpenDownloadsFolder = false;
+    if (TRAY_MESSAGE_CLICKED_DOWNLOADS_FOLDER == trayMessageClickedAction) {
         transfersDialog->openContaining();
-    } else {
-        ui.stackPages->setCurrentWidget(trayOpenTo);
+    } else if (TRAY_MESSAGE_CLICKED_TRANSFERS_DIALOG == trayMessageClickedAction) {
+        ui.stackPages->setCurrentWidget(transfersDialog);
         show();
         raise();
         activateWindow();
+    } else if (TRAY_MESSAGE_CLICKED_FULL_CONE_NAT_INFO == trayMessageClickedAction) {
+        displayInfoText(INFO_TEXT_UDP_HOLE_PUNCHING);
+    } else if (TRAY_MESSAGE_CLICKED_RESTRICTED_NAT_INFO == trayMessageClickedAction) {
+        displayInfoText(INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING);
+    } else if (TRAY_MESSAGE_CLICKED_SYMMETRIC_NAT_INFO == trayMessageClickedAction) {
+        displayInfoText(INFO_TEXT_SYMMETRIC_NAT);
     }
+}
+
+/* General Utility */
+
+void MainWindow::displayInfoText(InfoTextType type) {
+    QMessageBox helpBox(this);
+    QString info;
+    if (INFO_TEXT_UNFIREWALLED == type) {
+        info += "<b>Direct Connection</b>";
+        info += "<p>You've got a direct, unrestricted connection to the Internet.</p>";
+        info += "<p>Everything's doing great!</p>";
+    } else if (INFO_TEXT_PORT_FORWARDED == type) {
+        info += "<b>Port-forwarded Connection</b>";
+        info += "<p>You're behind a firewall that has been properly configured to enable the Mixologist to connect.</p>";
+        info += "<p>Everything's doing great!</p>";
+    } else if (INFO_TEXT_UPNP == type) {
+        info += "<b>UPNP-forwarded Connection</b>";
+        info += "<p>You're behind a firewall that has been automatically configured using Universal Plug and Play to enable the Mixologist to connect.</p>";
+        info += "<p>Everything's doing great!</p>";
+    } else if (INFO_TEXT_UDP_HOLE_PUNCHING == type) {
+        info += "<b>Firewall detected (full-cone NAT type)</b>";
+        info += "<p>You are behind a firewall that is blocking inbound connections.</p>";
+        info += "<p>Fortunately, the Mixologist is working around this using a technique called 'UDP Tunneling', which enables the Mixologist to remain fully-functional, but is less reliable, slower, and less bandwidth-efficient than if there were no firewall.</p>";
+    } else if (INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING == type) {
+        info += "<b>Firewall detected (restricted-cone NAT type)</b>";
+        info += "<p>You are behind a restricted-cone firewall that is blocking inbound connections.</p>";
+        info += "<p>Fortunately, the Mixologist is working around this using a technique called 'UDP Tunneling', which enables the Mixologist to remain fully-functional, but is less reliable, slower, and less bandwidth-efficient than if there were no firewall, and connecting to your firewalled friends will be slow, taking up to 5 minutes or more.</p>";
+    } else if (INFO_TEXT_SYMMETRIC_NAT == type) {
+        info += "<b>Firewall detected (symmetric NAT type)</b>";
+        info += "<p>You are behind a highly-restrictive symmetric NAT firewall that is blocking inbound connections.</p>";
+        info += "<p>You will not be able to connect to your friends that have firewalls at all, and your connections to all friends will be slow, taking up to 5 minutes or more after they come online.</p>";
+    } else if (INFO_TEXT_UNKNOWN_CONNECTION == type) {
+        info += "<b>Unknown Connection</b>";
+        info += "<p>The Mixologist automatic connection configuration has failed!</p>";
+        info += "<p>You might be able to connect to your friends still, or you might not.</p>";
+        info += "<p>Try restarting to resolve this problem.</p>";
+        info += "<p>If you always see this message when you have a working Internet connection, consider filing a bug report with details about your network situation.</p>";
+    }
+
+    if (INFO_TEXT_UDP_HOLE_PUNCHING == type ||
+        INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING == type ||
+        INFO_TEXT_SYMMETRIC_NAT == type) {
+        PeerDetails detail;
+        QString ownIP;
+        QString ownPort;
+        if (peers->getPeerDetails(peers->getOwnLibraryMixerId(), detail)) {
+            ownIP = detail.localAddr.c_str();
+            ownPort = QString::number(detail.localPort);
+        }
+        info += "<p>Ideally, you should fix this by configuring your firewall to open up a port for your computer.</p>";
+        info += QString("<p>If you don't know how to configure your router, ") +
+                "<a href='http://www.pcwintech.com/port-forwarding-guides'>click here for a guide</a> (not affiliated with the Mixologist).</p>";
+        info += "<p>To use the guide, first find the brand of your router, and then choose the model number that best matches the model written on your router.</p>";
+        info += QString("<p>When following the guide, set the internal IP address to forward to as <b>" + ownIP + "</b> (your computer's internal network IP), and both the external and internal port as <b>") + ownPort +
+                "</b> (the Mixologist's port), with both TCP and UDP traffic forwarded.</p>";
+    }
+
+    helpBox.setText(info);
+    helpBox.setTextFormat(Qt::RichText);
+    helpBox.exec();
+
+    show();
+    raise();
+    activateWindow();
 }
 
 /*
@@ -298,3 +482,7 @@ void MainWindow::setTrayIcon(float downKb, float upKb){
     else if (upKb > 0 && downKb > 0) trayIcon->setIcon(QIcon(":/Images/Up1Down1.png"));
     else trayIcon->setIcon(QIcon(":/Images/Up0Down0.png"));
 }*/
+
+void ClickableQWidget::mouseReleaseEvent(QMouseEvent *event) {
+    emit clicked();
+}

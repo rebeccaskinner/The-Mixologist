@@ -534,18 +534,6 @@ bool SetTlvQString(void *data, uint32_t size, uint32_t *offset,
 
     *offset += strlen;
 
-    //        uint16_t strlen = out.length();
-
-    /* Must convert manually to ensure its always the same! */
-    /*        for (uint16_t i = 0; i < strlen; i++) {
-                    uint32_t widechar = out.toUtf8()[i];
-                    ok &= setRawUInt32(data, tlvend, offset, widechar);
-                    if (ok == false){
-                        std::cerr << "False\n";
-                    }
-            }*/
-
-
     return ok;
 }
 

@@ -31,8 +31,6 @@
 The main thread that does most of the work, and implements the Control interface in iface.h that provides high-level control over MixologistLib.
 */
 
-class pqipersongrp;
-
 class Server: public QObject, public Control {
     Q_OBJECT
 
@@ -82,11 +80,6 @@ private:
     QString storedClientName;
     qulonglong storedClientVersion;
     qulonglong storedLatestKnownVersion;
-
-public:
-
-    //These important public variables hold pointers to the single instances of each of the below
-    pqipersongrp *pqih;
 
     friend class Init;
 };

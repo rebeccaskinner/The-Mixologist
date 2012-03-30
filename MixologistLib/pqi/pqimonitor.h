@@ -31,41 +31,15 @@
 
 /************** Define Type/Mode/Source ***************/
 
-/* STATE
-   Used with PeerConnectionState to indicate the state of friends */
-const uint32_t PEER_S_CONNECTED = 0x0002;
-const uint32_t PEER_S_UNREACHABLE = 0x0004;
-const uint32_t PEER_S_NO_CERT = 0x0008;
-
 /* ACTIONS */
-//Signal to pqipersongrp that a new peer has been added, so a new pqiperson must be created
+//Signal to AggregatedConnectionsToFriends that a new peer has been added, so a new ConnectionToFriend must be created
 const uint32_t PEER_NEW = 0x0001;
 //Signal to ftcontroller that a connection attempt succeeded
 const uint32_t PEER_CONNECTED = 0x0002;
-//Signal to ftcontroller that a connection attempt failed
-const uint32_t PEER_DISCONNECTED = 0x0004;
-//Signal to pqipersongrp that it should try the connection again
-const uint32_t PEER_CONNECT_REQ = 0x0008;
-//Signal to pqipersongrp that an existing peer has been timed out, and their connection must be reset
-const uint32_t PEER_TIMEOUT = 0x0010;
-
-/* Stun Status Flags */
-//const uint32_t STUN_SRC_DHT       = 0x0001;
-//const uint32_t STUN_SRC_PEER  = 0x0002;
-const uint32_t STUN_ONLINE      = 0x0010;
-const uint32_t STUN_FRIEND      = 0x0020;
-const uint32_t STUN_FRIEND_OF_FRIEND    = 0x0040;
-
-
-
-#define CONNECT_PASSIVE     1
-#define CONNECT_ACTIVE  2
-
-#define CB_DHT          1   /* from dht */
-//#define CB_DISC       2   /* from peers */
-#define CB_PERSON       3   /* from connection */
-#define CB_PROXY        4   /* via proxy */
-
+//Signal to AggregatedConnectionsToFriends that it should try the connection again
+const uint32_t PEER_CONNECT_REQ = 0x0004;
+//Signal to AggregatedConnectionsToFriends that an existing peer has been timed out, and their connection must be reset
+const uint32_t PEER_TIMEOUT = 0x0008;
 
 /* Used in a list to describe changed friends for monitors. */
 class pqipeer {
@@ -73,30 +47,18 @@ public:
     unsigned int librarymixer_id;
     std::string cert_id;
     QString name;
-    uint32_t    state;
-    uint32_t    actions;
+    uint32_t state;
+    uint32_t actions;
 };
 
 /* pqiMonitors are registered with ConnectivityManager to receive updates on changes in friends' connectivity. */
 class pqiMonitor {
 public:
-    pqiMonitor() {return;}
-    virtual ~pqiMonitor() {return;}
+    pqiMonitor() {}
+    virtual ~pqiMonitor() {}
 
     /* Called by the ConnectivityManager's tick function with a list of pqipeers whose statuses have changed. */
-    virtual void statusChange(const std::list<pqipeer> &plist) = 0;
-};
-
-class pqiConnectCb {
-public:
-    virtual ~pqiConnectCb() {return;}
-
-    virtual void    peerStatus(std::string id, struct sockaddr_in laddr, struct sockaddr_in raddr,
-                               uint32_t type, uint32_t flags, uint32_t source) = 0;
-
-    virtual void    peerConnectRequest(std::string id, struct sockaddr_in raddr, uint32_t source) = 0;
-
-    virtual void    stunStatus(std::string id, struct sockaddr_in raddr, uint32_t type, uint32_t flags) = 0;
+    virtual void statusChange(const std::list<pqipeer> &changedFriends) = 0;
 };
 
 #endif

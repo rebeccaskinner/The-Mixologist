@@ -42,5 +42,6 @@
         <file>Images/LibraryMixer.png</file>
         <file>Images/find.png</file>
         <file>Images/File.png</file>
+        <file>Images/AnimatedLoading.gif</file>
     </qresource>
 </RCC>

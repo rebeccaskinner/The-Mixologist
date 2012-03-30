@@ -112,7 +112,7 @@ void NotifyQt::displayPopupMessage(int type, QString name, QString msg) {
             break;
         case POPUP_DOWNDONE:
             if (settings.value("Gui/NotifyDownloadDone", DEFAULT_NOTIFY_DOWNLOAD_DONE).toBool()) {
-                mainwindow->trayOpenDownloadsFolder = true;
+                mainwindow->trayMessageClickedAction = MainWindow::TRAY_MESSAGE_CLICKED_DOWNLOADS_FOLDER;
                 mainwindow->trayIcon->showMessage("Download complete",
                                                   name.append("\nhas finished downloading."),
                                                   QSystemTrayIcon::Information, INT_MAX );

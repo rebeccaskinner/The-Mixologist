@@ -69,14 +69,11 @@ extern "C" {
      * estimate (in seconds) of how slowly the connection should proceed.
      *
      * tou_bind() is not valid. TCP_over_UDP_init performs this role.
-     * tou_listen() is not valid. (must listen for a specific address) use tou_listenfor() instead.
      * tou_accept() can still be used.
      */
 
     /* creation/connections */
     int tou_socket(int domain, int type, int protocol);
-    int tou_bind(int sockfd, const struct sockaddr *my_addr, socklen_t addrlen);    /* null op now */
-    int tou_listen(int sockfd, int backlog);                        /* null op now */
     int tou_connect(int sockfd, const struct sockaddr *serv_addr,
                         socklen_t addrlen, uint32_t conn_period);
     int tou_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);

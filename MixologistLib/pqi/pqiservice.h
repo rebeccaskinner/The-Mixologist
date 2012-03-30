@@ -89,7 +89,7 @@ public:
     int incoming(RawItem *);
     RawItem *outgoing();
 
-    /* This tick is called from pqipersongrp. */
+    /* This tick is called from AggregatedConnectionsToFriends. */
     int tick();
 
 private:

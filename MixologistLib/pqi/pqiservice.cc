@@ -174,28 +174,11 @@ RawItem *p3ServiceServer::outgoing() {
 
 
 int p3ServiceServer::tick() {
-
     QMutexLocker stack(&srvMtx);
-
-#ifdef  SERVICE_DEBUG
-    pqioutput(PQL_DEBUG_ALL, pqiservicezone,
-              "p3ServiceServer::tick()");
-#endif
 
     std::map<uint32_t, pqiService *>::iterator it;
 
-    // from the beginning to where we started.
     for (it = services.begin(); it != services.end(); it++) {
-
-#ifdef  SERVICE_DEBUG
-        std::ostringstream out;
-        out << "p3ServiceServer::service id:" << it -> first;
-        out << " -> Service: " << it -> second;
-        out << std::endl;
-        pqioutput(PQL_DEBUG_ALL, pqiservicezone, out.str());
-#endif
-
-        // now we should actually tick the service.
         (it -> second) -> tick();
     }
     return 1;

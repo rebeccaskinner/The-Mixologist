@@ -26,6 +26,7 @@
 #include "gui/Statusbar/ratesstatus.h"
 #include "interface/peers.h"
 #include "interface/files.h"
+#include "interface/notifyqt.h"
 #include "interface/types.h"
 #include <interface/settings.h>
 #include "interface/librarymixer-connect.h"
@@ -76,7 +77,6 @@
 #define DOWNLOAD_PENDING_TYPE      "Pending"
 #define DOWNLOAD_BORROW_TYPE       "Borrow"
 
-/** Constructor */
 TransfersDialog::TransfersDialog(QWidget *parent)
 : QWidget(parent) {
     /* Invoke the Qt Designer generated object setup routine */
@@ -85,6 +85,14 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     connect(ui.downloadButton, SIGNAL(clicked()), this, SLOT(download()));
     connect(ui.downloadsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(downloadsListContextMenu(QPoint)));
     connect(ui.uploadsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(uploadsListContextMenu(QPoint)));
+
+    //To display transfers on the TransfersDialog, as well as the total rate info in the corner.
+    QObject::connect(guiNotify, SIGNAL(transfersChanged()), this, SLOT(insertTransfers()));
+    //To popup a box informing that a friend is attempting to send a file.
+    //QList<qlonglong> is not a default registerd type for QT's meta-object system, so we must first manually register it.
+    qRegisterMetaType<QList<qlonglong> >("QList<qlonglong>");
+    QObject::connect(guiNotify, SIGNAL(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)),
+                     this, SLOT(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)));
 
     QHeaderView *header = ui.downloadsList->header() ;
     header->hideSection(DOWNLOAD_FRIEND_ID);
@@ -219,7 +227,7 @@ void TransfersDialog::suggestionReceived(unsigned int librarymixer_id, QString t
     QString friend_name = peers->getPeerName(librarymixer_id);
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     if (settings.value("Transfers/IncomingAsk", DEFAULT_INCOMING_ASK).toBool()){
-        mainwindow->trayOpenTo = mainwindow->transfersDialog;
+        mainwindow->trayMessageClickedAction = MainWindow::TRAY_MESSAGE_CLICKED_TRANSFERS_DIALOG;
         mainwindow->trayIcon->showMessage("Incoming File",
                                           "Received an invitation to download '" + title + "' from " + friend_name + ".",
                                           QSystemTrayIcon::Information);
@@ -235,7 +243,7 @@ void TransfersDialog::suggestionReceived(unsigned int librarymixer_id, QString t
         }
     } else {
         if (files->downloadFiles(librarymixer_id, title, paths, hashes, filesizes)) {
-            mainwindow->trayOpenTo = mainwindow->transfersDialog;
+            mainwindow->trayMessageClickedAction = MainWindow::TRAY_MESSAGE_CLICKED_TRANSFERS_DIALOG;
             mainwindow->trayIcon->showMessage("Incoming File",
                                               "Receiving '" + title + "' from " + friend_name + ".",
                                               QSystemTrayIcon::Information);

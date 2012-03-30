@@ -23,10 +23,9 @@
 
 #include "interface/peers.h"
 #include "interface/msgs.h"
-#include "interface/notify.h"
+#include "interface/notifyqt.h"
 #include "interface/librarymixer-connect.h"
 #include "gui/PeersDialog.h"
-#include "gui/Statusbar/peerstatus.h"
 #include "gui/PopupChatDialog.h"
 #include "gui/MainWindow.h" //for settings file location
 
@@ -54,7 +53,6 @@
 #define FRIEND_STATUS_COLUMN 2
 #define FRIEND_LIBRARYMIXER_ID_COLUMN 3
 
-/** Constructor */
 PeersDialog::PeersDialog(QWidget *parent)
     : QWidget(parent) {
     /* Invoke the Qt Designer generated object setup routine */
@@ -64,7 +62,16 @@ PeersDialog::PeersDialog(QWidget *parent)
     connect(ui.friendsList, SIGNAL(itemDoubleClicked (QTreeWidgetItem *, int)), this, SLOT(friendDoubleClicked()));
     connect(ui.addFriendsButton, SIGNAL(clicked()), this, SLOT(addFriendClicked()));
     connect(ui.updateFriendsButton, SIGNAL(clicked()), this, SLOT(updateFriends()));
-    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(updatedFriends()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(updatedFriends()), Qt::QueuedConnection);
+    connect(peers, SIGNAL(connectionStateChanged(int)), this, SLOT(connectionStateChanged(int)), Qt::QueuedConnection);
+
+    //To display chat status in chat windows.
+    QObject::connect(guiNotify, SIGNAL(chatStatusChanged(unsigned int, QString)), this, SLOT(updatePeerStatusString(unsigned int, QString)));
+    //To popup a chat box on incoming requests where a chat window is needed
+    QObject::connect(guiNotify, SIGNAL(requestEventOccurred(int,unsigned int,unsigned int)), this, SLOT(insertRequestEvent(int,unsigned int,unsigned int)));
+    //To popup a chat box on transfer events where the friend's response requests chatting or indicates an error.
+    QObject::connect(guiNotify, SIGNAL(transferChatEventOccurred(int,unsigned int,QString,QString)), this, SLOT(insertTransferEvent(int,unsigned int,QString,QString)));
+    QObject::connect(guiNotify, SIGNAL(userOptionalInfo(unsigned int,int,QString)), this, SLOT(insertUserOptional(unsigned int,int,QString)));
 
     /* Set header resize modes and initial section sizes */
     QHeaderView *_header = ui.friendsList->header();
@@ -86,12 +93,24 @@ PeersDialog::PeersDialog(QWidget *parent)
 
     ui.friendsList->sortItems(FRIEND_ICON_AND_SORT_COLUMN, Qt::AscendingOrder);
 
-    ui.friendsList->resizeColumnToContents(FRIEND_NAME_COLUMN);
-    ui.friendsList->resizeColumnToContents(FRIEND_STATUS_COLUMN);
-
-    updateTimer = new QTimer(this);
-    updateTimer->connect(updateTimer, SIGNAL(timeout()), this, SLOT(updateFriends()));
-    resetUpdateTimer();
+    /* We will fill the main friendsList box with a placeholder letting users know that the connection is initializing. */
+    QList<QTreeWidgetItem *> initialItems;
+    QTreeWidgetItem *placeholderItem = new QTreeWidgetItem(ui.friendsList, 0);
+    placeholderItem->setText(FRIEND_ICON_AND_SORT_COLUMN, "\n\n\nThe Mixologist is initializing your connection, you'll be ready to connect to your friends soon!");
+    placeholderItem->setTextColor(FRIEND_ICON_AND_SORT_COLUMN, Qt::lightGray);
+    placeholderItem->setTextAlignment(FRIEND_ICON_AND_SORT_COLUMN, Qt::AlignHCenter);
+    /* We set the size of the item to be 50,000, an arbitrary number that should be large enough that it completely fills any screen. */
+    placeholderItem->setSizeHint(FRIEND_ICON_AND_SORT_COLUMN, QSize(50000, 50000));
+    initialItems.append(placeholderItem);
+    /* We disallow selections of the big placeholder. */
+    ui.friendsList->setSelectionMode(QAbstractItemView::NoSelection);
+    ui.friendsList->insertTopLevelItems(0, initialItems);
+    /* We don't need to show the header for this. */
+    ui.friendsList->header()->hide();
+    /* We hide the extraneous columns so we can easily resize the column we're using to max width. */
+    ui.friendsList->hideColumn(FRIEND_NAME_COLUMN);
+    ui.friendsList->hideColumn(FRIEND_STATUS_COLUMN);
+    ui.friendsList->header()->setResizeMode(FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Stretch);
 }
 
 void PeersDialog::friendsListContextMenu(QPoint point) {
@@ -135,7 +154,6 @@ void  PeersDialog::insertPeers() {
     peers->getFriendList(peersList);
 
     /* get a link to the table */
-    QTreeWidget *peerWidget = ui.friendsList;
     QTreeWidgetItem *selected = getCurrentPeer();
     QTreeWidgetItem *newSelect = NULL;
 
@@ -143,7 +161,7 @@ void  PeersDialog::insertPeers() {
     if (selected) selected_librarymixer_id = getFriendLibraryMixerId(selected);
 
     /* remove old items */
-    peerWidget->clear();
+    ui.friendsList->clear();
     QList<QTreeWidgetItem *> items;
     for (it = peersList.begin(); it != peersList.end(); it++) {
         PeerDetails detail;
@@ -183,15 +201,6 @@ void  PeersDialog::insertPeers() {
             item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
             item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
             item->setText(FRIEND_STATUS_COLUMN, QString("Trying"));
-        } else if (detail.state == PEER_STATE_WAITING_FOR_RETRY) {
-            item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
-            item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
-            QSettings settings(*mainSettings, QSettings::IniFormat, this);
-            if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
-                item->setText(FRIEND_STATUS_COLUMN, QString("Continuing"));
-            } else {
-                item->setText(FRIEND_STATUS_COLUMN, QString("Trying"));
-            }
         } else if (detail.state == PEER_STATE_NO_CERT) {
             item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("4").append(detail.name.toLower()));
             item->setText(FRIEND_STATUS_COLUMN, QString("Not signed up for the Mixologist"));
@@ -213,11 +222,12 @@ void  PeersDialog::insertPeers() {
     }
 
     /* add the items in */
-    peerWidget->insertTopLevelItems(0, items);
+    ui.friendsList->insertTopLevelItems(0, items);
+    ui.friendsList->header()->resizeSection(FRIEND_ICON_AND_SORT_COLUMN, 30);
     ui.friendsList->resizeColumnToContents(FRIEND_NAME_COLUMN);
     ui.friendsList->resizeColumnToContents(FRIEND_STATUS_COLUMN);
     if (newSelect) {
-        peerWidget->setCurrentItem(newSelect);
+        ui.friendsList->setCurrentItem(newSelect);
     }
 
     //Update the status bar friend display and then update view.
@@ -226,19 +236,22 @@ void  PeersDialog::insertPeers() {
     std::list<int> signed_up_friends;
     peers->getSignedUpList(signed_up_friends);
 
-    mainwindow->peerstatus->setPeerStatus(online_friends.size(), signed_up_friends.size());
-    peerWidget->update();
+    ui.friendsList->update();
 }
 
 void PeersDialog::updateFriends() {
     ui.updateFriendsButton->setEnabled(false);
-    if (librarymixerconnect->downloadFriends() < 0) updatedFriends();
-    resetUpdateTimer();
+    if (librarymixerconnect->downloadFriends() < 0) {
+        updatedFriends();
+    }
 }
 
 void PeersDialog::updatedFriends() {
-    ui.updateFriendsButton->setEnabled(true);
-    peers->connectAll();
+    /* We only want to call connect all if the friend list download was triggered by this button. */
+    if (!ui.updateFriendsButton->isEnabled()) {
+        ui.updateFriendsButton->setEnabled(true);
+        peers->connectAll();
+    }
 }
 
 void PeersDialog::chatFriend() {
@@ -272,6 +285,22 @@ void PeersDialog::sendFileFriend() {
 void PeersDialog::updatePeerStatusString(unsigned int friend_librarymixer_id, const QString &status_string) {
     PopupChatDialog *pcd = getChat(friend_librarymixer_id, false);
     if (pcd != NULL) pcd->updateStatusString(status_string);
+}
+
+void PeersDialog::connectionStateChanged(int newStatus) {
+    if (newStatus >= CONNECTION_STATUS_UNFIREWALLED) {
+        /* Now that the connection is ready, we can begin displaying the friends list. */
+        QObject::connect(guiNotify, SIGNAL(friendsChanged()), mainwindow->peersDialog, SLOT(insertPeers()));
+        insertPeers();
+        /* Undo all the tweaks we did to set the placeholder text. */
+        ui.friendsList->showColumn(FRIEND_NAME_COLUMN);
+        ui.friendsList->showColumn(FRIEND_STATUS_COLUMN);
+        ui.friendsList->header()->setResizeMode(FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Custom);
+        ui.friendsList->header()->resizeSection(FRIEND_ICON_AND_SORT_COLUMN, 30);
+        ui.friendsList->resizeColumnToContents(FRIEND_STATUS_COLUMN);
+        ui.friendsList->setSelectionMode(QAbstractItemView::SingleSelection);
+        ui.friendsList->header()->show();
+    }
 }
 
 void PeersDialog::addFriendClicked() {
@@ -400,12 +429,6 @@ QTreeWidgetItem *PeersDialog::getCurrentPeer() {
     QTreeWidgetItem *item = peerWidget->currentItem();
     if (!item) return NULL;
     return item;
-}
-
-void PeersDialog::resetUpdateTimer(){
-    int seconds = qrand() % 3600; //Random number of seconds between 0 and 1 hour
-    seconds += 1800; //Seconds is now between 30 and 90 minutes
-    updateTimer->start(seconds * 1000);
 }
 
 void PeersDialog::removeChat(unsigned int librarymixer_id) {

@@ -49,13 +49,14 @@ class pqissl;
 class pqissllistener: public pqilistener {
 public:
 
-    pqissllistener(struct sockaddr_in addr);
+    pqissllistener(struct sockaddr_in *addr);
 
     /**********************************************************************************
      * pqilistener interface
      **********************************************************************************/
 
-    /* Handles listening for connections and accepting incoming connections. */
+    /* Handles listening for connections and accepting incoming connections.
+       Called from AggregatedConnectionsToFriends's tick. */
     virtual int tick();
 
     /* Sets the address on which the listener will be listening. */

@@ -7,8 +7,8 @@
 
 #include "pqi/authmgr.h"
 #include "pqi/pqinotify.h"
-#include "pqi/pqisslpersongrp.h"
 #include "pqi/pqiloopback.h"
+#include "pqi/aggregatedConnections.h"
 
 #include "server/librarymixer-library.h"
 #include "server/librarymixer-friendlibrary.h"
@@ -52,8 +52,6 @@
 QString Init::basedir;
 QString Init::userdir;
 
-bool Init::udpListenerOnly;
-
 //Definition for the extern variables
 Files *files = NULL;
 ftServer *ftserver = NULL;
@@ -72,19 +70,15 @@ ftOffLMList *offLMList = NULL;
 ftTempList *tempList = NULL;
 MixologyService *mixologyService = NULL;
 StatusService *statusService = NULL;
+AggregatedConnectionsToFriends *aggregatedConnectionsToFriends = NULL;
 
 void Init::InitNetConfig() {
-    udpListenerOnly = false;
-
     /* Setup logging */
     setOutputLevel(LOG_WARNING);
 
     /* Setup more detailed logging for desired zones.
        For Testing purposes, can set any individual section to have greater logfile output. */
-    //setZoneLevel(PQL_DEBUG_BASIC, PQIHANDLERZONE);
-    setZoneLevel(LOG_DEBUG_ALL, UPNPHANDLERZONE);
-    setZoneLevel(LOG_DEBUG_ALL, TCP_STREAM_ZONE);
-    setZoneLevel(LOG_DEBUG_ALERT, PQISSLZONE);
+    //setZoneLevel(LOG_DEBUG_ALERT, TCP_STREAM_ZONE);
 }
 
 /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
@@ -142,15 +136,10 @@ void Init::processCmdLine(int argcIgnored, char **argvIgnored) {
                 }
                 std::cerr << "Opt for new Debug Level\n";
                 break;
-            case 'u':
-                udpListenerOnly = true;
-                std::cerr << "Opt for only udpListener\b";
-                break;
             case 'h':
                 std::cerr << "Help: " << std::endl;
                 std::cerr << "-w [password]     Set the password" << std::endl;
                 std::cerr << "-d [debuglevel]   Set the debuglevel" << std::endl;
-                std::cerr << "-u                Only listen to UDP" << std::endl;
                 exit(1);
                 break;
             default:
@@ -243,15 +232,6 @@ Control *Init::createControl(QString ownName) {
     /**************************** END WINDOWS/UNIX SPECIFIC PART ******************/
 
     /**************************************************************************/
-    /* Any Initial Configuration (Commandline Options)  */
-    /**************************************************************************/
-
-    unsigned long flags = 0;
-    if (udpListenerOnly) {
-        flags |= PQIPERSON_NO_LISTENER;
-    }
-
-    /**************************************************************************/
 
     QString saveDir;
     QString partialsDir;
@@ -280,8 +260,8 @@ Control *Init::createControl(QString ownName) {
 
     connMgr = new ConnectivityManager();
 
-    server->pqih = new pqisslpersongrp(flags);
-    connMgr->addMonitor(server->pqih);
+    aggregatedConnectionsToFriends = new AggregatedConnectionsToFriends();
+    connMgr->addMonitor(aggregatedConnectionsToFriends);
 
     /* Create this before LibraryMixerLibraryManager so it can use it to begin hashing files that need hashing. */
     QThread* fileWatcherThread = new QThread();
@@ -297,7 +277,7 @@ Control *Init::createControl(QString ownName) {
 
     /****** New Ft Server *****/
     files = ftserver = new ftServer();
-    ftserver->setP3Interface(server->pqih);
+    ftserver->setP3Interface(aggregatedConnectionsToFriends);
 
     ftserver->SetupFtServer();
 
@@ -307,28 +287,28 @@ Control *Init::createControl(QString ownName) {
 
     /* create Services */
     statusService = new StatusService();
-    server->pqih->addService(statusService);
+    aggregatedConnectionsToFriends->addService(statusService);
     connMgr->addMonitor(statusService);
 
     p3ChatService *chatservice = new p3ChatService();
-    server->pqih->addService(chatservice);
+    aggregatedConnectionsToFriends->addService(chatservice);
 
     mixologyService = new MixologyService();
-    server->pqih->addService(mixologyService);
+    aggregatedConnectionsToFriends->addService(mixologyService);
     ftserver->setupMixologyService();
 
     /**************************************************************************/
     /* (2) Load configuration files */
     /**************************************************************************/
 
-    server->pqih->load_transfer_rates();
+    aggregatedConnectionsToFriends->load_transfer_rates();
 
     /* Find IP and set up ports. */
     connMgr->connectionSetup();
-    server->pqih->init_listener();
+    aggregatedConnectionsToFriends->init_listener();
 
-    pqiloopback *ploop = new pqiloopback(authMgr->OwnCertId(), authMgr->OwnLibraryMixerId());
-    server->pqih->AddPQI(ploop);
+    pqiloopback *loopback = new pqiloopback(authMgr->OwnCertId(), authMgr->OwnLibraryMixerId());
+    aggregatedConnectionsToFriends->AddPQI(loopback);
 
     /* Setup GUI Interfaces. */
 

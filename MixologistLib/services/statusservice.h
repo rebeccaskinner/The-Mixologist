@@ -52,7 +52,7 @@ public:
      **********************************************************************************/
     /* Called by the ConnectivityManager's tick function with a list of pqipeers whose statuses have changed.
        If action is PEER_CONNECTED, sends an OnConnectStatusItem. */
-    virtual void statusChange(const std::list<pqipeer> &plist);
+    virtual void statusChange(const std::list<pqipeer> &changedFriends);
 
 private:
     time_t timeOfLastTry; //The time of the last status update sent out

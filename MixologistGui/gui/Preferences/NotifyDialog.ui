@@ -488,23 +488,24 @@
   <property name="contextMenuPolicy">
    <enum>Qt::NoContextMenu</enum>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+  <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
     <widget class="QGroupBox" name="groupBox_2">
      <property name="title">
       <string>System Tray Notifications</string>
      </property>
-     <layout class="QVBoxLayout" name="_2">
-      <property name="leftMargin">
-       <number>9</number>
-      </property>
-      <property name="topMargin">
-       <number>9</number>
-      </property>
+     <layout class="QVBoxLayout" name="verticalLayout">
+      <item>
+       <widget class="QCheckBox" name="tray_BadInternet">
+        <property name="text">
+         <string>When the Internet connection has firewall problems</string>
+        </property>
+       </widget>
+      </item>
       <item>
        <widget class="QCheckBox" name="tray_DownDone">
         <property name="text">
-         <string>On completion of download</string>
+         <string>On completion of downloads</string>
         </property>
        </widget>
       </item>

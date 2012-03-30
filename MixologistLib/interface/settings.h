@@ -46,11 +46,11 @@ const int DEFAULT_MAX_INDIVIDUAL_UPLOAD = 0;
 const int DEFAULT_MAX_TOTAL_UPLOAD = 0;
 
 const bool DEFAULT_NOTIFY_CONNECT = true;
+const bool DEFAULT_NOTIFY_BAD_INTERNET = true;
 const bool DEFAULT_NOTIFY_DOWNLOAD_DONE = true;
 
 const bool DEFAULT_UPNP = true;
-const int SET_TO_RANDOMIZED_PORT = -1;
-const int DEFAULT_PORT = SET_TO_RANDOMIZED_PORT;
+const int DEFAULT_PORT = -1;
 
 const bool DEFAULT_TUTORIAL_DONE_INITIAL = false;
 const bool DEFAULT_TUTORIAL_DONE_LIBRARY = false;

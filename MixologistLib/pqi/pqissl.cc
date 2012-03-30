@@ -26,6 +26,7 @@
 #include "util/net.h"
 #include "util/debug.h"
 
+#include "interface/librarymixer-connect.h"
 #include "interface/peers.h"
 
 #include <unistd.h>
@@ -67,12 +68,12 @@ pqissl::pqissl(pqissllistener *sslListener, PQInterface *parent)
      connectionState(STATE_IDLE), currentlyConnected(false),
      sslmode(PQISSL_ACTIVE), ssl_connection(NULL), mOpenSocket(-1),
      sslListener(sslListener),
-     net_attempt(0), net_failure(0), net_unreachable(0),
-     sameLAN(false), errorZeroReturnCount(0),
+     sameLAN(false), failedButRetry(false), errorZeroReturnCount(0),
      mRequestedConnectionDelay(0), mConnectionDelayedUntil(0),
      mConnectionAttemptTimeout(0), mConnectionAttemptTimeoutAt(0) {
     /* set address to zero */
     sockaddr_clear(&remote_addr);
+    isTcpOverUdpConnection = false;
 }
 
 pqissl::~pqissl() {
@@ -87,8 +88,6 @@ pqissl::~pqissl() {
  **********************************************************************************/
 
 int pqissl::connect(struct sockaddr_in raddr) {
-    //Reset failures
-    net_failure = 0;
     remote_addr = raddr;
     remote_addr.sin_family = AF_INET;
 
@@ -106,14 +105,10 @@ int pqissl::stoplistening() {
 }
 
 void pqissl::reset() {
-    {
-        QString toLog("pqissl::reset Resetting connection with: ");
-        toLog.append(peers->getPeerName(peers->findLibraryMixerByCertId(PeerId())));
-        toLog.append(" (");
-        toLog.append(inet_ntoa(remote_addr.sin_addr));
-        toLog.append(")");
-        log(LOG_DEBUG_ALERT, PQISSLZONE, toLog);
-    }
+    log(LOG_DEBUG_ALERT, PQISSLZONE,
+        "pqissl::reset Resetting connection with: " + QString::number(LibraryMixerId()) +
+        " at " + QString(inet_ntoa(remote_addr.sin_addr)) +
+        ":" + QString::number(ntohs(remote_addr.sin_port)));
 
     bool neededReset = false;
 
@@ -488,7 +483,7 @@ int pqissl::Initiate_Connection() {
 
             return 0;
         } else if ((errno == ENETUNREACH) || (errno == ETIMEDOUT)) {
-            out << "ENETUNREACHABLE: cert: " << LibraryMixerId();
+            out << "ENETUNREACHABLE: friend: " << LibraryMixerId();
             log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
 
             net_internal_close(socket);
@@ -598,25 +593,24 @@ int pqissl::Basic_Connection_Complete() {
         return -1;
     } else {
         if (err == 0) {
-            std::ostringstream out;
-            out << "Established basic connection to " << inet_ntoa(remote_addr.sin_addr) << ":" << ntohs(remote_addr.sin_port);
-            out << ", initializing encrypted connection";
-            log(LOG_WARNING, PQISSLZONE, out.str().c_str());
+            log(LOG_WARNING, PQISSLZONE,
+                QString("Established outgoing connection to ") + inet_ntoa(remote_addr.sin_addr) + ":" + QString::number(ntohs(remote_addr.sin_port)) +
+                ", initializing encrypted connection");
             return 1;
         }
 
         if (err == EINPROGRESS) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EINPROGRESS: cert: ") + LibraryMixerId());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EINPROGRESS: friend: ") + QString::number(LibraryMixerId()));
             return 0;
         }
 
         /* Handle the various error states. */
         if ((err == ENETUNREACH) || (err == ETIMEDOUT)) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ENETUNREACH/ETIMEDOUT: cert: ") + LibraryMixerId());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ENETUNREACH/ETIMEDOUT: friend: ") + QString::number(LibraryMixerId()));
         } else if ((err == EHOSTUNREACH) || (err == EHOSTDOWN)) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EHOSTUNREACH/EHOSTDOWN: cert: ") + LibraryMixerId());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() EHOSTUNREACH/EHOSTDOWN: friend: ") + QString::number(LibraryMixerId()));
         } else if ((err == ECONNREFUSED)) {
-            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ECONNREFUSED: cert: ") + LibraryMixerId());
+            log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Basic_Connection_Complete() ECONNREFUSED: friend: ") + QString::number(LibraryMixerId()));
         } else {
             log(LOG_DEBUG_ALERT, PQISSLZONE, "Error: Connection Failed UNKNOWN ERROR: " + QString::number(err) +
                                              " - " + socket_errorType(err).c_str());
@@ -684,7 +678,7 @@ int pqissl::SSL_Connection_Complete() {
     }
 
     if (result == 1) {
-        log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::SSL_Connection_Complete() Success!: Peer: ") + LibraryMixerId());
+        log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::SSL_Connection_Complete() Success!: Peer: ") + QString::number(LibraryMixerId()));
         connectionState = STATE_WAITING_FOR_SSL_AUTHORIZE;
         return 1;
     } else {
@@ -694,12 +688,52 @@ int pqissl::SSL_Connection_Complete() {
             return 0;
         }
 
-        log(LOG_WARNING, PQISSLZONE, "Unable to set up encrypted connection, possibly because friend needs to update encryption key list from server\n");
+        int error = ERR_get_error();
 
-        std::ostringstream out;
-        out << "Issues with SSL connection (mode: " << sslmode << ")!" << std::endl;
-        printSSLError(ssl_connection, result, sslError, ERR_get_error(), out);
-        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
+        bool unrecognizedCertificate = false;
+        /* Depending on whether we are considered the SSL server or client, these will be the two errors for an unrecognized certificate. */
+        if (ERR_GET_LIB(error) == ERR_LIB_SSL &&
+            ERR_GET_FUNC(error) == SSL_F_SSL3_GET_CLIENT_CERTIFICATE &&
+            ERR_GET_REASON(error) == SSL_R_NO_CERTIFICATE_RETURNED) {
+            unrecognizedCertificate = true;
+        }
+        if (ERR_GET_LIB(error) == ERR_LIB_SSL &&
+            ERR_GET_FUNC(error) == SSL_F_SSL3_GET_SERVER_CERTIFICATE &&
+            ERR_GET_REASON(error) == SSL_R_CERTIFICATE_VERIFY_FAILED) {
+            unrecognizedCertificate = true;
+        }
+
+        bool friendDisconnected = false;
+        /* Not seeing this in the OpenSSL documentation,
+           but this is what we get when our friend disconnects us due to not recognizing our cert on an ordinary pqissl connection,
+           and also sometimes on pqissludp connection. */
+        if (ERR_GET_LIB(error) == 0 &&
+                         ERR_GET_FUNC(error) == 0 &&
+                         ERR_GET_REASON(error) == 0) {
+            friendDisconnected = true;
+        }
+        /* This is what we get when our friend disconnects us due to not recognizing our cert with the way OpenSSL is set up on a pqissludp connection,
+           at least part of the time. */
+        if (ERR_GET_LIB(error) == ERR_LIB_SSL &&
+            ERR_GET_FUNC(error) == SSL_F_SSL3_READ_BYTES &&
+            ERR_GET_REASON(error) == SSL_R_SSLV3_ALERT_CERTIFICATE_UNKNOWN) {
+            friendDisconnected = true;
+        }
+
+        if (unrecognizedCertificate) {
+            log(LOG_WARNING, PQISSLZONE, "Connected to friend's address but received an unrecognized encryption key, disconnecting and updating friend list.");
+            /* If SSL failed because of an unrecognized encryption certificate, we should update our certificates from LibraryMixer. */
+            librarymixerconnect->downloadFriends();
+        } else if (friendDisconnected) {
+            log(LOG_WARNING, PQISSLZONE, "Friend disconnected before encryption initialization was completed, possibly to update friend list");
+            if (!isTcpOverUdpConnection) failedButRetry = true;
+        } else {
+            log(LOG_WARNING, PQISSLZONE, "Error establishing encrypted connection, disconnecting");
+            std::ostringstream out;
+            out << "Issues with SSL connection (mode: " << sslmode << ")!" << std::endl;
+            printSSLError(ssl_connection, result, sslError, error, out);
+            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
+        }
 
         reset();
         connectionState = STATE_FAILED;
@@ -741,7 +775,7 @@ int pqissl::Authorize_SSL_Connection() {
        can always take STATE_IDLE to indicate no problems. */
     connectionState = STATE_IDLE;
 
-    log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Authorize_SSL_Connection() Accepting Conn. Peer: ") + LibraryMixerId());
+    log(LOG_DEBUG_ALERT, PQISSLZONE, QString("pqissl::Authorize_SSL_Connection() Accepting Conn. Peer: ") + QString::number(LibraryMixerId()));
 
     accept(ssl_connection, mOpenSocket, remote_addr);
     return 1;
@@ -797,10 +831,8 @@ int pqissl::accept(SSL *ssl, int socket, struct sockaddr_in foreign_addr) { // i
        but if this is an inbound connection from pqissllistener then we need to save the address. */
     remote_addr = foreign_addr;
 
-    /* Check whether new connection is on the same LAN. */
-    peerConnectState ownDetails;
-    connMgr->getPeerConnectState(authMgr->OwnLibraryMixerId(), ownDetails);
-    sameLAN = isSameSubnet(&(remote_addr.sin_addr), &(ownDetails.localaddr.sin_addr));
+
+    sameLAN = isSameSubnet(&(remote_addr.sin_addr), &(connMgr->getOwnLocalAddress()->sin_addr));
 
     /* Make socket non-blocking. */
     int err = net_internal_fcntl_nonblock(mOpenSocket);
@@ -820,7 +852,7 @@ int pqissl::accept(SSL *ssl, int socket, struct sockaddr_in foreign_addr) { // i
     currentlyConnected = true;
     connectionState = STATE_IDLE;
 
-    /* Notify the pqiperson. */
+    /* Notify the ConnectionToFriend. */
     if (parent()) parent()->notifyEvent(this, NET_CONNECT_SUCCESS);
 
     log(LOG_WARNING, PQISSLZONE, QString("Completed creating encrypted connection with ") +
@@ -836,7 +868,12 @@ int pqissl::acceptInbound(SSL *ssl, int fd, struct sockaddr_in foreign_addr) {
 int pqissl::Failed_Connection() {
     log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::ConnectAttempt() Failed - Notifying");
 
-    if (parent()) parent()->notifyEvent(this, NET_CONNECT_UNREACHABLE);
+    if (parent()) {
+        if (failedButRetry)
+            parent()->notifyEvent(this, NET_CONNECT_FAILED_RETRY);
+        else
+            parent()->notifyEvent(this, NET_CONNECT_FAILED);
+    }
 
     connectionState = STATE_IDLE;
 

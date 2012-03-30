@@ -35,34 +35,17 @@
 #include <sys/time.h>
 #include <time.h>
 
-/* Debugging for STATE change, and Startup SYNs */
 #include "util/debug.h"
-
-/*
- * #define DEBUG_TCP_STREAM 1
- */
-
-//TODO remove
-#define DEBUG_TCP_STREAM 1
-
-/*
- *#define DEBUG_TCP_STREAM_EXTRA 1
- */
 
 /*
  * #define TCP_NO_PARTIAL_READ 1
  */
 
-#ifdef DEBUG_TCP_STREAM
-int checkData(uint8 *data, int size, int idx);
-int setupBinaryCheck(std::string fname);
-#endif
-
 static const uint32 kMaxQueueSize = 100;
 static const uint32 kMaxPktRetransmit = 20;
 static const uint32 kMaxSynPktRetransmit = 1000; // up to 1000 (16 min?) startup
-static const int    TCP_STD_TTL = 64;
-static const int    TCP_DEFAULT_FIREWALL_TTL = 4;
+static const int TCP_STD_TTL = 64;
+static const int TCP_DEFAULT_FIREWALL_TTL = 4;
 
 static const double RTT_ALPHA = 0.875;
 
@@ -98,22 +81,15 @@ TcpStream::TcpStream(UdpSorter *lyr)
 
 /* Stream Control! */
 int TcpStream::connect(const struct sockaddr_in &raddr, uint32_t conn_period) {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     setRemoteAddress(raddr);
 
     /* check state */
     if (state != TCP_CLOSED) {
-        if (state == TCP_ESTABLISHED) {
-            tcpMtx.unlock();
-            return 0;
-        } else if (state < TCP_ESTABLISHED) {
-            errorState = EAGAIN;
-        } else {
-            // major issues!
-            errorState = EFAULT;
-        }
-        tcpMtx.unlock();
+        if (state == TCP_ESTABLISHED) return 0;
+        else if (state < TCP_ESTABLISHED) errorState = EAGAIN;
+        else errorState = EFAULT;
         return -1;
     }
 
@@ -125,27 +101,28 @@ int TcpStream::connect(const struct sockaddr_in &raddr, uint32_t conn_period) {
     inWinSize = maxWinSize;
 
     congestThreshold = TCP_MAX_WIN;
-    congestWinSize   = MAX_SEG;
-    congestUpdate    = outAcked + congestWinSize;
+    congestWinSize = MAX_SEG;
+    congestUpdate = outAcked + congestWinSize;
 
     /* Init Connection */
     /* send syn packet */
     TcpPacket *pkt = new TcpPacket();
-    pkt -> setSyn();
-
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::connect() Send Init Pkt" << std::endl;
-#endif
-
+    pkt->setSyn();
 
     /* ********* SLOW START *************
      * As this is the only place where a syn
      * is sent ..... we switch the ttl to 0,
      * and increment it as we retransmit the packet....
      * This should help the firewalls along.
+     * ******
+     * Note about above: This is what they had here, I can't say I understand the rationale:
+     *     setTTL(1);
+     * I can say that by setting a short TTL, we were unable to connect over the Internet.
+     * By now setting a normal TTL, we can now connect over the Internet.
+     * Not sure what the benefits of helping firewalls they were suggesting might have been.
      */
 
-    setTTL(1);
+    setTTL(TCP_STD_TTL);
 
     mTTL_start  = getCurrentTS();
     mTTL_period = conn_period;
@@ -158,120 +135,55 @@ int TcpStream::connect(const struct sockaddr_in &raddr, uint32_t conn_period) {
 
     log(LOG_DEBUG_BASIC, TCP_STREAM_ZONE, "TcpStream::connect state => TCP_SYN_SENT");
 
-    tcpMtx.unlock();
-
     return -1;
 }
 
 
 int TcpStream::listenfor(const struct sockaddr_in &raddr) {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     setRemoteAddress(raddr);
 
     /* check state */
     if (state != TCP_CLOSED) {
-        if (state == TCP_ESTABLISHED) {
-            tcpMtx.unlock();
-            return 0;
-        } else if (state < TCP_ESTABLISHED) {
-            errorState = EAGAIN;
-        } else {
-            // major issues!
-            errorState = EFAULT;
-        }
-        tcpMtx.unlock();
+        if (state == TCP_ESTABLISHED) return 0;
+        else if (state < TCP_ESTABLISHED) errorState = EAGAIN;
+        else errorState = EFAULT;
         return -1;
     }
 
     errorState = EAGAIN;
-    tcpMtx.unlock();
     return -1;
 }
 
 
 /* Stream Control! */
 int TcpStream::close() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     cleanup();
 
-    tcpMtx.unlock();
     return 0;
 }
 
-int TcpStream::closeWrite() {
-    tcpMtx.lock();
+int TcpStream::reset() {
+    QMutexLocker stack(&tcpMtx);
 
-    /* check state */
-    /* will always close socket.... */
-    /* if in TCP_ESTABLISHED....
-     * -> to state: TCP_FIN_WAIT_1
-     * and shutdown outward stream.
-     */
+    TcpPacket *pkt = new TcpPacket();
+    pkt->setRst();
+    toSend(pkt);
 
-    /* if in CLOSE_WAIT....
-     * -> to state: TCP_LAST_ACK
-     * and shutdown outward stream.
-     * do this one first!.
-     */
-
-    outStreamActive = false;
-
-    if (state == TCP_CLOSE_WAIT) {
-        /* don't think we need to be
-         * graceful at this point...
-         * connection already closed by other end.
-         * XXX might fix later with scheme
-         *
-         * flag stream closed, and when outqueue
-         * emptied then fin will be sent.
-         */
-
-        /* do nothing */
-    }
-
-    if (state == TCP_ESTABLISHED) {
-        /* fire off the damned thing. */
-        /* by changing state */
-
-        /* again this is handled by internals
-         * the flag however indicates that
-         * no more data can be send,
-         * and once the queue empties
-         * the FIN will be sent.
-         */
-
-    }
-    if (state == TCP_CLOSED) {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::close() Flag Set" << std::endl;
-#endif
-        tcpMtx.unlock();
-        return 0;
-    }
-
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::close() pending" << std::endl;
-#endif
-    errorState = EAGAIN;
-
-    tcpMtx.unlock();
-    return -1;
+    return 0;
 }
 
 bool TcpStream::isConnected() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
-    bool isConn = (state == TCP_ESTABLISHED);
-
-    tcpMtx.unlock();
-
-    return isConn;
+    return (state == TCP_ESTABLISHED);
 }
 
 int TcpStream::status(std::ostream &out) {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     int tmpstate = state;
 
@@ -289,21 +201,19 @@ int TcpStream::status(std::ostream &out) {
     out << std::endl;
     out << "outPkts: " << outPkt.size() << " packets waiting for acks";
     out << std::endl;
-    out << "us -> peer: nextSeqno: " << outSeqno << " lastAcked: " << outAcked;
+    out << "us->peer: nextSeqno: " << outSeqno << " lastAcked: " << outAcked;
     out << " winsize: " << outWinSize;
     out << std::endl;
-    out << "peer -> us: Expected SeqNo: " << inAckno;
+    out << "peer->us: Expected SeqNo: " << inAckno;
     out << " winsize: " << inWinSize;
     out << std::endl;
     out << std::endl;
-
-    tcpMtx.unlock();
 
     return tmpstate;
 }
 
 int TcpStream::write_allowed() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     int ret = 1;
     if (state == TCP_CLOSED) {
@@ -317,18 +227,15 @@ int TcpStream::write_allowed() {
         ret = -1;
     }
 
-    if (ret < 1) {
-        tcpMtx.unlock();
-        return ret;
-    }
+    if (ret < 1) return ret;
 
     int maxwrite = (kMaxQueueSize -  inQueue.size()) * MAX_SEG;
-    tcpMtx.unlock();
+
     return maxwrite;
 }
 
 int TcpStream::read_pending() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     /* error should be detected next time */
     int maxread = int_read_pending();
@@ -340,8 +247,6 @@ int TcpStream::read_pending() {
         maxread = -1;
     }
 
-    tcpMtx.unlock();
-
     return maxread;
 }
 
@@ -352,83 +257,37 @@ int TcpStream::int_read_pending() {
 
 
 /* stream Interface */
-int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
-    tcpMtx.lock();
+int TcpStream::write(char *dta, int size) { /* write->pkt->net */
+    QMutexLocker stack(&tcpMtx);
     int ret = 1; /* initial error checking */
 
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    static uint32 TMPtotalwrite = 0;
-#endif
 
     if (state == TCP_CLOSED) {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::write() Error TCP_CLOSED" << std::endl;
-#endif
         errorState = EBADF;
         ret = -1;
     } else if (state < TCP_ESTABLISHED) {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::write() Error TCP Not Established" << std::endl;
-#endif
         errorState = EAGAIN;
         ret = -1;
     } else if (inQueue.size() > kMaxQueueSize) {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::write() Error EAGAIN" << std::endl;
-#endif
         errorState = EAGAIN;
         ret = -1;
     } else if (!outStreamActive) {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::write() Error TCP_CLOSED" << std::endl;
-#endif
         errorState = EBADF;
         ret = -1;
     }
 
     if (ret < 1) { /* check for initial error */
-        tcpMtx.unlock();
         return ret;
     }
 
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    std::cerr << "TcpStream::write() = Will Succeed " << size << std::endl;
-    std::cerr << "TcpStream::write() Write Start: " << TMPtotalwrite << std::endl;
-    std::cerr << printPktOffset(TMPtotalwrite, dta, size) << std::endl;
-    TMPtotalwrite += size;
-#endif
-
-
     if (size + inSize < MAX_SEG) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::write() Add Itty Bit" << std::endl;
-        std::cerr << "TcpStream::write() inData: " << (void *) inData;
-        std::cerr << " inSize: " << inSize << " dta: " << (void *) dta;
-        std::cerr << " size: " << size << " dest: " << (void *) &(inData[inSize]);
-        std::cerr << std::endl;
-#endif
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::write() = " << size << std::endl;
-#endif
         memcpy((void *) &(inData[inSize]), dta, size);
         inSize += size;
-        //std::cerr << "Small Packet - write to net:" << std::endl;
-        //std::cerr << printPkt(dta, size) << std::endl;
 
-        tcpMtx.unlock();
         return size;
     }
 
-    /* otherwise must construct a dataBuffer.
-     */
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    std::cerr << "TcpStream::write() filling 1 dataBuffer" << std::endl;
-    std::cerr << "TcpStream::write() from inData(" << inSize << ")" << std::endl;
-    std::cerr << "TcpStream::write() +       dta(" << MAX_SEG - inSize;
-    std::cerr << "/" << size << ")" << std::endl;
-#endif
+    /* otherwise must construct a dataBuffer. */
 
     /* first create 1. */
     dataBuffer *db = new dataBuffer;
@@ -441,15 +300,7 @@ int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
     inQueue.push_back(db);
     remSize -= (MAX_SEG - inSize);
 
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    std::cerr << "TcpStream::write() remaining " << remSize << " bytes to load" << std::endl;
-#endif
-
     while (remSize >= MAX_SEG) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::write() filling whole dataBuffer" << std::endl;
-        std::cerr << "TcpStream::write() from dta[" << size-remSize << "]" << std::endl;
-#endif
         db = new dataBuffer;
         memcpy((void *) db->data, (void *) &(dta[size-remSize]), MAX_SEG);
 
@@ -457,37 +308,19 @@ int TcpStream::write(char *dta, int size) { /* write -> pkt -> net */
         remSize -= MAX_SEG;
     }
 
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::write() = " << size << std::endl;
-#endif
-
     if (remSize > 0) {
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::write() putting last bit in inData" << std::endl;
-        std::cerr << "TcpStream::write() from dta[" << size-remSize << "] size: ";
-        std::cerr << remSize << std::endl;
-#endif
         memcpy((void *) inData, (void *) &(dta[size-remSize]), remSize);
         inSize = remSize;
     } else {
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::write() Data fitted exactly in dataBuffer!" << std::endl;
-#endif
         inSize = 0;
     }
 
-    tcpMtx.unlock();
     return size;
 }
 
-int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
-    tcpMtx.lock();
+int TcpStream::read(char *dta, int size) { /* net->  pkt->read */
+    QMutexLocker stack(&tcpMtx);
 
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    static  uint32 TMPtotalread = 0;
-#endif
     /* max available data is
      * outDataRead + outQueue + outDataNet
      */
@@ -510,23 +343,12 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
         ret = -1;
     }
 
-    if (ret < 1) { /* if ret has been changed */
-        tcpMtx.unlock();
-        return ret;
-    }
+    if (ret < 1) return ret;
 
     if (maxread < size) {
 #ifdef TCP_NO_PARTIAL_READ
         if (inStreamActive) {
-
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::read() No Partial Read! ";
-            std::cerr << "Can only supply " << maxread << " of ";
-            std::cerr << size;
-            std::cerr << std::endl;
-#endif
             errorState = EAGAIN;
-            tcpMtx.unlock();
             return -1;
         }
 #endif /* TCP_NO_PARTIAL_READ */
@@ -535,99 +357,42 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
 
     /* if less than outDataRead size */
     if (((unsigned) (size) < outSizeRead) && (outSizeRead)) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() Add Itty Bit" << std::endl;
-        std::cerr << "TcpStream::read() outSizeRead: " << outSizeRead;
-        std::cerr << " size: " << size << " remaining: " << outSizeRead - size;
-        std::cerr << std::endl;
-#endif
         memcpy(dta,(void *) outDataRead, size);
         memmove((void *) outDataRead,
                 (void *) &(outDataRead[size]), outSizeRead - (size));
         outSizeRead -= size;
 
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() = Succeeded " << size << std::endl;
-        std::cerr << "TcpStream::read() Read Start: " << TMPtotalread << std::endl;
-        std::cerr << printPktOffset(TMPtotalread, dta, size) << std::endl;
-#endif
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        checkData((uint8 *) dta, size, TMPtotalread);
-        TMPtotalread += size;
-#endif
-
         /* can allow more in! - update inWinSize */
         UpdateInWinSize();
 
-        tcpMtx.unlock();
         return size;
     }
 
     /* move the whole of outDataRead. */
     if (outSizeRead) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() Move All outSizeRead" << std::endl;
-        std::cerr << "TcpStream::read() outSizeRead: " << outSizeRead;
-        std::cerr << " size: " << size;
-        std::cerr << std::endl;
-#endif
         memcpy(dta,(void *) outDataRead, outSizeRead);
-
     }
 
     int remSize = size - outSizeRead;
     outSizeRead = 0;
 
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    std::cerr << "TcpStream::read() remaining size: " << remSize << std::endl;
-#endif
-
     while ((outQueue.size() > 0) && (remSize > 0)) {
         dataBuffer *db = outQueue.front();
         outQueue.pop_front(); /* remove */
 
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() Taking Data from outQueue" << std::endl;
-#endif
-
         /* load into outDataRead */
         if (remSize < MAX_SEG) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-            std::cerr << "TcpStream::read() Partially using Segment" << std::endl;
-            std::cerr << "TcpStream::read() moving: " << remSize << " to dta @: " << size-remSize;
-            std::cerr << std::endl;
-            std::cerr << "TcpStream::read() rest to outDataRead: " << MAX_SEG - remSize;
-            std::cerr << std::endl;
-#endif
             memcpy((void *) &(dta[(size)-remSize]), (void *) db->data, remSize);
             memcpy((void *) outDataRead, (void *) &(db->data[remSize]), MAX_SEG - remSize);
             outSizeRead = MAX_SEG - remSize;
 
             delete db;
 
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-            std::cerr << "TcpStream::read() = Succeeded " << size << std::endl;
-            std::cerr << "TcpStream::read() Read Start: " << TMPtotalread << std::endl;
-            std::cerr << printPktOffset(TMPtotalread, dta, size) << std::endl;
-#endif
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-            checkData((uint8 *) dta, size, TMPtotalread);
-            TMPtotalread += size;
-#endif
-
             /* can allow more in! - update inWinSize */
             UpdateInWinSize();
 
-            tcpMtx.unlock();
             return size;
         }
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() Move Whole Segment to dta @ " << size-remSize << std::endl;
-#endif
 
         /* else copy whole segment */
         memcpy((void *) &(dta[(size)-remSize]), (void *) db->data, MAX_SEG);
@@ -639,12 +404,6 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
      * constraint
      */
     if ((remSize > 0)) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() Using up : " << remSize;
-        std::cerr << " last Bytes, leaving: " << outSizeNet - remSize << std::endl;
-#endif
-
-
         memcpy((void *) &(dta[(size)-remSize]),(void *) outDataNet, remSize);
         outSizeNet -= remSize;
         if (outSizeNet > 0) {
@@ -652,144 +411,66 @@ int TcpStream::read(char *dta, int size) { /* net ->   pkt -> read */
             memcpy((void *) outDataRead,(void *) &(outDataNet[remSize]), outSizeNet);
             outSizeRead = outSizeNet;
             outSizeNet = 0;
-#ifdef DEBUG_TCP_STREAM_EXTRA
-            std::cerr << "TcpStream::read() moving last of outSizeNet to outSizeRead: " << outSizeRead;
-            std::cerr << std::endl;
-#endif
-
         }
-
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        std::cerr << "TcpStream::read() = Succeeded " << size << std::endl;
-        std::cerr << "TcpStream::read() Read Start: " << TMPtotalread << std::endl;
-        std::cerr << printPktOffset(TMPtotalread, dta, size) << std::endl;
-#endif
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        checkData((uint8 *) dta, size, TMPtotalread);
-        TMPtotalread += size;
-#endif
 
         /* can allow more in! - update inWinSize */
         UpdateInWinSize();
 
-
-        tcpMtx.unlock();
         return size;
     }
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    std::cerr << "TcpStream::read() = Succeeded " << size << std::endl;
-    std::cerr << "TcpStream::read() Read Start: " << TMPtotalread << std::endl;
-    std::cerr << printPktOffset(TMPtotalread, dta, size) << std::endl;
-#endif
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    checkData((uint8 *) dta, size, TMPtotalread);
-    TMPtotalread += size;
-#endif
 
     /* can allow more in! - update inWinSize */
     UpdateInWinSize();
 
-    tcpMtx.unlock();
     return size;
 }
 
 
 /* Callback from lower Layers */
-void    TcpStream::recvPkt(void *data, int size) {
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::recvPkt()";
-    std::cerr << std::endl;
-#endif
-
-    tcpMtx.lock();
+void TcpStream::recvPkt(void *data, int size) {
+    QMutexLocker stack(&tcpMtx);
     uint8 *input = (uint8 *) data;
 
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::recvPkt() Past Lock!";
-    std::cerr << std::endl;
-#endif
-
-#ifdef DEBUG_TCP_STREAM
-    if (state > TCP_SYN_RCVD) {
-        int availRead = outSizeRead + outQueue.size() * MAX_SEG + outSizeNet;
-        std::cerr << "TcpStream::recvPkt() CC: ";
-        std::cerr << "  iWS: " << inWinSize;
-        std::cerr << "  aRead: " << availRead;
-        std::cerr << "  iAck: " << inAckno;
-        std::cerr << std::endl;
-    } else {
-        std::cerr << "TcpStream::recv() Not Connected";
-        std::cerr << std::endl;
-    }
-#endif
-
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::recv() ReadPkt(" << size << ")" << std::endl;
-    //std::cerr << printPkt(input, size);
-    //std::cerr << std::endl;
-#endif
     TcpPacket *pkt = new TcpPacket();
-    if (0 < pkt -> readPacket(input, size)) {
+    if (0 < pkt->readPacket(input, size)) {
         lastIncomingPkt = getCurrentTS();
         handleIncoming(pkt);
     } else {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::recv() Bad Packet Deleting!";
-        std::cerr << std::endl;
-#endif
         delete pkt;
     }
-    tcpMtx.unlock();
-    return;
 }
 
 
 int TcpStream::tick() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     //std::cerr << "TcpStream::tick()" << std::endl;
     recv_check(); /* recv is async */
     send();
 
-    tcpMtx.unlock();
-
     return 1;
 }
 
 bool TcpStream::getRemoteAddress(struct sockaddr_in &raddr) {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
     if (peerKnown) {
         raddr = peeraddr;
     }
 
-    tcpMtx.unlock();
-
     return peerKnown;
 }
 
-uint8   TcpStream::TcpState() {
-    tcpMtx.lock();
+uint8 TcpStream::TcpState() {
+    QMutexLocker stack(&tcpMtx);
 
-    uint8 err = state;
-
-    tcpMtx.unlock();
-
-    return err;
+    return state;
 }
 
 int TcpStream::TcpErrorState() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
 
-    int err = errorState;
-
-    tcpMtx.unlock();
-
-    return err;
+    return errorState;
 }
 
 
@@ -799,67 +480,51 @@ int TcpStream::TcpErrorState() {
 static int ilevel = 100;
 
 bool TcpStream::widle() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
     /* init */
     if (!lastWriteTF) {
         lastWriteTF = int_wbytes();
-        tcpMtx.unlock();
         return false;
     }
 
     if ((lastWriteTF == int_wbytes()) && (inSize + inQueue.size() == 0)) {
         wcount++;
-        if (wcount > ilevel) {
-            tcpMtx.unlock();
-            return true;
-        }
-        tcpMtx.unlock();
-        return false;
+        if (wcount > ilevel) return true;
+        else return false;
     }
     wcount = 0;
     lastWriteTF = int_wbytes();
 
-    tcpMtx.unlock();
     return false;
 }
 
 
 bool TcpStream::ridle() {
-    tcpMtx.lock();
+    QMutexLocker stack(&tcpMtx);
     /* init */
     if (!lastReadTF) {
         lastReadTF = int_rbytes();
-        tcpMtx.unlock();
         return false;
     }
 
     if ((lastReadTF == int_rbytes()) && (outSizeRead + outQueue.size() + outSizeNet== 0)) {
         rcount++;
-        if (rcount > ilevel) {
-            tcpMtx.unlock();
-            return true;
-        }
-        tcpMtx.unlock();
-        return false;
+        if (rcount > ilevel) return true;
+        else return false;
     }
     rcount = 0;
     lastReadTF = int_rbytes();
-    tcpMtx.unlock();
     return false;
 }
 
 uint32 TcpStream::wbytes() {
-    tcpMtx.lock();
-    uint32 wb = int_wbytes();
-    tcpMtx.unlock();
-    return wb;
+    QMutexLocker stack(&tcpMtx);
+    return int_wbytes();
 }
 
 uint32 TcpStream::rbytes() {
-    tcpMtx.lock();
-    uint32 rb = int_rbytes();
-    tcpMtx.unlock();
-    return rb;
+    QMutexLocker stack(&tcpMtx);
+    return int_rbytes();
 }
 
 /********************* ALL BELOW HERE IS INTERNAL ******************
@@ -868,23 +533,9 @@ uint32 TcpStream::rbytes() {
 int TcpStream::recv_check() {
     double cts = getCurrentTS(); // fractional seconds.
 
-#ifdef DEBUG_TCP_STREAM
-    if (state > TCP_SYN_RCVD) {
-        int availRead = outSizeRead + outQueue.size() * MAX_SEG + outSizeNet;
-        std::cerr << "TcpStream::recv_check() CC: ";
-        std::cerr << "  iWS: " << inWinSize;
-        std::cerr << "  aRead: " << availRead;
-        std::cerr << "  iAck: " << inAckno;
-        std::cerr << std::endl;
-    } else {
-        std::cerr << "TcpStream::recv_check() Not Connected";
-        std::cerr << std::endl;
-    }
-#endif
-
     // make sure we've rcvd something!
     if ((state > TCP_SYN_RCVD) &&
-            (cts - lastIncomingPkt > kNoPktTimeout)) {
+        (cts - lastIncomingPkt > kNoPktTimeout)) {
         /* shut it all down */
         /* this period should be equivalent
          * to the firewall timeouts ???
@@ -908,7 +559,7 @@ int TcpStream::cleanup() {
     state = TCP_CLOSED;
     log(LOG_DEBUG_BASIC, TCP_STREAM_ZONE, "TcpStream::cleanup state => TCP_CLOSED");
 
-    //peerKnown = false; //??? NOT SURE -> for a rapid reconnetion this might be key??
+    //peerKnown = false; //??? NOT SURE->for a rapid reconnetion this might be key??
 
     /* reset TTL */
     setTTL(TCP_STD_TTL);
@@ -951,7 +602,7 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
         case TCP_CLOSED:
         case TCP_LISTEN:
             /* if receive SYN
-             * -> respond SYN/ACK
+             *->respond SYN/ACK
              * To State: SYN_RCVD
              *
              * else Discard.
@@ -960,11 +611,11 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
             break;
         case TCP_SYN_SENT:
             /* if receive SYN
-             * -> respond SYN/ACK
+             *->respond SYN/ACK
              * To State: SYN_RCVD
              *
              * if receive SYN+ACK
-             * -> respond ACK
+             *->respond ACK
              * To State: TCP_ESTABLISHED
              *
              * else Discard.
@@ -979,7 +630,7 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
             break;
         case TCP_ESTABLISHED:
             /* if receive FIN
-             * -> respond ACK
+             *->respond ACK
              * To State: TCP_CLOSE_WAIT
              * else Discard.
              */
@@ -988,15 +639,15 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
         case TCP_FIN_WAIT_1:
             /* state entered by close() call.
              * if receive FIN
-             * -> respond ACK
+             *->respond ACK
              * To State: TCP_CLOSING
              *
              * if receive ACK
-             * -> no response
+             *->no response
              * To State: TCP_FIN_WAIT_2
              *
              * if receive FIN+ACK
-             * -> respond ACK
+             *->respond ACK
              * To State: TCP_TIMED_WAIT
              *
              */
@@ -1005,7 +656,7 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
             break;
         case TCP_FIN_WAIT_2:
             /* if receive FIN
-             * -> respond ACK
+             *->respond ACK
              * To State: TCP_TIMED_WAIT
              */
             return incoming_Established(pkt);
@@ -1045,7 +696,7 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
         case TCP_TIMED_WAIT:
             /* State: TCP_TIMED_WAIT
              *
-             * discard all -> both connections FINed
+             * discard all->both connections FINed
              * timeout of this state.
              *
              */
@@ -1066,22 +717,19 @@ int TcpStream::handleIncoming(TcpPacket *pkt) {
 
 int TcpStream::incoming_Closed(TcpPacket *pkt) {
     /* if receive SYN
-     * -> respond SYN/ACK
+     *->respond SYN/ACK
      * To State: SYN_RCVD
      *
      * else Discard.
      */
 
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::incoming_Closed()" << std::endl;
-#endif
-    if ((pkt -> hasSyn()) && (!pkt -> hasAck())) {
+    if ((pkt->hasSyn()) && (!pkt->hasAck())) {
         /* Init Connection */
 
         /* save seqno */
-        initPeerSeqno = pkt -> seqno;
+        initPeerSeqno = pkt->seqno;
         inAckno = initPeerSeqno + 1;
-        outWinSize = pkt -> winsize;
+        outWinSize = pkt->winsize;
 
 
         inWinSize = maxWinSize;
@@ -1103,20 +751,14 @@ int TcpStream::incoming_Closed(TcpPacket *pkt) {
             congestWinSize   = MAX_SEG;
             congestUpdate    = outAcked + congestWinSize;
 
-            rsp -> setSyn();
+            rsp->setSyn();
         }
 
-        rsp -> setAck(inAckno);
+        rsp->setAck(inAckno);
         /* seq + winsize set in toSend() */
 
         /* as we have received something ... we can up the TTL */
         setTTL(TCP_STD_TTL);
-
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::incoming_Closed() Sending reply" << std::endl;
-        std::cerr << "SeqNo: " << rsp->seqno << " Ack: " << rsp->ackno;
-        std::cerr << std::endl;
-#endif
 
         toSend(rsp);
         /* change state */
@@ -1131,25 +773,21 @@ int TcpStream::incoming_Closed(TcpPacket *pkt) {
 
 int TcpStream::incoming_SynSent(TcpPacket *pkt) {
     /* if receive SYN
-     * -> respond SYN/ACK
+     *->respond SYN/ACK
      * To State: SYN_RCVD
      *
      * if receive SYN+ACK
-     * -> respond ACK
+     *->respond ACK
      * To State: TCP_ESTABLISHED
      *
      * else Discard.
      */
 
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::incoming_SynSent()" << std::endl;
-#endif
-
-    if ((pkt -> hasSyn()) && (pkt -> hasAck())) {
+    if ((pkt->hasSyn()) && (pkt->hasAck())) {
         /* check stuff */
-        if (pkt -> getAck() != outSeqno) {
+        if (pkt->getAck() != outSeqno) {
             //TODO this shouldn't be this high logging
-            log(LOG_WARNING, TCP_STREAM_ZONE, "TcpStream::incoming_SynSent() Bad Ack - " + QString::number(pkt -> getAck()));
+            log(LOG_WARNING, TCP_STREAM_ZONE, "TcpStream::incoming_SynSent() Bad Ack - " + QString::number(pkt->getAck()));
             delete pkt;
             return -1;
         }
@@ -1157,12 +795,12 @@ int TcpStream::incoming_SynSent(TcpPacket *pkt) {
         /* Complete Connection */
 
         /* save seqno */
-        initPeerSeqno = pkt -> seqno;
+        initPeerSeqno = pkt->seqno;
         inAckno = initPeerSeqno + 1;
 
-        outWinSize = pkt -> winsize;
+        outWinSize = pkt->winsize;
 
-        outAcked = pkt -> getAck();
+        outAcked = pkt->getAck();
 
         /* before ACK, reset the TTL
          * As they have sent something, and we have received
@@ -1193,7 +831,7 @@ int TcpStream::incoming_SynRcvd(TcpPacket *pkt) {
      * To State: TCP_ESTABLISHED
      */
 
-    if (pkt -> hasRst()) {
+    if (pkt->hasRst()) {
         state = TCP_CLOSED;
         log(LOG_DEBUG_BASIC, TCP_STREAM_ZONE, "TcpStream::incoming_SynRcvd state => TCP_CLOSED");
         delete pkt;
@@ -1202,20 +840,14 @@ int TcpStream::incoming_SynRcvd(TcpPacket *pkt) {
 
     bool ackWithData = false;
 
-    if (pkt -> hasAck()) {
-        if (pkt -> hasSyn()) {
-            /* has resent syn -> check it matches */
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "incoming_SynRcvd -> Pkt with ACK + SYN" << std::endl;
-#endif
+    if (pkt->hasAck()) {
+        if (pkt->hasSyn()) {
+            /* has resent syn->check it matches */
         }
 
         /* check stuff */
-        if (pkt -> getAck() != outSeqno) {
+        if (pkt->getAck() != outSeqno) {
             /* bad ignore */
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "incoming_SynRcvd -> Ignoring Pkt with bad ACK: " << pkt -> getAck() << std::endl;
-#endif
             delete pkt;
             return -1;
         }
@@ -1223,11 +855,7 @@ int TcpStream::incoming_SynRcvd(TcpPacket *pkt) {
         /* Complete Connection */
 
         /* save seqno */
-        if (pkt -> datasize > 0) {
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::incoming_SynRcvd() ACK with Data!" << std::endl;
-            std::cerr << "TcpStream::incoming_SynRcvd() Shoudn't recv ... unless initACK lost!" << std::endl;
-#endif
+        if (pkt->datasize > 0) {
             // managed to trigger this under windows...
             // perhaps the initial Ack was lost,
             // believe we should just pass this packet
@@ -1238,10 +866,10 @@ int TcpStream::incoming_SynRcvd(TcpPacket *pkt) {
             ackWithData = true;
         }
 
-        inAckno = pkt -> seqno; /* + pkt -> datasize; */
-        outWinSize = pkt -> winsize;
+        inAckno = pkt->seqno; /* + pkt->datasize; */
+        outWinSize = pkt->winsize;
 
-        outAcked = pkt -> getAck();
+        outAcked = pkt->getAck();
 
 
         /* As they have sent something, and we have received
@@ -1257,16 +885,9 @@ int TcpStream::incoming_SynRcvd(TcpPacket *pkt) {
     }
 
     if (ackWithData) {
-        /* connection Established -> handle normally */
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "incoming_SynRcvd -> Handling Data with Ack Pkt!";
-        std::cerr << std::endl;
-#endif
+        /* connection Established->handle normally */
         incoming_Established(pkt);
     } else {
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "incoming_SynRcvd -> Ignoring Pkt!" << std::endl;
-#endif
         /* else nothing */
         delete pkt;
     }
@@ -1282,35 +903,21 @@ int TcpStream::incoming_Established(TcpPacket *pkt) {
      * make sure that the sequence number is within the correct range.
      */
 
+    if (pkt->hasRst()) {
+        state = TCP_CLOSED;
+        log(LOG_DEBUG_BASIC, TCP_STREAM_ZONE, "TcpStream::incoming_Established state => TCP_CLOSED");
+        delete pkt;
+        return 1;
+    }
+
     if ((!isOldSequence(pkt->seqno, inAckno)) &&           // seq >= inAckno
             isOldSequence(pkt->seqno, inAckno + maxWinSize)) { // seq < inAckno + maxWinSize.
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::incoming_Established() valid Packet Seqno.";
-        std::cerr << std::endl;
-#endif
         if (pkt->hasAck()) {
             outAcked = pkt->ackno;
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "\tUpdating OutAcked to: " << outAcked;
-            std::cerr << std::endl;
-#endif
         }
 
         outWinSize = pkt->winsize;
-
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "\tUpdating OutWinSize to: " << outWinSize;
-        std::cerr << std::endl;
-#endif
     } else {
-        /* what we do! */
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::incoming_Established() ERROR out-of-range Packet Seqno.";
-        std::cerr << std::endl;
-        std::cerr << "TcpStream::incoming_Established() Sending Ack to update Peer";
-        std::cerr << std::endl;
-#endif
-
         sendAck();
     }
 
@@ -1322,12 +929,6 @@ int TcpStream::incoming_Established(TcpPacket *pkt) {
         TcpPacket *pkt = inPkt.front();
         inPkt.pop_front();
         delete pkt;
-
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::incoming_Established() inPkt reached max size...Discarding Oldest Pkt";
-        std::cerr << std::endl;
-#endif
-
     }
 
     /* use as many packets as possible */
@@ -1341,9 +942,6 @@ int TcpStream::check_InPkts() {
     while (found) {
         found = false;
         for (it = inPkt.begin(); (!found) && (it != inPkt.end());) {
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "Checking expInAck: " << inAckno << " vs: " << (*it)->seqno << std::endl;
-#endif
             pkt = *it;
             if ((*it)->seqno == inAckno) {
                 found = true;
@@ -1354,11 +952,6 @@ int TcpStream::check_InPkts() {
             /* see if we can discard it */
             /* if smaller seqno, and not wrapping around */
             else if (isOldSequence((*it)->seqno, inAckno)) {
-#ifdef DEBUG_TCP_STREAM
-                std::cerr << "Discarding Old Packet expAck: " << inAckno;
-                std::cerr << " seqno: " << (*it)->seqno << std::endl;
-#endif
-
                 /* discard */
                 it = inPkt.erase(it);
                 delete pkt;
@@ -1368,13 +961,6 @@ int TcpStream::check_InPkts() {
             }
         }
         if (found) {
-
-#ifdef DEBUG_TCP_STREAM_EXTRA
-            if (pkt->datasize) {
-                checkData(pkt->data, pkt->datasize, pkt->seqno-initPeerSeqno-1);
-            }
-#endif
-
             /* update ack number - let it rollover */
             inAckno = pkt->seqno + pkt->datasize;
 
@@ -1389,25 +975,8 @@ int TcpStream::check_InPkts() {
 
             if (pkt->hasAck()) {
                 if (isOldSequence(outAcked, pkt->ackno)) {
-#ifdef DEBUG_TCP_STREAM
-                    std::cerr << "TcpStream::check_inPkts() ERROR Ack Not Already Used!";
-                    std::cerr << std::endl;
-#endif
                     outAcked = pkt->ackno;
                     outWinSize = pkt->winsize;
-
-#ifdef DEBUG_TCP_STREAM
-                    std::cerr << "\tUpdating OutAcked to: " << outAcked;
-                    std::cerr << std::endl;
-                    std::cerr << "\tUpdating OutWinSize to: " << outWinSize;
-                    std::cerr << std::endl;
-#endif
-
-                } else {
-#ifdef DEBUG_TCP_STREAM
-                    std::cerr << "TcpStream::check_inPkts() GOOD Ack Already Used!";
-                    std::cerr << std::endl;
-#endif
                 }
             }
 
@@ -1423,7 +992,7 @@ int TcpStream::check_InPkts() {
                 /* if it'll overflow the buffer. */
                 dataBuffer *db = new dataBuffer();
 
-                /* move outDatNet -> buffer */
+                /* move outDatNet->buffer */
                 memcpy((void *) db->data, (void *) outDataNet, outSizeNet);
 
                 /* fill rest of space */
@@ -1444,7 +1013,7 @@ int TcpStream::check_InPkts() {
             UpdateInWinSize();
 
             /* if pkt is FIN */
-            /* these must be here -> at the end of the reliable stream */
+            /* these must be here->at the end of the reliable stream */
             /* if the fin is set, ack it specially close stream */
             if (pkt->hasFin()) {
                 /* send final ack */
@@ -1512,14 +1081,9 @@ int TcpStream::UpdateInWinSize() {
 }
 
 int TcpStream::sendAck() {
-    /* simple -> toSend fills in ack/winsize
+    /* simple->toSend fills in ack/winsize
      * and the rest is history
      */
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::sendAck()";
-    std::cerr << std::endl;
-#endif
-
     return toSend(new TcpPacket(), false);
 }
 
@@ -1535,70 +1099,45 @@ int TcpStream::toSend(TcpPacket *pkt, bool retrans) {
 
     if (!peerKnown) {
         /* Major Error! */
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::toSend() peerUnknown ERROR!!!";
-        std::cerr << std::endl;
-#endif
         exit(1);
     }
 
     /* get accurate timestamp */
     double cts =  getCurrentTS();
 
-    pkt -> winsize = inWinSize;
-    pkt -> seqno = outSeqno;
+    pkt->winsize = inWinSize;
+    pkt->seqno = outSeqno;
 
     /* increment seq no */
     if (pkt->datasize) {
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        checkData(pkt->data, pkt->datasize, outSeqno-initOurSeqno-1);
-#endif
         outSeqno += pkt->datasize;
     }
 
     if (pkt->hasSyn()) {
         /* should not have data! */
-        if (pkt->datasize) {
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "SYN Packet shouldn't contain data!" << std::endl;
-#endif
-        }
+        if (pkt->datasize) {}
         outSeqno++;
     } else {
         /* cannot auto Ack SynPackets */
-        pkt -> setAck(inAckno);
+        pkt->setAck(inAckno);
     }
 
-    pkt -> winsize = inWinSize;
+    pkt->winsize = inWinSize;
 
     /* store old info */
-    lastSentAck = pkt -> ackno;
-    lastSentWinSize = pkt -> winsize;
+    lastSentAck = pkt->ackno;
+    lastSentWinSize = pkt->winsize;
     keepAliveTimer = cts;
 
-    pkt -> writePacket(tmpOutPkt, outPktSize);
+    pkt->writePacket(tmpOutPkt, outPktSize);
 
-#ifdef DEBUG_TCP_STREAM
-    std::cerr << "TcpStream::toSend() Seqno: ";
-    std::cerr << pkt->seqno << " size: " << pkt->datasize;
-    std::cerr << " Ackno: ";
-    std::cerr << pkt->ackno << " winsize: " << pkt->winsize;
-    std::cerr << std::endl;
-    //std::cerr << printPkt(tmpOutPkt, outPktSize) << std::endl;
-#endif
-
-    int sentsize = udp -> sendPkt(tmpOutPkt, outPktSize, &peeraddr, ttl);
+    int sentsize = udp->sendPkt(tmpOutPkt, outPktSize, &peeraddr, ttl);
     log(LOG_DEBUG_BASIC, TCP_STREAM_ZONE, "Sent TCP Stream packet result: " + QString::number(sentsize));
 
     if (retrans) {
         /* restart timers */
-        pkt -> ts = cts;
-        pkt -> retrans = 0;
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::toSend() Adding to outPkt --> Seqno: ";
-        std::cerr << pkt->seqno << " size: " << pkt->datasize;
-        std::cerr << std::endl;
-#endif
+        pkt->ts = cts;
+        pkt->retrans = 0;
 
         outPkt.push_back(pkt);
     } else {
@@ -1616,10 +1155,6 @@ int TcpStream::retrans() {
 
     if (!peerKnown) {
         /* Major Error! */
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::retrans() peerUnknown ERROR!!!";
-        std::cerr << std::endl;
-#endif
         exit(1);
     }
 
@@ -1631,7 +1166,7 @@ int TcpStream::retrans() {
         TcpPacket *pkt = (*it);
         if (cts - pkt->ts > retransTimeout) {
 
-            /* retransmission -> adjust the congestWinSize and congestThreshold
+            /* retransmission->adjust the congestWinSize and congestThreshold
              * but only once per cycle
              */
             if (updateCongestion) {
@@ -1639,75 +1174,33 @@ int TcpStream::retrans() {
                 congestWinSize = MAX_SEG;
                 congestUpdate  = outAcked + congestWinSize; // point when we can up the winSize.
                 updateCongestion = false;
-
-#ifdef DEBUG_TCP_STREAM
-                std::cerr << "TcpStream::retrans() Adjusting Congestion Parameters: ";
-                std::cerr << std::endl;
-                std::cerr << "\tcongestWinSize: " << congestWinSize;
-                std::cerr << "  congestThreshold: " << congestThreshold;
-                std::cerr << "  congestUpdate: " << congestUpdate;
-                std::cerr << std::endl;
-#endif
-
             }
 
             /* before we can retranmit,
              * we need to check that its within the congestWinSize
-             * -> actually only checking that the start (seqno) is within window!
+             *->actually only checking that the start (seqno) is within window!
              */
 
 
             if (isOldSequence(outAcked + congestWinSize, pkt->seqno)) {
                 /* cannot send .... */
-#ifdef DEBUG_TCP_STREAM
-                std::cerr << "TcpStream::retrans() Retranmission Delayed by CongestionWindow";
-                std::cerr << std::endl;
-
-                std::cerr << "\toutAcked: " << outAcked;
-                std::cerr << " CongestWinSize:" << congestWinSize;
-                std::cerr << std::endl;
-
-                std::cerr << "\tAttempted Packet: Seqno: ";
-                std::cerr << pkt->seqno << " size: " << pkt->datasize;
-                std::cerr << " retrans: " << (int) pkt->retrans;
-                std::cerr << " timeout: " << retransTimeout;
-                std::cerr << std::endl;
-#endif
                 /* as packets in order, can drop out of the fn now */
                 return 0;
             }
 
-
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::retrans() Seqno: ";
-            std::cerr << pkt->seqno << " size: " << pkt->datasize;
-            std::cerr << " retrans: " << (int) pkt->retrans;
-            std::cerr << " timeout: " << retransTimeout;
-            std::cerr << std::endl;
-#endif
-
             /* update ackno and winsize */
             if (!(pkt->hasSyn())) {
                 pkt->setAck(inAckno);
-                lastSentAck = pkt -> ackno;
+                lastSentAck = pkt->ackno;
             }
 
             pkt->winsize = inWinSize;
-            lastSentWinSize = pkt -> winsize;
+            lastSentWinSize = pkt->winsize;
 
             keepAliveTimer = cts;
 
-            (*it) -> writePacket(tmpOutPkt, outPktSize);
+            (*it)->writePacket(tmpOutPkt, outPktSize);
 
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::retrans() ReSending Pkt" << std::endl;
-            std::cerr << "TcpStream::retrans Seqno: ";
-            std::cerr << (*it)->seqno << " size: " << (*it)->datasize;
-            std::cerr << " Ackno: ";
-            std::cerr << (*it)->ackno << " winsize: " << (*it)->winsize;
-            std::cerr << std::endl;
-            //std::cerr << printPkt(tmpOutPkt, outPktSize) << std::endl;
-#endif
             /* if its a syn packet ** thats been
              * transmitting for a while, maybe
              * we should increase the ttl.
@@ -1726,13 +1219,7 @@ int TcpStream::retrans() {
                 out << "retrans count: " << pkt->retrans;
                 out << " New TTL: " << getTTL();
 
-                log(LOG_WARNING, TCP_STREAM_ZONE, out.str().c_str());
-
-#ifdef DEBUG_TCP_STREAM
-                std::cerr << out.str() << std::endl;
-#endif
-
-
+                log(LOG_DEBUG_ALERT, TCP_STREAM_ZONE, out.str().c_str());
             }
 
             /* catch excessive retransmits
@@ -1744,13 +1231,6 @@ int TcpStream::retrans() {
                     (((!pkt->hasSyn()) || (TCP_STD_TTL == getTTL()))
                      && (pkt->retrans > kMaxPktRetransmit))) {
                 /* too many attempts close stream */
-#ifdef DEBUG_TCP_STREAM
-                std::cerr << "TcpStream::retrans() Too many Retransmission Attempts (";
-                std::cerr << (int) pkt->retrans << ") for Pkt" << std::endl;
-                std::cerr << "TcpStream::retrans() Closing Socket Connection";
-                std::cerr << std::endl;
-#endif
-
                 outStreamActive = false;
                 inStreamActive = false;
                 state = TCP_CLOSED;
@@ -1760,11 +1240,11 @@ int TcpStream::retrans() {
             }
 
 
-            udp -> sendPkt(tmpOutPkt, outPktSize, &peeraddr, ttl);
+            udp->sendPkt(tmpOutPkt, outPktSize, &peeraddr, ttl);
 
             /* restart timers */
-            (*it) -> ts = cts;
-            (*it) -> retrans++;
+            (*it)->ts = cts;
+            (*it)->retrans++;
 
             /* finally - double the retransTimeout ... (Karn's Algorithm)
              * this ensures we don't retransmit all the packets that
@@ -1776,11 +1256,6 @@ int TcpStream::retrans() {
              * in excessive timeouts, and no data flow.
              */
             retransTimeout = 2.0 * (rtt_est + 4.0 * rtt_dev);
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::retrans() Doubling std retranTimeout to:";
-            std::cerr << retransTimeout;
-            std::cerr << std::endl;
-#endif
         }
     }
     return 1;
@@ -1819,15 +1294,6 @@ void TcpStream::acknowledge() {
             }
 
             congestUpdate  = outAcked + congestWinSize; // point when we can up the winSize.
-
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::acknowledge() Adjusting Congestion Parameters: ";
-            std::cerr << std::endl;
-            std::cerr << "\tcongestWinSize: " << congestWinSize;
-            std::cerr << "  congestThreshold: " << congestThreshold;
-            std::cerr << "  congestUpdate: " << congestUpdate;
-            std::cerr << std::endl;
-#endif
         }
 
 
@@ -1863,32 +1329,8 @@ void TcpStream::acknowledge() {
             rtt_est = RTT_ALPHA * rtt_est + (1.0 - RTT_ALPHA) * ack_time;
             rtt_dev = RTT_ALPHA * rtt_dev + (1.0 - RTT_ALPHA) * fabs(rtt_est - ack_time);
             retransTimeout = rtt_est + 4.0 * rtt_dev;
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::acknowledge() Updating RTT: ";
-            std::cerr << std::endl;
-            std::cerr << "\tAckTime: " << ack_time;
-            std::cerr << std::endl;
-            std::cerr << "\tRRT_est: " << rtt_est;
-            std::cerr << std::endl;
-            std::cerr << "\tRTT_dev: " << rtt_dev;
-            std::cerr << std::endl;
-            std::cerr << "\tTimeout: " << retransTimeout;
-            std::cerr << std::endl;
-#endif
         }
 
-#ifdef DEBUG_TCP_STREAM
-        else {
-            std::cerr << "TcpStream::acknowledge() Not Updating RTT for retransmitted Pkt Sequence";
-            std::cerr << std::endl;
-        }
-#endif
-
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::acknowledge() Removing Seqno: ";
-        std::cerr << pkt->seqno << " size: " << pkt->datasize;
-        std::cerr << std::endl;
-#endif
         delete pkt;
     }
 
@@ -1945,31 +1387,12 @@ int TcpStream::send() {
         maxsend = 0;
     }
 
-#ifdef DEBUG_TCP_STREAM
-    int availSend = inQueue.size() * MAX_SEG + inSize;
-    std::cerr << "TcpStream::send() CC: ";
-    std::cerr << "oWS: " << outWinSize;
-    std::cerr << " cWS: " << congestWinSize;
-    std::cerr << " | inT: " << inTransit;
-    std::cerr << " mSnd: " << maxsend;
-    std::cerr << " aSnd: " << availSend;
-    std::cerr << " | oSeq: " << outSeqno;
-    std::cerr << "  oAck: " << outAcked;
-    std::cerr << "  cUpd: " << congestUpdate;
-    std::cerr << std::endl;
-#endif
-
     int sent = 0;
     while ((inQueue.size() > 0) && (maxsend >= MAX_SEG)) {
         dataBuffer *db = inQueue.front();
         inQueue.pop_front();
 
         TcpPacket *pkt = new TcpPacket(db->data, MAX_SEG);
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::send() Segment ===> Seqno: ";
-        std::cerr << pkt->seqno << " size: " << pkt->datasize;
-        std::cerr << std::endl;
-#endif
         sent++;
         maxsend -= MAX_SEG;
         toSend(pkt);
@@ -1979,10 +1402,6 @@ int TcpStream::send() {
     /* if inqueue empty, and enough window space, send partial stuff */
     if ((!sent) && (inQueue.size() == 0) && (maxsend >= inSize) && (inSize)) {
         TcpPacket *pkt = new TcpPacket(inData, inSize);
-#ifdef DEBUG_TCP_STREAM
-        std::cerr << "TcpStream::send() Remaining ===>";
-        std::cerr << std::endl;
-#endif
         inSize = 0;
         sent++;
         maxsend -= inSize;
@@ -1996,10 +1415,6 @@ int TcpStream::send() {
         double cts = getCurrentTS();
         /* if needs ack */
         if (isOldSequence(lastSentAck,inAckno)) {
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::send() Ack Triggered (Ackno)";
-            std::cerr << std::endl;
-#endif
             needsAck = true;
         }
 
@@ -2012,37 +1427,24 @@ int TcpStream::send() {
         if (((lastSentWinSize < MAX_SEG) && (inWinSize > MAX_SEG)) ||
                 ((cts - keepAliveTimer > retransTimeout * 4) &&
                  (inWinSize > lastSentWinSize + 4 * MAX_SEG))) {
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::send() Ack Triggered (Window)";
-            std::cerr << std::endl;
-#endif
             needsAck = true;
         }
 
         /* if needs keepalive */
         if (cts - keepAliveTimer > keepAliveTimeout) {
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::send() Ack Triggered (KAlive)";
-            std::cerr << std::endl;
-#endif
             needsAck = true;
         }
 
 
-        /* if end of stream -> switch mode -> send fin (with ack) */
+        /* if end of stream->switch mode->send fin (with ack) */
         if ((!outStreamActive) && (inQueue.size() + inSize == 0) &&
                 ((state == TCP_ESTABLISHED) || (state == TCP_CLOSE_WAIT))) {
             /* finish the stream */
             TcpPacket *pkt = new TcpPacket();
-            pkt -> setFin();
+            pkt->setFin();
 
             needsAck = false;
             toSend(pkt, false);
-
-#ifdef DEBUG_TCP_STREAM
-            std::cerr << "TcpStream::send() Fin Triggered";
-            std::cerr << std::endl;
-#endif
 
             if (state == TCP_ESTABLISHED) {
                 state = TCP_FIN_WAIT_1;
@@ -2057,19 +1459,7 @@ int TcpStream::send() {
         if (needsAck) {
             sendAck();
         }
-#ifdef DEBUG_TCP_STREAM_EXTRA
-        else {
-            std::cerr << "TcpStream::send() No Ack";
-            std::cerr << std::endl;
-        }
-#endif
     }
-#ifdef DEBUG_TCP_STREAM_EXTRA
-    else {
-        std::cerr << "TcpStream::send() Stuff Sent";
-        std::cerr << std::endl;
-    }
-#endif
     return 1;
 }
 
@@ -2086,7 +1476,7 @@ bool TcpStream::isOldSequence(uint32 tst, uint32 curr) {
     std::cerr << "TcpStream::isOldSequence(): Case ";
     /* if tst < curr */
     if ((int)((tst)-(curr)) < 0) {
-        if (curr - tst < TCP_MAX_SEQ/2) { /* diff less than half span -> old */
+        if (curr - tst < TCP_MAX_SEQ/2) { /* diff less than half span->old */
             std::cerr << "1T" << std::endl;
             return true;
         }
@@ -2145,7 +1535,7 @@ int setupBinaryCheck(std::string fname) {
     return 1;
 }
 
-/* uses seq number to track position -> ensure no rollover */
+/* uses seq number to track position->ensure no rollover */
 int checkData(uint8 *data, int size, int idx) {
     if (bc_fd <= 0) {
         return -1;
@@ -2178,5 +1568,3 @@ int checkData(uint8 *data, int size, int idx) {
 }
 
 #endif
-
-

@@ -22,7 +22,7 @@
 
 #include "server/server.h"
 #include "pqi/connectivitymanager.h"
-#include "pqi/pqisslpersongrp.h"
+#include "pqi/aggregatedConnections.h"
 #include "ft/ftserver.h"
 #include "tcponudp/tou.h"
 
@@ -55,7 +55,7 @@ bool Server::ShutdownMixologist() {
 }
 
 void Server::ReloadTransferRates() {
-    pqih->load_transfer_rates();
+    aggregatedConnectionsToFriends->load_transfer_rates();
 }
 
 void Server::setVersion(const QString &clientName, qulonglong clientVersion, qulonglong latestKnownVersion) {
@@ -92,7 +92,7 @@ void Server::variableTick() {
     averageSecondsToSleep = 0.2 * secondsToSleep + 0.8 * averageSecondsToSleep;
 
     /* The fact that this tick is in the ftserver is actually deceptive.
-       The ftserver tick also ticks our main pqisslpersongrp (this should probably be changed in the future).
+       The ftserver tick also ticks our main AggregatedConnectionsToFriends (this should probably be changed in the future into a more sensible hierarchy).
        This means that almost all of our inbound and outbound data are handled by this tick. */
     int moreDataExists = ftserver->tick();
 

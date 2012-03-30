@@ -179,45 +179,45 @@ int TcpPacket::readPacket(void *buf, int size) {
 }
 
 /* flags */
-bool    TcpPacket::hasSyn() {
+bool TcpPacket::hasSyn() {
     return (hlen_flags & TCP_SYN_BIT);
 }
 
-bool    TcpPacket::hasFin() {
+bool TcpPacket::hasFin() {
     return (hlen_flags & TCP_FIN_BIT);
 }
 
-bool    TcpPacket::hasAck() {
+bool TcpPacket::hasAck() {
     return (hlen_flags & TCP_ACK_BIT);
 }
 
-bool    TcpPacket::hasRst() {
+bool TcpPacket::hasRst() {
     return (hlen_flags & TCP_RST_BIT);
 }
 
 
-void    TcpPacket::setSyn() {
+void TcpPacket::setSyn() {
     hlen_flags |= TCP_SYN_BIT;
 }
 
-void    TcpPacket::setFin() {
+void TcpPacket::setFin() {
     hlen_flags |= TCP_FIN_BIT;
 }
 
-void    TcpPacket::setRst() {
+void TcpPacket::setRst() {
     hlen_flags |= TCP_RST_BIT;
 }
 
-void    TcpPacket::setAckFlag() {
+void TcpPacket::setAckFlag() {
     hlen_flags |= TCP_ACK_BIT;
 }
 
-void    TcpPacket::setAck(uint32 val) {
+void TcpPacket::setAck(uint32 val) {
     setAckFlag();
     ackno = val;
 }
 
-uint32  TcpPacket::getAck() {
+uint32 TcpPacket::getAck() {
     return ackno;
 }
 

@@ -29,24 +29,22 @@
 #include "ui_ServerDialog.h"
 
 class ServerDialog : public ConfigPage {
-	Q_OBJECT
+    Q_OBJECT
 
 public:
-        /* Default Constructor */
-	ServerDialog(QWidget *parent = 0);
+    /* Default Constructor */
+    ServerDialog(QWidget *parent = 0);
 
-        /* Saves the changes on this page */
-        bool save();
+    /* Saves the changes on this page */
+    bool save();
 
 private slots:
-        /* If the server is edited to an empty value, set it to default. */
-        void editedServer();
-        /* Connected to whenever the randomize ports button is clicked. */
-        void randomizeToggled(bool set);
+    /* If the server is edited to an empty value, set it to default. */
+    void editedServer();
 
 private:
-        /* Qt Designer generated object */
-	Ui::ServerDialog ui;
+    /* Qt Designer generated object */
+    Ui::ServerDialog ui;
 };
 
 #endif

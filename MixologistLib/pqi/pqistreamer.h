@@ -30,7 +30,7 @@
 #include <list>
 
 /*
-Each connection method a pqiperson has will have a pqistramer.
+Each connection method a ConnectionToFriend has will have a pqistramer.
 A pqistreamer is a PQInterface, and it is the final PQInterface that takes structured data
 and converts it into binary data for the BinInterface.
 While doing so, it also manages the bandwidth based on limits passed down to it from above.

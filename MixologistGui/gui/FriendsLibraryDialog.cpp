@@ -28,7 +28,6 @@
 #include <interface/settings.h>
 #include <QSortFilterProxyModel>
 
-/** Constructor */
 FriendsLibraryDialog::FriendsLibraryDialog(QWidget *parent)
     : QWidget(parent) {
     /* Invoke the Qt Designer generated object setup routine */

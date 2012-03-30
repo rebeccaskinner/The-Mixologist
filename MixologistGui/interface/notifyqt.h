@@ -34,6 +34,9 @@ class TransfersDialog;
 /* This class served as an interface between the C++ library and the QT GUI.
    However, now that the library has been moved to QT, this should be phased out in favor of direct use of signals and slots. */
 
+class NotifyQt;
+extern NotifyQt *guiNotify;
+
 class NotifyQt: public NotifyBase {
     Q_OBJECT
 public:
@@ -65,8 +68,6 @@ signals:
     void transferChatEventOccurred(int event, unsigned int librarymixer_id, QString transfer_name, QString extra_info);
     //When there are responses from a friend on a requested transfer that require a query
     void transferQueryEventOccurred(int event, unsigned int librarymixer_id, QString transfer_name, QString extra_info);
-    //When someone unrecognized tries to connect
-    void connectionDenied();
     //When a file is being hashed
     void hashingInfoChanged(QString fileinfo);
     //When transfers updated

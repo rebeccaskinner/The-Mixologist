@@ -39,7 +39,6 @@
 #include <QPixmap>
 #include <QHeaderView>
 
-/** Constructor */
 NetworkDialog::NetworkDialog(QWidget *parent)
     : QWidget(parent) {
     /* Invoke the Qt Designer generated object setup routine */
@@ -61,7 +60,6 @@ NetworkDialog::NetworkDialog(QWidget *parent)
     connect(ui.refreshButton, SIGNAL(clicked()), this, SLOT(insertConnect()));
 }
 
-/* get the list of Neighbours from the Interface.  */
 void NetworkDialog::insertConnect() {
     if (!peers) {
         return;
@@ -100,8 +98,6 @@ void NetworkDialog::insertConnect() {
             item->setText(1, "Connected");
         else if (detail.state == PEER_STATE_TRYING)
             item->setText(1, "Trying");
-        else if (detail.state == PEER_STATE_WAITING_FOR_RETRY)
-            item->setText(1, "Waiting to retry");
         else
             item->setText(1, "Offline");
 

@@ -32,9 +32,9 @@
 #include <interface/init.h>
 #include <interface/iface.h>
 #include <interface/files.h>
+#include <interface/notifyqt.h>
 #include <interface/settings.h>
 
-/** Constructor */
 GeneralDialog::GeneralDialog(QWidget *parent)
     : ConfigPage(parent) {
     /* Invoke the Qt Designer generated object setup routine */
@@ -76,7 +76,6 @@ GeneralDialog::GeneralDialog(QWidget *parent)
     }
 }
 
-/** Saves the changes on this page */
 bool GeneralDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Gui/StartMinimized", ui.startMinimized->checkState());
@@ -98,7 +97,6 @@ void GeneralDialog::AssociateMixologyLinks() {
     }
 }
 
-/** Called when the "show on startup" checkbox is toggled. */
 void GeneralDialog::toggleShowOnStartup(bool checked) {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Gui/ShowMainWindowAtStart", checked);
@@ -140,7 +138,7 @@ void GeneralDialog::showAdvanced(bool show) {
         mainwindow->actionPages.insert(mainwindow->ui.actionNetwork, mainwindow->networkDialog);
         mainwindow->ui.stackPages->insertWidget(mainwindow->ui.stackPages->count(), mainwindow->networkDialog);
         mainwindow->ui.actionNetwork->setVisible(true);
-        QObject::connect(mainwindow->notify, SIGNAL(logInfoChanged(QString)),
+        QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)),
                          mainwindow->networkDialog, SLOT(setLogInfo(QString)));
         mainwindow->preferencesWindow->connectionDialog = new ServerDialog(mainwindow->preferencesWindow->ui.stackPages);
         mainwindow->preferencesWindow->_pages.insert(mainwindow->preferencesWindow->ui.actionConnection, mainwindow->preferencesWindow->connectionDialog);

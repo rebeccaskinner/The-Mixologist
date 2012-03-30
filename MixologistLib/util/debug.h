@@ -55,6 +55,7 @@ int log(unsigned int lvl, int zone, QString msg);
 #define PQL_DEBUG_ALL   LOG_DEBUG_ALL
 
 /* Zone constants for various files. */
+#define AGGREGATED_CONNECTIONS_ZONE 354
 #define XMLUTILZONE 1500
 #define LMLIBRARYZONE 5001
 #define PQISTREAMERZONE 8221
@@ -70,6 +71,8 @@ int log(unsigned int lvl, int zone, QString msg);
 #define PQIHANDLERZONE 34283
 #define PQISSLZONE 37714
 #define AUTHMGRZONE 38383
+#define SSL_LISTENER_ZONE 49787
+#define CONNECTION_TO_FRIEND_ZONE 82371
 #define CONNECTIVITY_MANAGER_ZONE 90000
 #define UPNPHANDLERZONE 99283
 #define PQISTUNZONE 99503

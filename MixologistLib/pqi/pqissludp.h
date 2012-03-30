@@ -89,9 +89,6 @@ protected:
     virtual int net_internal_fcntl_nonblock(int fd);
 
 private:
-    /* Called to initiate a connection. */
-    int attach();
-
     BIO *tou_bio;
 
     /* Timeout period to try the TCP over UDP connection before giving up. */

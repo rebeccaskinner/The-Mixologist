@@ -23,7 +23,7 @@
 //Must be included before udpsorter.h which includes util/net.h to avoid _WIN32_WINNT redefine warnings on Windows
 #include "pqi/pqinetwork.h"
 
-#include "tcponudp/stunbasics.h"
+#include "tcponudp/stunpacket.h"
 
 #include <util/debug.h>
 
@@ -32,6 +32,8 @@
 bool UdpStun_isStunRequest(void *data, int size) {
     /* Too small to be a stun packet that contains a header. */
     if (size < 20) return false;
+
+    if (((uint32_t *) data)[1] != (uint32_t) htonl(0x2112A442)) return false; //Confirm presence of magic cookie
 
     /* Match size field. */
     uint16_t pktsize = ntohs(((uint16_t *) data)[1]) + 20;
@@ -46,6 +48,8 @@ bool UdpStun_isStunRequest(void *data, int size) {
 bool UdpStun_isStunResponse(void *data, int size) {
     /* Too small to be a stun packet that contains a header. */
     if (size < 20) return false;
+
+    if (((uint32_t *) data)[1] != (uint32_t) htonl(0x2112A442)) return false; //Confirm presence of magic cookie
 
     /* Match size field. */
     uint16_t pktsize = ntohs(((uint16_t *) data)[1]) + 20;
@@ -129,9 +133,11 @@ bool UdpStun_response(void *stun_pkt, int size, QString &transaction_id, struct 
 
     bool mappedAddressFound = false;
     struct sockaddr_in mappedAddress;
+    sockaddr_clear(&mappedAddress);
 
     bool xorMappedAddressFound = false;
     struct sockaddr_in xorMappedAddress;
+    sockaddr_clear(&xorMappedAddress);
 
     while (index_in_stun_pkt < size) {
         /* We need to divide our index in 2 in order to read 16 bit values out (or later 4 for 32 bit values).

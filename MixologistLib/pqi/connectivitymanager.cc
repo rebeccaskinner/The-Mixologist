@@ -23,7 +23,7 @@
 
 #include <tcponudp/tou.h>
 #include <tcponudp/udpsorter.h>
-#include "tcponudp/stunbasics.h"
+#include <tcponudp/stunpacket.h>
 
 #include <upnp/upnphandler.h>
 
@@ -36,36 +36,33 @@
 
 #include <util/debug.h>
 
-#define NO_TCP_CONNECTIONS 1
-/****
- * #define NO_TCP_CONNECTIONS 1
- ***/
-#define NO_AUTO_CONNECTION 1
-/****
- * #define NO_AUTO_CONNECTION 1
- ***/
+//#define NO_TCP_CONNECTIONS 1
+//#define NO_TCP_BACK_CONNECTIONS 1
+//#define NO_AUTO_CONNECTION 1
+//#define NO_UDP_CONNECTIONS 1
+//#define TEST_UDP_LOCAL 1
 
 #define TCP_RETRY_PERIOD 600 //10 minute wait between automatic connection retries
 #define UDP_PUNCHING_PERIOD 20 //20 seconds between UDP hole punches
-#define USED_IP_WAIT_TIME 5 //5 second wait if tried to connect to an IP that was already in use in a connection attempt
+#define USED_SOCKET_WAIT_TIME 5 //5 second wait if tried to connect to an IP that was already in use in a connection attempt
+#define REQUESTED_RETRY_WAIT_TIME 10 //10 seconds wait if our connection attempt failed and we were signaled to try again
 #define LAST_HEARD_TIMEOUT 300 //5 minute wait if haven't heard from a friend before we mark them as disconnected
 #define UPNP_INIT_TIMEOUT 10 //10 second timeout for UPNP to initialize the firewall
-#define STUN_TEST_TIMEOUT 3 //3 second timeout from a STUN request for a STUN response to be received
+#define STUN_TEST_TIMEOUT 4 //3 second timeout from a STUN request for a STUN response to be received
+#define FRIENDS_LIST_UPDATE_PERIOD_NORMAL 1800 //30 minute wait between updating friends list
+#define FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND 300 //5 minute wait when inbound connections from friends will have difficulty
 
-peerConnectAddress::peerConnectAddress()
-    :delay(0), period(0) {
-    sockaddr_clear(&addr);
-}
+QueuedConnectionAttempt::QueuedConnectionAttempt()
+    :delay(0) {sockaddr_clear(&addr);}
 
 peerConnectState::peerConnectState()
     :name(""),
      id(""),
      lastcontact(0),
-     lastattempt(0),
-     doubleTried(false),
-     schedulednexttry(0),
-     state(0), actions(0),
-     inConnAttempt(0) {
+     nextTcpTryAt(0),
+     state(FCS_NOT_MIXOLOGIST_ENABLED),
+     actions(0),
+     inConnectionAttempt(false) {
     sockaddr_clear(&localaddr);
     sockaddr_clear(&serveraddr);
 }
@@ -78,15 +75,17 @@ ConnectivityManager::ConnectivityManager()
      stunServer1(NULL), stunServer2(NULL),
      readyToConnectToFriends(CONNECT_FRIENDS_CONNECTION_INITIALIZING) {
 
-    /* Setup basics of own state.
-       authMgr must have been initialized before connMgr. */
-    ownState.id = authMgr->OwnCertId();
-    ownState.librarymixer_id = authMgr->OwnLibraryMixerId();
-
     connect(librarymixerconnect, SIGNAL(uploadedAddress()), this, SLOT(addressUpdatedOnLibraryMixer()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(friendsListUpdated()));
 
-    fallbackPublicStunServers.append("stun.selbie.com");
-    fallbackPublicStunServers.append("stun.ipns.com");
+    /* Load balance between the servers by picking the order at random. */
+    if (rand() % 2 == 0) {
+        fallbackStunServers.append("stun1.librarymixer.com");
+        fallbackStunServers.append("stun2.librarymixer.com");
+    } else {
+        fallbackStunServers.append("stun2.librarymixer.com");
+        fallbackStunServers.append("stun1.librarymixer.com");
+    }
 }
 
 void ConnectivityManager::tick() {
@@ -112,13 +111,13 @@ void ConnectivityManager::connectionSetup() {
     QMutexLocker stack(&connMtx);
 
     /* Set the network interface we will use for the Mixologist. */
-    ownState.localaddr.sin_addr = getPreferredInterface();
-    ownState.localaddr.sin_port = htons(getLocalPort());
-    ownState.localaddr.sin_family = AF_INET;
-    ownState.serveraddr.sin_family = AF_INET;
+    ownLocalAddress.sin_addr = getPreferredInterface();
+    ownLocalAddress.sin_port = htons(getLocalPort());
+    ownLocalAddress.sin_family = AF_INET;
+    ownExternalAddress.sin_family = AF_INET;
 
     /* We will open the udpTestSocket on a random port on our chosen interface. */
-    struct sockaddr_in udpTestAddress = ownState.localaddr;
+    struct sockaddr_in udpTestAddress = ownLocalAddress;
     udpTestAddress.sin_port = htons(getRandomPortNumber());
 
     int triesRemaining = 100;
@@ -133,8 +132,8 @@ void ConnectivityManager::connectionSetup() {
             continue;
         } else {
            log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Opened UDP test port on " + QString::number(ntohs(udpTestAddress.sin_port)));
-           connect(udpTestSocket, SIGNAL(receivedStunBindingResponse(QString,QString,int,ushort,QString)),
-                   this, SLOT(receivedStunPacket(QString,QString,int,ushort,QString)));
+           connect(udpTestSocket, SIGNAL(receivedStunBindingResponse(QString,QString,ushort,ushort,QString)),
+                   this, SLOT(receivedStunBindingResponse(QString,QString,ushort,ushort,QString)));
        }
     }
     if (!udpTestSocket) {
@@ -142,16 +141,22 @@ void ConnectivityManager::connectionSetup() {
         exit(1);
     }
 
-    udpMainSocket = new UdpSorter(ownState.localaddr);
+    udpMainSocket = new UdpSorter(ownLocalAddress);
     TCP_over_UDP_init(udpMainSocket);
 
     if (!udpMainSocket->okay()) {
         getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", "Unable to open main UDP port");
         exit(1);
     } else {
-        log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Opened UDP main port on " + QString::number(ntohs(ownState.localaddr.sin_port)));
-        connect(udpMainSocket, SIGNAL(receivedStunBindingResponse(QString,QString,int,ushort, QString)),
-                this, SLOT(receivedStunPacket(QString,QString,int,ushort,QString)));
+        log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Opened UDP main port on " + QString::number(ntohs(ownLocalAddress.sin_port)));
+        connect(udpMainSocket, SIGNAL(receivedStunBindingResponse(QString,QString,ushort,ushort, QString)),
+                this, SLOT(receivedStunBindingResponse(QString,QString,ushort,ushort,QString)));
+        connect(udpMainSocket, SIGNAL(receivedUdpTunneler(uint,QString,ushort)),
+                this, SLOT(receivedUdpTunneler(uint,QString,ushort)));
+        connect(udpMainSocket, SIGNAL(receivedUdpConnectionNotice(uint,QString,ushort)),
+                this, SLOT(receivedUdpConnectionNotice(uint,QString,ushort)));
+        connect(udpMainSocket, SIGNAL(receivedTcpConnectionRequest(uint,QString,ushort)),
+                this, SLOT(receivedTcpConnectionRequest(uint,QString,ushort)));
     }
 }
 
@@ -173,12 +178,13 @@ void ConnectivityManager::netTick() {
         if (connectionSetupStepTimeOutAt == 0) {
             /* We will try one server per tick from our fallback public STUN server list to avoid unnecessary traffic on them.
                tick is called from the main server thread at a rate of once per second. */
-            if (!fallbackPublicStunServers.isEmpty()) {
-                QString currentServer = fallbackPublicStunServers.front();
-                fallbackPublicStunServers.removeFirst();
+            if (!fallbackStunServers.isEmpty()) {
+                QString currentServer = fallbackStunServers.front();
+                fallbackStunServers.removeFirst();
 
                 struct sockaddr_in* currentAddress = new sockaddr_in;
                 sockaddr_clear(currentAddress);
+                /* 3478 is the standard STUN protocol port. */
                 currentAddress->sin_port = htons(3478);
                 if (!LookupDNSAddr(currentServer.toStdString(), currentAddress)) {
                     getPqiNotify()->AddSysMessage(SYS_WARNING, "Network failure", "Unable to lookup server address " + currentServer);
@@ -192,12 +198,12 @@ void ConnectivityManager::netTick() {
             }
         } else if (time(NULL) > connectionSetupStepTimeOutAt) {
             /* If we can't get enough STUN servers to configure just give up and assume the connection is already configured. */
-            setNewConnectionStatus(CONNECTION_STATUS_NO_NET);
+            setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
                 "Unable to find two STUN servers with which to test our connection state. Automatic connection set up disabled.");
         }
     } else if (CONNECTION_STATUS_STUNNING_INITIAL == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN server", stunServer1, udpTestSocket, ntohs(ownState.localaddr.sin_port));
+        int currentStatus = handleStunStep("Primary STUN server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
         if (currentStatus == 1) {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Contacting primary STUN server to determine if we are behind a firewall");
         } else if (currentStatus == -1) {
@@ -209,7 +215,7 @@ void ConnectivityManager::netTick() {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
                 "Attempting to configure firewall using Universal Plug and Play");
             mUpnpMgr = new upnpHandler();
-            mUpnpMgr->setTargetPort(ntohs(ownState.localaddr.sin_port));
+            mUpnpMgr->setTargetPort(ntohs(ownLocalAddress.sin_port));
             mUpnpMgr->startup();
             connectionSetupStepTimeOutAt = time(NULL) + UPNP_INIT_TIMEOUT;
         }
@@ -238,7 +244,7 @@ void ConnectivityManager::netTick() {
             }
         }
     } else if (CONNECTION_STATUS_STUNNING_UPNP_TEST == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownState.localaddr.sin_port));
+        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
         if (currentStatus == 1) {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
                 "Contacting primary STUN server to test Universal Plug and Play configuration");
@@ -257,16 +263,16 @@ void ConnectivityManager::netTick() {
                 "Contacting secondary STUN server to verify whether we have any Internet connection at all");
         }
         if (currentStatus == -1) {
-            setNewConnectionStatus(CONNECTION_STATUS_NO_NET);
+            setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
             /* This is a special case of failure, which is total failure to receive on the main port, along with no UPNP.
                In this case, we have failed without even knowing our own external address yet.
                Therefore, for this type of failure, we'll need to signal to get the external address from LibraryMixer. */
             readyToConnectToFriends = CONNECT_FRIENDS_GET_ADDRESS_FROM_LIBRARYMIXER;
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
-                "Total failure to access the Internet using Mixologist port " + QString::number(ntohs(ownState.localaddr.sin_port)));
+                "Total failure to access the Internet using Mixologist port " + QString::number(ntohs(ownLocalAddress.sin_port)));
         }
     } else if (CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownState.localaddr.sin_port));
+        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
         if (currentStatus == 1) {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
                 "Contacting primary STUN server to test whether we can punch a hole through the firewall using UDP");
@@ -279,23 +285,24 @@ void ConnectivityManager::netTick() {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
                 "Contacting primary STUN server to further probe the nature of the firewall");
         } else if (currentStatus == -1) {
-            setNewConnectionStatus(CONNECTION_STATUS_NO_NET);
+            setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
                 "Unexpected inability to contact primary STUN server, automatic connection configuration shutting down");
         }
     } else if (CONNECTION_STATUS_UPNP_IN_USE == connectionStatus) {
-        netUpnpMaintenance();
-    } else {
-/*
-    case CONNECTION_STATUS_UDP_HOLE_PUNCHING:
-        break;
-    case CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING:
-        break;
-    case CONNECTION_STATUS_UNFIREWALLED:
-    case CONNECTION_STATUS_PORT_FORWARDED:
-    case CONNECTION_STATUS_SYMMETRIC_NAT:
-    case CONNECTION_STATUS_NO_NET: */
+        upnpMaintenance();
+    } else if (CONNECTION_STATUS_UDP_HOLE_PUNCHING == connectionStatus ||
+               CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING == connectionStatus) {
+        /* Note that we are treating CONNECTION_STATUS_UDP_HOLE_PUNCHING (full-cone NAT hole punching)
+           the same as CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING for now.
+           The full-cone NAT hole punching actually only requires punching one friend each cycle, but we are punching all friends each cycle for both. */
+        udpHolePunchMaintenance();
     }
+    /* For all of the following, we don't need to do anything to maintain, so we don't handle those cases:
+       CONNECTION_STATUS_UNFIREWALLEDx
+       CONNECTION_STATUS_PORT_FORWARDED
+       CONNECTION_STATUS_SYMMETRIC_NAT
+       CONNECTION_STATUS_UNKNOWN */
 }
 
 int ConnectivityManager::handleStunStep(const QString& stunServerName, const sockaddr_in *stunServer, UdpSorter *sendSocket, ushort returnPort) {
@@ -320,7 +327,7 @@ bool ConnectivityManager::sendStunPacket(const QString& stunServerName, const so
     return sendSocket->sendStunBindingRequest(stunServer, stunTransactionId, returnPort);
 }
 
-void ConnectivityManager::receivedStunPacket(QString transactionId, QString mappedAddress, int mappedPort, ushort receivedOnPort, QString receivedFromAddress) {
+void ConnectivityManager::receivedStunBindingResponse(QString transactionId, QString mappedAddress, ushort mappedPort, ushort receivedOnPort, QString receivedFromAddress) {
     QMutexLocker stack(&connMtx);
     if (!pendingStunTransactions.contains(transactionId)) {
         log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, QString("Discarding STUN response not matching any current outstanding request."));
@@ -328,7 +335,7 @@ void ConnectivityManager::receivedStunPacket(QString transactionId, QString mapp
     }
     struct in_addr fromIP;
     inet_aton(receivedFromAddress.toStdString().c_str(), &fromIP);
-    if (isSameSubnet(&(ownState.localaddr.sin_addr), &fromIP)) {
+    if (isSameSubnet(&(ownLocalAddress.sin_addr), &fromIP)) {
         log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, "Discarding STUN response received on own subnet");
         return;
     }
@@ -368,61 +375,61 @@ void ConnectivityManager::receivedStunPacket(QString transactionId, QString mapp
 
         if (targetStunServer == &stunServer1) {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
-                "Using public server " + pendingStunTransactions[transactionId].serverName + " as a fallback for the primary STUN server");
+                "Using LibraryMixer as a fallback for the primary STUN server");
         } else {
             log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
-                "Using public server " + pendingStunTransactions[transactionId].serverName + " as a fallback for the secondary STUN server");
+                "Using LibraryMixer as a fallback for the secondary STUN server");
         }
 
         if (stunServer2) setNewConnectionStatus(CONNECTION_STATUS_STUNNING_INITIAL);
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_INITIAL) {
-        inet_aton(mappedAddress.toStdString().c_str(), &ownState.serveraddr.sin_addr);
-        ownState.serveraddr.sin_port = ownState.localaddr.sin_port;
+        inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
+        ownExternalAddress.sin_port = ownLocalAddress.sin_port;
         readyToConnectToFriends = CONNECT_FRIENDS_UPDATE_LIBRARYMIXER;
-        if (QString(inet_ntoa(ownState.localaddr.sin_addr)) == mappedAddress) {
+        if (QString(inet_ntoa(ownLocalAddress.sin_addr)) == mappedAddress) {
             setNewConnectionStatus(CONNECTION_STATUS_UNFIREWALLED);
             log(LOG_WARNING,
                 CONNECTIVITY_MANAGER_ZONE,
                 "No firewall detected, connection ready to go on " + mappedAddress +
-                ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
         } else {
             setNewConnectionStatus(CONNECTION_STATUS_PORT_FORWARDED);
             log(LOG_WARNING,
                 CONNECTIVITY_MANAGER_ZONE,
                 "Detected firewall with port-forwarding already set up, connection ready to go on " + mappedAddress +
-                ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
         }
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UPNP_TEST) {
-        inet_aton(mappedAddress.toStdString().c_str(), &ownState.serveraddr.sin_addr);
-        ownState.serveraddr.sin_port = ownState.localaddr.sin_port;
+        inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
+        ownExternalAddress.sin_port = ownLocalAddress.sin_port;
         readyToConnectToFriends = CONNECT_FRIENDS_UPDATE_LIBRARYMIXER;
         setNewConnectionStatus(CONNECTION_STATUS_UPNP_IN_USE);
         log(LOG_WARNING,
             CONNECTIVITY_MANAGER_ZONE,
             "Connection test successful, Universal Plug and Play configured connection ready to go on " + mappedAddress +
-            ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+            ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_MAIN_PORT) {
-        inet_aton(mappedAddress.toStdString().c_str(), &ownState.serveraddr.sin_addr);
-        ownState.serveraddr.sin_port = htons(mappedPort);
+        inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
+        ownExternalAddress.sin_port = htons(mappedPort);
         readyToConnectToFriends = CONNECT_FRIENDS_UPDATE_LIBRARYMIXER;
         setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST);
         log(LOG_WARNING,
             CONNECTIVITY_MANAGER_ZONE,
             "Internet connection verified on " + mappedAddress +
-            ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+            ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST) {
         setNewConnectionStatus(CONNECTION_STATUS_UDP_HOLE_PUNCHING);
         log(LOG_WARNING,
             CONNECTIVITY_MANAGER_ZONE,
             "Connection test successful, punching a UDP hole in the firewall on " + mappedAddress +
-            ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+            ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST) {
-        if (mappedPort == ntohs(ownState.serveraddr.sin_port)) {
+        if (mappedPort == ntohs(ownExternalAddress.sin_port)) {
             setNewConnectionStatus(CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING);
             log(LOG_WARNING,
                 CONNECTIVITY_MANAGER_ZONE,
                 "Restricted cone firewall detected, punching a UDP hole (with reduced efficacy) in the firewall on " + mappedAddress +
-                ":" + QString::number(ntohs(ownState.serveraddr.sin_port)));
+                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
         } else {
             setNewConnectionStatus(CONNECTION_STATUS_SYMMETRIC_NAT);
             log(LOG_WARNING,
@@ -434,16 +441,11 @@ void ConnectivityManager::receivedStunPacket(QString transactionId, QString mapp
     pendingStunTransactions.remove(transactionId);
 }
 
-void ConnectivityManager::addressUpdatedOnLibraryMixer() {
-    QMutexLocker stack(&connMtx);
-    readyToConnectToFriends = CONNECT_FRIENDS_READY;
-}
-
 #define UPNP_MAINTENANCE_INTERVAL 300
-void ConnectivityManager::netUpnpMaintenance() {
+void ConnectivityManager::upnpMaintenance() {
     /* We only need to maintain if we're using UPNP,
        and this variable is only set true after UPNP is successfully configured. */
-    static time_t last_call;
+    static time_t last_call = 0;
     if (time(NULL) - last_call > UPNP_MAINTENANCE_INTERVAL) {
         last_call = time(NULL);
         if (mUpnpMgr->getUpnpState() == upnpHandler::UPNP_STATE_FAILED) {
@@ -456,10 +458,27 @@ void ConnectivityManager::netUpnpMaintenance() {
     }
 }
 
-void ConnectivityManager::setNewConnectionStatus(int newStatus) {
-    connectionStatus = (ConnectionStatus) newStatus;
+void ConnectivityManager::udpHolePunchMaintenance() {
+    static time_t last_call = 0;
+    if (time(NULL) - last_call > UDP_PUNCHING_PERIOD) {
+        last_call = time(NULL);
+        foreach (peerConnectState currentFriend, mFriendList.values()) {
+            if (currentFriend.state == FCS_NOT_CONNECTED) {
+#ifdef TEST_UDP_LOCAL
+                udpMainSocket->sendUdpTunneler(&currentFriend.localaddr, &ownLocalAddress, peers->getOwnLibraryMixerId());
+#else
+                udpMainSocket->sendUdpTunneler(&currentFriend.serveraddr, &ownExternalAddress, peers->getOwnLibraryMixerId());
+#endif
+            }
+        }
+    }
+}
+
+void ConnectivityManager::setNewConnectionStatus(ConnectionStatus newStatus) {
+    connectionStatus = newStatus;
     connectionSetupStepTimeOutAt = 0;
     pendingStunTransactions.clear();
+    emit connectionStateChanged(newStatus);
 }
 
 bool ConnectivityManager::shutdown() {
@@ -476,17 +495,19 @@ bool ConnectivityManager::shutdown() {
  **********************************************************************************/
 
 #define ADDRESS_UPLOAD_TIMEOUT 5
+#define FRIENDS_LIST_DOWNLOAD_TIMEOUT 10
 void ConnectivityManager::statusTick() {
     QList<unsigned int> friendsToConnect;
     {
         QMutexLocker stack(&connMtx);
 
+        /* Make sure any initial preparations are completed */
         if (readyToConnectToFriends == CONNECT_FRIENDS_CONNECTION_INITIALIZING) return;
         else if (readyToConnectToFriends == CONNECT_FRIENDS_UPDATE_LIBRARYMIXER) {
             static time_t addressLastUploaded = 0;
             if (time(NULL) > addressLastUploaded + ADDRESS_UPLOAD_TIMEOUT) {
-                librarymixerconnect->uploadAddress(inet_ntoa(ownState.localaddr.sin_addr), ntohs(ownState.localaddr.sin_port),
-                                                   inet_ntoa(ownState.serveraddr.sin_addr), ntohs(ownState.serveraddr.sin_port));
+                librarymixerconnect->uploadAddress(inet_ntoa(ownLocalAddress.sin_addr), ntohs(ownLocalAddress.sin_port),
+                                                   inet_ntoa(ownExternalAddress.sin_addr), ntohs(ownExternalAddress.sin_port));
                 addressLastUploaded = time(NULL);
             }
             return;
@@ -495,59 +516,65 @@ void ConnectivityManager::statusTick() {
             static time_t addressLastUploaded = 0;
             if (time(NULL) > addressLastUploaded + ADDRESS_UPLOAD_TIMEOUT) {
                 /* This is only a desperate guess, but we have no idea what our external port is, so we will guess it is the same. */
-                ownState.serveraddr.sin_port = ownState.localaddr.sin_port;
-                librarymixerconnect->uploadAddress(inet_ntoa(ownState.localaddr.sin_addr), ntohs(ownState.localaddr.sin_port),
-                                                   "", ntohs(ownState.serveraddr.sin_port));
+                ownExternalAddress.sin_port = ownLocalAddress.sin_port;
+                librarymixerconnect->uploadAddress(inet_ntoa(ownLocalAddress.sin_addr), ntohs(ownLocalAddress.sin_port),
+                                                   "", ntohs(ownExternalAddress.sin_port));
                 addressLastUploaded = time(NULL);
             }
             return;
         }
 
         time_t now = time(NULL);
+
+        /* Check to see if we need to update our friends list from LibraryMixer.
+           For the most part, we rely on friends initially signing online to connect to us, since they'll have the most updated information at that time.
+           However, if that gets lost in the Internet somehow, this will give us a periodic chance to re-connect to them.
+           That assumes we are able to be readily connected to by friends that come online (the first case of the if statement).
+           If our inbound connectivity is somehow limited by a firewall, either by a restricted-cone NAT, where we will only receive connections
+           from friends that we know about already, or a symmetric NAT, where we will not receive any inbound connections at all, then we
+           need to be greatly increasing the frequency we update our friends list, so that we can try to connect to our friends outbound. */
+        int updatePeriod = FRIENDS_LIST_UPDATE_PERIOD_NORMAL;
+        if (CONNECTION_STATUS_UNFIREWALLED == connectionStatus ||
+            CONNECTION_STATUS_PORT_FORWARDED == connectionStatus ||
+            CONNECTION_STATUS_UPNP_IN_USE == connectionStatus ||
+            CONNECTION_STATUS_UDP_HOLE_PUNCHING == connectionStatus ||
+            CONNECTION_STATUS_UNKNOWN == connectionStatus) {
+            updatePeriod = FRIENDS_LIST_UPDATE_PERIOD_NORMAL;
+        } else if (CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING == connectionStatus ||
+                   CONNECTION_STATUS_SYMMETRIC_NAT) {
+            updatePeriod = FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND;
+        }
+        static time_t friendsListUpdateAttemptTime = 0;
+        if (now - updatePeriod > friendsListUpdateTime) {
+            if (now - FRIENDS_LIST_DOWNLOAD_TIMEOUT > friendsListUpdateAttemptTime) {
+                friendsListUpdateAttemptTime = time(NULL);
+                librarymixerconnect->downloadFriends();
+            }
+        }
+
         time_t timeoutIfOlder = now - LAST_HEARD_TIMEOUT;
-        time_t retryIfOlder;
-        if (connectionStatus == CONNECTION_STATUS_UDP_HOLE_PUNCHING ||
-            connectionStatus == CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING)
-            retryIfOlder = now - UDP_PUNCHING_PERIOD;
-        else retryIfOlder = now - TCP_RETRY_PERIOD;
 
         /* Can't simply use mFriendList.values() in foreach because that generates copies of the peerConnectState,
            and we need to be able to save in the changes. */
         foreach (unsigned int librarymixer_id, mFriendList.keys()) {
-            if (mFriendList[librarymixer_id].state & PEER_S_NO_CERT) continue;
+            if (mFriendList[librarymixer_id].state == FCS_NOT_MIXOLOGIST_ENABLED) continue;
 
             /* Check if connected peers need to be timed out */
-            else if (mFriendList[librarymixer_id].state & PEER_S_CONNECTED) {
+            else if (mFriendList[librarymixer_id].state == FCS_CONNECTED) {
                 if (mFriendList[librarymixer_id].lastheard < timeoutIfOlder) {
                     log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, QString("Connection with ") + mFriendList[librarymixer_id].name + " has timed out");
 
-                    mFriendList[librarymixer_id].state &= (~PEER_S_CONNECTED);
+                    mFriendList[librarymixer_id].state = FCS_NOT_CONNECTED;
                     mFriendList[librarymixer_id].actions |= PEER_TIMEOUT;
                     mFriendList[librarymixer_id].lastcontact = time(NULL);
 
                     /* Attempt an immediate reconnect. */
-                    /* Initialize double try information, as this will be our first of the two tries. */
-                    mFriendList[librarymixer_id].doubleTried = false;
-                    mFriendList[librarymixer_id].schedulednexttry = 0;
-
                     friendsToConnect.push_back(librarymixer_id);
                 } else continue;
             }
 
-            /* If last attempt was long enough ago, start a whole new attempt. */
-            else if (mFriendList[librarymixer_id].lastattempt < retryIfOlder) {
-                /* Initialize double try information, as this will be our first of the two tries. */
-                mFriendList[librarymixer_id].doubleTried = false;
-                mFriendList[librarymixer_id].schedulednexttry = 0;
-
-                friendsToConnect.push_back(librarymixer_id);
-            }
-
-            /* If we have a scheduled second try then start it. */
-            else if (mFriendList[librarymixer_id].schedulednexttry != 0 && mFriendList[librarymixer_id].schedulednexttry < now) {
-                /* We are performing the scheduled next try now, so clear it out. */
-                mFriendList[librarymixer_id].schedulednexttry = 0;
-
+            /* If we have a scheduled try then start it. */
+            else if (mFriendList[librarymixer_id].nextTcpTryAt < now) {
                 friendsToConnect.push_back(librarymixer_id);
             }
         }
@@ -555,11 +582,21 @@ void ConnectivityManager::statusTick() {
 
 #ifndef NO_AUTO_CONNECTION
     foreach (unsigned int librarymixer_id, friendsToConnect) {
-        retryConnectTCP(librarymixer_id);
-        retryConnectUDP(librarymixer_id);
+        tryConnectTCP(librarymixer_id);
     }
 #endif
 
+}
+
+void ConnectivityManager::addressUpdatedOnLibraryMixer() {
+    QMutexLocker stack(&connMtx);
+    readyToConnectToFriends = CONNECT_FRIENDS_READY;
+}
+
+void ConnectivityManager::friendsListUpdated() {
+    QMutexLocker stack(&connMtx);
+    friendsListUpdateTime = time(NULL);
+    log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE, "Updated friends list from LibraryMixer, retrying connections to friends.");
 }
 
 void ConnectivityManager::monitorsTick() {
@@ -611,7 +648,12 @@ void ConnectivityManager::monitorsTick() {
 bool ConnectivityManager::getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state) {
     QMutexLocker stack(&connMtx);
 
-    if (librarymixer_id == ownState.librarymixer_id) {
+    if (librarymixer_id == peers->getOwnLibraryMixerId()) {
+        peerConnectState ownState;
+        ownState.localaddr = ownLocalAddress;
+        ownState.serveraddr = ownExternalAddress;
+        ownState.librarymixer_id = peers->getOwnLibraryMixerId();
+        ownState.id = peers->getOwnCertId();
         state = ownState;
     } else {
         if (!mFriendList.contains(librarymixer_id)) return false;
@@ -621,127 +663,115 @@ bool ConnectivityManager::getPeerConnectState(unsigned int librarymixer_id, peer
 }
 
 bool ConnectivityManager::getQueuedConnectAttempt(unsigned int librarymixer_id, struct sockaddr_in &addr,
-                                                  uint32_t &delay, uint32_t &period, TransportLayerType &transportLayerType) {
+                                                  uint32_t &delay, QueuedConnectionType &queuedConnectionType) {
     QMutexLocker stack(&connMtx);
 
     if (!mFriendList.contains(librarymixer_id)) {
         log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
-            QString("Can't make attempt to connect to user, not in friends list, certificate id was: ").append(librarymixer_id));
+            QString("Can't make attempt to connect to user, not in friends list, id was: ").append(librarymixer_id));
         return false;
     }
 
     peerConnectState* connectState = &mFriendList[librarymixer_id];
 
-    if (connectState->connAddrs.size() < 1) {
+    if (connectState->queuedConnectionAttempts.size() < 1) {
         log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
-            QString("Can't make attempt to connect to user, have no IP address: ").append(connectState->name));
+            QString("Can't make attempt to connect to user, have no queued attempts: ").append(connectState->name));
         return false;
     }
 
-    connectState->lastattempt = time(NULL);
-
-    peerConnectAddress address = connectState->connAddrs.front();
-    connectState->connAddrs.pop_front();
+    QueuedConnectionAttempt currentAttempt = connectState->queuedConnectionAttempts.front();
+    connectState->queuedConnectionAttempts.pop_front();
 
     /* Test if address is in use already. */
-    if (usedIps.contains(addressToString(address.addr))) {
-        /* If we have an alternative address to try for this attempt, simply stick this one on the back and request a try for a different address in the meantime. */
-        if (connectState->connAddrs.size() >= 1) {
-            connectState->connAddrs.push_back(address);
+    if (usedSockets.contains(addressToString(currentAttempt.addr))) {
+        /* If we have an alternative attempt to try, simply stick this one on the back and request a try for a different attempt in the meantime. */
+        if (connectState->queuedConnectionAttempts.size() >= 1) {
+            connectState->queuedConnectionAttempts.push_back(currentAttempt);
             connectState->actions |= PEER_CONNECT_REQ;
+            mStatusChanged = true;
         } else {
-            if (usedIps[addressToString(address.addr)] == USED_IP_CONNECTED) {
+            if (usedSockets[addressToString(currentAttempt.addr)] == USED_IP_CONNECTED) {
                 log(LOG_DEBUG_ALERT, CONNECTIVITY_MANAGER_ZONE,
-                    "ConnectivityManager::connectAttempt Can not connect to " + addressToString(address.addr) + " due to existing connection.");
-            } else if (usedIps[addressToString(address.addr)] == USED_IP_CONNECTING) {
-                connectState->schedulednexttry = time(NULL) + USED_IP_WAIT_TIME;
-                log(LOG_DEBUG_BASIC, CONNECTIVITY_MANAGER_ZONE,
-                    "ConnectivityManager::connectAttempt Waiting to try to connect to " + addressToString(address.addr) + " due to existing attempted connection.");
+                    "ConnectivityManager::connectAttempt Can not connect to " + addressToString(currentAttempt.addr) + " due to existing connection.");
+            } else if (usedSockets[addressToString(currentAttempt.addr)] == USED_IP_CONNECTING) {
+                if (connectState->currentConnectionAttempt.queuedConnectionType == CONNECTION_TYPE_TCP_LOCAL ||
+                    connectState->currentConnectionAttempt.queuedConnectionType == CONNECTION_TYPE_TCP_EXTERNAL) {
+                    connectState->nextTcpTryAt = time(NULL) + USED_SOCKET_WAIT_TIME;
+                    log(LOG_DEBUG_BASIC, CONNECTIVITY_MANAGER_ZONE,
+                        "ConnectivityManager::connectAttempt Waiting to try to connect to " + addressToString(currentAttempt.addr) + " due to existing attempted connection.");
+                } else if (connectState->currentConnectionAttempt.queuedConnectionType == CONNECTION_TYPE_UDP) {
+                    log(LOG_DEBUG_BASIC, CONNECTIVITY_MANAGER_ZONE,
+                        "ConnectivityManager::connectAttempt Abandoning attempt to connect over UDP to " + addressToString(currentAttempt.addr) +
+                        " due to existing attempted connection, will try again on next incoming UDP Tunneler.");
+                }
             }
         }
         return false;
     }
 
     /* If we get here, the IP address is good to use, so load it in. */
-    connectState->inConnAttempt = true;
-    connectState->currentConnAddr = address;
-    usedIps[addressToString(address.addr)] = USED_IP_CONNECTING;
+    connectState->inConnectionAttempt = true;
+    connectState->currentConnectionAttempt = currentAttempt;
+    usedSockets[addressToString(currentAttempt.addr)] = USED_IP_CONNECTING;
 
-    addr = connectState->currentConnAddr.addr;
-    delay = connectState->currentConnAddr.delay;
-    period = connectState->currentConnAddr.period;
-    transportLayerType = connectState->currentConnAddr.transportLayerType;
+    addr = connectState->currentConnectionAttempt.addr;
+    delay = connectState->currentConnectionAttempt.delay;
+    queuedConnectionType = connectState->currentConnectionAttempt.queuedConnectionType;
 
     log(LOG_DEBUG_BASIC, CONNECTIVITY_MANAGER_ZONE,
-        QString("ConnectivityManager::connectAttempt Returning information for connection attempt to user: ").append(connectState->name));
+        QString("ConnectivityManager::connectAttempt Providing information for connection attempt to user: ").append(connectState->name));
 
     return true;
 }
 
-bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, bool success, uint32_t flags) {
+bool ConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, int result, bool tcpConnection) {
     QMutexLocker stack(&connMtx);
 
-    if (!mFriendList.contains(librarymixer_id)) {
-        log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
-            QString("Failed to connect to user, not in friends list, friend number was: ").append(QString::number(librarymixer_id)));
-        return false;
-    }
+    if (!mFriendList.contains(librarymixer_id)) return false;
 
-    peerConnectState* connectState = &mFriendList[librarymixer_id];
+    mFriendList[librarymixer_id].inConnectionAttempt = false;
 
-    connectState->inConnAttempt = false;
+    if (result == 1) {
+        /* No longer need any of the queued connection attempts. */
+        mFriendList[librarymixer_id].queuedConnectionAttempts.clear();
 
-    if (success) {
-        /* remove other attempts */
-        connectState->connAddrs.clear();
-
-        usedIps[addressToString(connectState->currentConnAddr.addr)] = USED_IP_CONNECTED;
+        /* Mark this socket as used so no other connection attempt can try to use it. */
+        usedSockets[addressToString(mFriendList[librarymixer_id].currentConnectionAttempt.addr)] = USED_IP_CONNECTED;
 
         log(LOG_DEBUG_BASIC, CONNECTIVITY_MANAGER_ZONE,
-            QString("Successfully connected to: ") + connectState->name +
-            " (" + inet_ntoa(connectState->currentConnAddr.addr.sin_addr) + ")");
+            QString("Successfully connected to: ") + mFriendList[librarymixer_id].name +
+            " (" + inet_ntoa(mFriendList[librarymixer_id].currentConnectionAttempt.addr.sin_addr) + ")");
 
         /* change state */
-        connectState->state |= PEER_S_CONNECTED;
-        connectState->actions |= PEER_CONNECTED;
+        mFriendList[librarymixer_id].state = FCS_CONNECTED;
+        mFriendList[librarymixer_id].actions |= PEER_CONNECTED;
         mStatusChanged = true;
-        connectState->lastcontact = time(NULL);
-        connectState->lastheard = time(NULL);
-        //connectState->connecttype = flags;
+        mFriendList[librarymixer_id].lastcontact = time(NULL);
+        mFriendList[librarymixer_id].lastheard = time(NULL);
+    } else {
+        log(LOG_DEBUG_BASIC,
+            CONNECTIVITY_MANAGER_ZONE,
+            QString("Unable to connect to friend: ") + mFriendList[librarymixer_id].name +
+            ", over transport layer type: " + QString::number(tcpConnection));
 
-        return true;
-    }
+        usedSockets.remove(addressToString(mFriendList[librarymixer_id].currentConnectionAttempt.addr));
 
-    log(LOG_DEBUG_BASIC,
-        CONNECTIVITY_MANAGER_ZONE,
-        QString("Unable to connect to friend: ") + connectState->name +
-        ", flags: " + QString::number(flags));
+        /* We may receive a failure report if we were connected and the connection failed. */
+        if (mFriendList[librarymixer_id].state == FCS_CONNECTED) {
+            mFriendList[librarymixer_id].lastcontact = time(NULL);
+            mFriendList[librarymixer_id].state = FCS_NOT_CONNECTED;
+        }
 
-    usedIps.remove(addressToString(connectState->currentConnAddr.addr));
+        /* If we have been requested to schedule another TCP connection attempt. */
+        if (result == 0) mFriendList[librarymixer_id].nextTcpTryAt = time(NULL) + REQUESTED_RETRY_WAIT_TIME;
 
-    /* if currently connected -> flag as failed */
-    if (connectState->state & PEER_S_CONNECTED) {
-        connectState->state &= (~PEER_S_CONNECTED);
-        connectState->actions |= PEER_DISCONNECTED;
-
-        connectState->lastcontact = time(NULL);  /* time of disconnect */
-
-        //mDhtMgr->findPeer(authMgr->findCertByLibraryMixerId(librarymixer_id));
-    }
-
-    /* If there are no addresses left to try, we're done. */
-    if (connectState->connAddrs.size() < 1) {
-        if (connectState->doubleTried) return true;
-        else {
-            connectState->doubleTried = true;
-            connectState->schedulednexttry = time(NULL) + USED_IP_WAIT_TIME;
-            return true;
+        /* If we still have other addresses in the queue to try, signal the aggregatedConnectionsToFriends to try them. */
+        if (mFriendList[librarymixer_id].queuedConnectionAttempts.size() > 0) {
+            mFriendList[librarymixer_id].actions |= PEER_CONNECT_REQ;
+            mStatusChanged = true;
         }
     }
-
-    /* Otherwise flag for additional attempts. */
-    connectState->actions |= PEER_CONNECT_REQ;
-    mStatusChanged = true;
 
     return true;
 }
@@ -757,47 +787,25 @@ void ConnectivityManager::heardFrom(unsigned int librarymixer_id) {
 void ConnectivityManager::setFallbackExternalIP(QString address) {
     QMutexLocker stack(&connMtx);
     log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE, "Setting IP address based on what LibraryMixer sees, guessing external port, connection may not work");
-    inet_aton(address.toStdString().c_str(), &ownState.serveraddr.sin_addr);
+    inet_aton(address.toStdString().c_str(), &ownExternalAddress.sin_addr);
 }
 
-void ConnectivityManager::queueConnectionAttempt(peerConnectState *connectState, TransportLayerType transportLayerType, TCPLocalOrExternal localOrExternal) {
-    //TODO remove testing code
-    if (connectState->librarymixer_id != 11 &&
-        connectState->librarymixer_id != 13) return;
-
+void ConnectivityManager::queueConnectionAttempt(peerConnectState *connectState, QueuedConnectionType queuedConnectionType) {
     /* Only add this address if there is not already one of that type on there already.
        First check if we're in a current connection attempt with that type.
        Then check if any of the queued connection attempts are for that type. */
-    if (connectState->inConnAttempt) {
-        if (connectState->currentConnAddr.transportLayerType == transportLayerType) {
-            if (transportLayerType == CONNECTION_UDP_TRANSPORT) return;
-            else if (transportLayerType == CONNECTION_TCP_TRANSPORT) {
-                if (connectState->currentConnAddr.tcpLocalOrExternal == localOrExternal) return;
-            }
-        }
+    if (connectState->inConnectionAttempt) {
+        if (connectState->currentConnectionAttempt.queuedConnectionType == queuedConnectionType) return;
     }
-    foreach (peerConnectAddress queuedAddress, connectState->connAddrs) {
-        if (queuedAddress.transportLayerType == transportLayerType) {
-            if (transportLayerType == CONNECTION_UDP_TRANSPORT) return;
-            else if (transportLayerType == CONNECTION_TCP_TRANSPORT) {
-                if (queuedAddress.tcpLocalOrExternal == localOrExternal) return;
-            }
-        }
+    foreach (QueuedConnectionAttempt queuedAddress, connectState->queuedConnectionAttempts) {
+        if (queuedAddress.queuedConnectionType == queuedConnectionType) return;
     }
 
     /* If we get here, this is new, add the connection attempt. */
-    peerConnectAddress addressToConnect;
-    addressToConnect.transportLayerType = transportLayerType;
-    addressToConnect.tcpLocalOrExternal = localOrExternal;
-    if (localOrExternal == TCP_LOCAL_ADDRESS)
-        addressToConnect.addr = connectState->localaddr;
-    else if (localOrExternal == TCP_EXTERNAL_ADDRESS)
-        addressToConnect.addr = connectState->serveraddr;
-    //TODO FIX: In shipping version, we must use serveraddr instead of localaddr
-    else if (transportLayerType == CONNECTION_UDP_TRANSPORT) {
-        addressToConnect.addr = connectState->localaddr;
-        addressToConnect.period = 300; //5 minutes
-    }
+    QueuedConnectionAttempt addressToConnect;
+    addressToConnect.queuedConnectionType = queuedConnectionType;
+    if (queuedConnectionType == CONNECTION_TYPE_TCP_LOCAL) addressToConnect.addr = connectState->localaddr;
+    else addressToConnect.addr = connectState->serveraddr;
 
     log(LOG_DEBUG_ALERT,
         CONNECTIVITY_MANAGER_ZONE,
@@ -805,17 +813,20 @@ void ConnectivityManager::queueConnectionAttempt(peerConnectState *connectState,
         " Attempting connection to friend #" + QString::number(connectState->librarymixer_id) +
         " with IP: " + addressToString(addressToConnect.addr));
 
-    connectState->connAddrs.push_back(addressToConnect);
+    connectState->queuedConnectionAttempts.push_back(addressToConnect);
 }
 
-bool ConnectivityManager::retryConnectTCP(unsigned int librarymixer_id) {
+bool ConnectivityManager::tryConnectTCP(unsigned int librarymixer_id) {
     QMutexLocker stack(&connMtx);
 
     if (!mFriendList.contains(librarymixer_id)) return false;
 
     peerConnectState* connectState = &mFriendList[librarymixer_id];
 
-    if (connectState->state & PEER_S_CONNECTED) return true;
+    /* We can now consider this attempt tried so that tick doesn't try to schedule again, and increment the next try time. */
+    connectState->nextTcpTryAt = time(NULL) + TCP_RETRY_PERIOD;
+
+    if (connectState->state == FCS_CONNECTED) return true;
 
 #ifndef NO_TCP_CONNECTIONS
 
@@ -824,28 +835,25 @@ bool ConnectivityManager::retryConnectTCP(unsigned int librarymixer_id) {
 
     /* If address is valid, on the same subnet, not the same as external address, and not the same as own addresses, add it as a local address to try. */
     if (isValidNet(&(connectState->localaddr.sin_addr)) &&
-        isSameSubnet(&(ownState.localaddr.sin_addr), &(connectState->localaddr.sin_addr)) &&
+        isSameSubnet(&(ownLocalAddress.sin_addr), &(connectState->localaddr.sin_addr)) &&
         (localIP != externalIP) &&
-        (!isSameAddress(&ownState.localaddr, &connectState->localaddr)) &&
-        (!isSameAddress(&ownState.serveraddr, &connectState->localaddr))) {
-        queueConnectionAttempt(connectState, CONNECTION_TCP_TRANSPORT, TCP_LOCAL_ADDRESS);
+        (!isSameAddress(&ownLocalAddress, &connectState->localaddr)) &&
+        (!isSameAddress(&ownExternalAddress, &connectState->localaddr))) {
+        queueConnectionAttempt(connectState, CONNECTION_TYPE_TCP_LOCAL);
     }
 
     /* Always try external unless address is the same as one of ours. */
     if (isValidNet(&(connectState->serveraddr.sin_addr)) &&
-        (!isSameAddress(&ownState.localaddr, &connectState->serveraddr)) &&
-        (!isSameAddress(&ownState.serveraddr, &connectState->serveraddr))) {
-        queueConnectionAttempt(connectState, CONNECTION_TCP_TRANSPORT, TCP_EXTERNAL_ADDRESS);
+        (!isSameAddress(&ownLocalAddress, &connectState->serveraddr)) &&
+        (!isSameAddress(&ownExternalAddress, &connectState->serveraddr))) {
+        queueConnectionAttempt(connectState, CONNECTION_TYPE_TCP_EXTERNAL);
     }
 
-    /* Update the lastattempt to connect time to now. */
-    connectState->lastattempt = time(NULL);
-
     /* If it's already in a connection attempt, it'll automatically use the new addresses. */
-    if (connectState->inConnAttempt) return true;
+    if (connectState->inConnectionAttempt) return true;
 
     /* Start a connection attempt. */
-    if (connectState->connAddrs.size() > 0) {
+    if (connectState->queuedConnectionAttempts.size() > 0) {
         connectState->actions |= PEER_CONNECT_REQ;
         mStatusChanged = true;
     }
@@ -855,35 +863,148 @@ bool ConnectivityManager::retryConnectTCP(unsigned int librarymixer_id) {
     return true;
 }
 
-bool ConnectivityManager::retryConnectUDP(unsigned int librarymixer_id) {
+bool ConnectivityManager::tryConnectBackTCP(unsigned int librarymixer_id) {
     QMutexLocker stack(&connMtx);
 
     if (!mFriendList.contains(librarymixer_id)) return false;
 
     peerConnectState* connectState = &mFriendList[librarymixer_id];
 
-    /* if already connected -> done */
-    if (connectState->state & PEER_S_CONNECTED) return true;
+    if (connectState->state == FCS_CONNECTED) return true;
 
-
-    queueConnectionAttempt(connectState, CONNECTION_UDP_TRANSPORT, NOT_TCP);
-
-    /* Update the lastattempt to connect time to now. */
-    connectState->lastattempt = time(NULL);
+#ifndef NO_TCP_BACK_CONNECTIONS
+    queueConnectionAttempt(connectState, CONNECTION_TYPE_TCP_BACK);
 
     /* If it's already in a connection attempt, it'll automatically use the new addresses. */
-    if (connectState->inConnAttempt) return true;
+    if (connectState->inConnectionAttempt) return true;
 
     /* Start a connection attempt. */
-    if (connectState->connAddrs.size() > 0) {
+    if (connectState->queuedConnectionAttempts.size() > 0) {
         connectState->actions |= PEER_CONNECT_REQ;
         mStatusChanged = true;
     }
+#endif
+    return true;
+}
 
-    /* Update the lastattempt to connect time to now. */
-    connectState->lastattempt = time(NULL);
+bool ConnectivityManager::tryConnectUDP(unsigned int librarymixer_id) {
+    QMutexLocker stack(&connMtx);
+
+    if (!mFriendList.contains(librarymixer_id)) return false;
+
+    peerConnectState* connectState = &mFriendList[librarymixer_id];
+
+    if (connectState->state == FCS_CONNECTED) return true;
+
+#ifndef NO_UDP_CONNECTIONS
+    queueConnectionAttempt(connectState, CONNECTION_TYPE_UDP);
+
+    /* If it's already in a connection attempt, it'll automatically use the new addresses. */
+    if (connectState->inConnectionAttempt) return true;
+
+    /* Start a connection attempt. */
+    if (connectState->queuedConnectionAttempts.size() > 0) {
+        connectState->actions |= PEER_CONNECT_REQ;
+        mStatusChanged = true;
+    }
+#endif //NO_UDP_CONNECTIONS
 
     return true;
+}
+
+void ConnectivityManager::receivedUdpTunneler(unsigned int librarymixer_id, QString address, ushort port) {
+    {
+        QMutexLocker stack(&connMtx);
+        if (readyToConnectToFriends != CONNECT_FRIENDS_READY) return;
+
+        if (!mFriendList.contains(librarymixer_id)) {
+            log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
+                "Received a UDP packet from an unknown user with LibraryMixer ID " + QString::number(librarymixer_id) +
+                ", updating friend list");
+            librarymixerconnect->downloadFriends();
+            return;
+        }
+
+#ifdef TEST_UDP_LOCAL
+        if (QString(inet_ntoa(mFriendList[librarymixer_id].localaddr.sin_addr)) != address ||
+            ntohs(mFriendList[librarymixer_id].localaddr.sin_port) != port) {
+#else
+        if (QString(inet_ntoa(mFriendList[librarymixer_id].serveraddr.sin_addr)) != address ||
+            ntohs(mFriendList[librarymixer_id].serveraddr.sin_port) != port) {
+#endif
+            librarymixerconnect->downloadFriends();
+            return;
+        }
+    }
+
+    if (connectionStatus != CONNECTION_STATUS_UDP_HOLE_PUNCHING &&
+        connectionStatus != CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING) {
+        log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
+            "Received a UDP packet from a friend but do not believe ourselves to be firewalled, requesting TCP connect back");
+        queueConnectionAttempt(&mFriendList[librarymixer_id], CONNECTION_TYPE_TCP_BACK);
+    }
+
+#ifdef TEST_UDP_LOCAL
+    udpMainSocket->sendUdpConnectionNotice(&mFriendList[librarymixer_id].localaddr, &ownLocalAddress, peers->getOwnLibraryMixerId());
+#else
+    udpMainSocket->sendUdpConnectionNotice(&mFriendList[librarymixer_id].serveraddr, &ownExternalAddress, peers->getOwnLibraryMixerId());
+#endif
+    tryConnectUDP(librarymixer_id);
+}
+
+void ConnectivityManager::receivedUdpConnectionNotice(unsigned int librarymixer_id, QString address, ushort port) {
+    {
+        /* UdpConnectionNotices should only be received in response to UdpTunnelers we sent.
+           Receiving one where any information is out of the ordinary is completely unexpected,
+           and likely indicates some sort of suspicious activity.
+           We don't even update our friends list for this, because there is no scenario where our friends list is out-of-date
+           that would result in this scenario. */
+        QMutexLocker stack(&connMtx);
+        if (readyToConnectToFriends != CONNECT_FRIENDS_READY) return;
+
+        if (!mFriendList.contains(librarymixer_id)) {
+            log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
+                "Received a UDP connection notification from an unknown user with LibraryMixer ID " + QString::number(librarymixer_id) +
+                ", this is unexpected, ignoring");
+            return;
+        }
+
+#ifdef TEST_UDP_LOCAL
+        if (QString(inet_ntoa(mFriendList[librarymixer_id].localaddr.sin_addr)) != address ||
+            ntohs(mFriendList[librarymixer_id].localaddr.sin_port) != port) {
+#else
+        if (QString(inet_ntoa(mFriendList[librarymixer_id].serveraddr.sin_addr)) != address ||
+            ntohs(mFriendList[librarymixer_id].serveraddr.sin_port) != port) {
+#endif
+            log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
+                "Received a UDP connection notification that contains invalid data, ignoring");
+            return;
+        }
+    }
+
+    tryConnectUDP(librarymixer_id);
+}
+
+void ConnectivityManager::receivedTcpConnectionRequest(unsigned int librarymixer_id, QString address, ushort port) {
+    {
+        QMutexLocker stack(&connMtx);
+        if (readyToConnectToFriends != CONNECT_FRIENDS_READY) return;
+
+        if (!mFriendList.contains(librarymixer_id)) {
+            log(LOG_WARNING, CONNECTIVITY_MANAGER_ZONE,
+                "Received a request to connect from an unknown user with LibraryMixer ID " + QString::number(librarymixer_id) +
+                ", updating friend list");
+            librarymixerconnect->downloadFriends();
+            return;
+        }
+
+        if (QString(inet_ntoa(mFriendList[librarymixer_id].serveraddr.sin_addr)) != address ||
+            ntohs(mFriendList[librarymixer_id].serveraddr.sin_port) != port) {
+            librarymixerconnect->downloadFriends();
+            return;
+        }
+    }
+    tryConnectTCP(librarymixer_id);
 }
 
 /**********************************************************************************
@@ -893,7 +1014,7 @@ void ConnectivityManager::getOnlineList(std::list<int> &peers) {
     QMutexLocker stack(&connMtx);
 
     foreach (unsigned int friend_id, mFriendList.keys()) {
-        if (mFriendList[friend_id].state & PEER_S_CONNECTED)
+        if (mFriendList[friend_id].state == FCS_CONNECTED)
             peers.push_back(friend_id);
     }
 }
@@ -902,7 +1023,7 @@ void ConnectivityManager::getSignedUpList(std::list<int> &peers) {
     QMutexLocker stack(&connMtx);
 
     foreach (unsigned int friend_id, mFriendList.keys()) {
-        if (mFriendList[friend_id].state != PEER_S_NO_CERT)
+        if (mFriendList[friend_id].state != FCS_NOT_MIXOLOGIST_ENABLED)
             peers.push_back(friend_id);
     }
 }
@@ -923,7 +1044,7 @@ bool ConnectivityManager::isFriend(unsigned int librarymixer_id) {
 bool ConnectivityManager::isOnline(unsigned int librarymixer_id) {
     QMutexLocker stack(&connMtx);
     if (mFriendList.contains(librarymixer_id))
-        return (mFriendList[librarymixer_id].state == PEER_S_CONNECTED);
+        return (mFriendList[librarymixer_id].state == FCS_CONNECTED);
     return false;
 }
 
@@ -959,11 +1080,11 @@ bool ConnectivityManager::addUpdateFriend(unsigned int librarymixer_id, const QS
         mFriendList[librarymixer_id].serveraddr = externalAddress;
         //If the cert has been updated
         if (authResult >= 1) {
-            if (mFriendList[librarymixer_id].state == PEER_S_NO_CERT) {
-                mFriendList[librarymixer_id].state = 0;
+            if (mFriendList[librarymixer_id].state == FCS_NOT_MIXOLOGIST_ENABLED) {
+                mFriendList[librarymixer_id].state = FCS_NOT_CONNECTED;
             }
-            /* Note that when we update the peer, we are creating a new pqiperson while not removing its old pqiperson.
-               This is because we would need to signal to pqipersongrp that the old one needs to be removed and a new one
+            /* Note that when we update the peer, we are creating a new ConnectionToFriend while not removing its old ConnectionToFriend.
+               This is because we would need to signal to AggregatedConnectionsToFriends that the old one needs to be removed and a new one
                created simultaneously, and we don't have a convenient way to do that yet. */
             mFriendList[librarymixer_id].actions = PEER_NEW;
             mStatusChanged = true;
@@ -983,28 +1104,20 @@ bool ConnectivityManager::addUpdateFriend(unsigned int librarymixer_id, const QS
         /* If this is a new friend, but no cert was added. */
         if (authResult <= 0) {
             pstate.id = "";
-            pstate.state = PEER_S_NO_CERT;
+            pstate.state = FCS_NOT_MIXOLOGIST_ENABLED;
             pstate.actions = 0;
         }
         /* Otherwise this is a successful new friend. */
         else {
             /* Should not be able to reach here with a null Cert. */
             if ((pstate.id = authMgr->findCertByLibraryMixerId(librarymixer_id)).empty()) return false;
-            pstate.state = 0;
+            pstate.state = FCS_NOT_CONNECTED;
             pstate.actions = PEER_NEW;
             mStatusChanged = true;
         }
         pstate.lastcontact = 0;
 
         mFriendList[librarymixer_id] = pstate;
-
-#ifdef false
-        //TODO FIX: In shipping version, we must use serveraddr instead of localaddr
-        int socket = tou_socket(NULL, NULL, NULL);
-        if (socket != -1) {
-            tou_listenfor(socket, (struct sockaddr *) &localAddress, sizeof(localAddress));
-        }
-#endif
 
         return true;
     }
@@ -1027,9 +1140,9 @@ bool ConnectivityManager::removeFriend(std::string id) {
         mFriendList.erase(it);
 
         //Why do we have to modify peer after it's already erased?
-        peer.state &= (~PEER_S_CONNECTED);
+        peer.state = FCS_NOT_CONNECTED;
         //      peer.actions = PEER_MOVED;
-        peer.inConnAttempt = false;
+        peer.inConnectionAttempt = false;
         mStatusChanged = true;
         authMgr->RemoveCertificate(id);
 
@@ -1040,18 +1153,12 @@ bool ConnectivityManager::removeFriend(std::string id) {
 }
 #endif
 
-void ConnectivityManager::retryConnect(unsigned int librarymixer_id) {
-    if (mFriendList.contains(librarymixer_id)) {
-        mFriendList[librarymixer_id].doubleTried = false;
-        mFriendList[librarymixer_id].schedulednexttry = 0;
-        retryConnectTCP(librarymixer_id);
-        retryConnectUDP(librarymixer_id);
-    }
-}
+void ConnectivityManager::tryConnectAll() {
+    if (readyToConnectToFriends != CONNECT_FRIENDS_READY) return;
 
-void ConnectivityManager::retryConnectAll() {
     foreach (unsigned int librarymixer_id, mFriendList.keys()) {
-        retryConnect(librarymixer_id);
+        tryConnectTCP(librarymixer_id);
+        tryConnectBackTCP(librarymixer_id);
     }
 }
 
@@ -1063,8 +1170,7 @@ int ConnectivityManager::getLocalPort() {
     QSettings settings(*mainSettings, QSettings::IniFormat);
     if (settings.contains("Network/PortNumber")) {
         int storedPort = settings.value("Network/PortNumber", DEFAULT_PORT).toInt();
-        if (storedPort != SET_TO_RANDOMIZED_PORT &&
-            storedPort > Peers::MIN_PORT &&
+        if (storedPort > Peers::MIN_PORT &&
             storedPort < Peers::MAX_PORT) return storedPort;
         else return getRandomPortNumber();
     } else {

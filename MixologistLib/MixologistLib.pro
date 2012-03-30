@@ -83,18 +83,16 @@ HEADERS += ft/ftcontroller.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
            pqi/pqihandler.h \
-           pqi/pqihash.h \
            pqi/pqilistener.h \
            pqi/pqiloopback.h \
            pqi/pqimonitor.h \
            pqi/pqinetwork.h \
            pqi/pqinotify.h \
-           pqi/pqiperson.h \
-           pqi/pqipersongrp.h \
+           pqi/connectionToFriend.h \
+           pqi/aggregatedConnections.h \
            pqi/pqiservice.h \
            pqi/pqissl.h \
            pqi/pqissllistener.h \
-           pqi/pqisslpersongrp.h \
            pqi/pqissludp.h \
            pqi/pqistreamer.h \
            interface/files.h \
@@ -126,7 +124,8 @@ HEADERS += ft/ftcontroller.h \
            services/p3chatservice.h \
            services/p3service.h \
            tcponudp/bio_tou.h \
-           tcponudp/stunbasics.h \
+           tcponudp/stunpacket.h \
+           tcponudp/connectionrequestpacket.h \
            tcponudp/tcppacket.h \
            tcponudp/tcpstream.h \
            tcponudp/tou.h \
@@ -167,14 +166,13 @@ SOURCES = \
                                 services/statusservice.cc \
 				services/p3chatservice.cc \
 				services/p3service.cc \
-				pqi/pqipersongrp.cc \
+                                pqi/aggregatedConnections.cc \
 				pqi/pqihandler.cc \
 				pqi/pqinotify.cc \
 				pqi/pqiservice.cc \
-				pqi/pqiperson.cc \
+                                pqi/connectionToFriend.cc \
 				pqi/pqissludp.cc \
                                 pqi/authmgr.cc \
-				pqi/pqisslpersongrp.cc \
 				pqi/pqissllistener.cc \
 				pqi/pqissl.cc \
                                 pqi/connectivitymanager.cc \
@@ -191,7 +189,8 @@ SOURCES = \
                                 serialiser/tlvfileitem.cc \
 				serialiser/serial.cc \
                                 tcponudp/bss_tou.cc \
-                                tcponudp/stunbasics.cc \
+                                tcponudp/stunpacket.cc \
+                                tcponudp/connectionrequestpacket.cc \
                                 tcponudp/tcpstream.cc \
 				tcponudp/tou.cc \
 				tcponudp/tcppacket.cc \

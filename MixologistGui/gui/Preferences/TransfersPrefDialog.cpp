@@ -37,7 +37,6 @@
 
 #define SPINNER_MAX 999999
 
-/** Constructor */
 TransfersPrefDialog::TransfersPrefDialog(QWidget *parent)
     : ConfigPage(parent) {
     /* Invoke the Qt Designer generated object setup routine */
@@ -67,7 +66,6 @@ TransfersPrefDialog::TransfersPrefDialog(QWidget *parent)
     ui.partialsDir->setText(files->getPartialsDirectory());
 }
 
-/** Saves the changes on this page */
 bool TransfersPrefDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 

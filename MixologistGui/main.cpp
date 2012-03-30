@@ -38,10 +38,16 @@
 #include <windows.h>
 #endif
 
+/* So that when we compile statically, gif support is enabled. */
+#include <QtPlugin>
+Q_IMPORT_PLUGIN(qgif)
+
 //Setting up global extern for MainWindow.h
 MainWindow *mainwindow = NULL;
 //Setting up global extern for iface.h
 NotifyBase *notifyBase = NULL;
+//Setting up global extern for notifyqt.h
+NotifyQt *guiNotify = NULL;
 
 int main(int argc, char *argv[]) {
 
@@ -68,8 +74,8 @@ int main(int argc, char *argv[]) {
         }
         return 0;
     }
-    NotifyQt *notify = new NotifyQt();
-    notifyBase = notify;
+    guiNotify = new NotifyQt();
+    notifyBase = guiNotify;
 
     /* Login Dialog */
     StartDialog *start = new StartDialog();
@@ -84,43 +90,14 @@ int main(int argc, char *argv[]) {
     }
 
     //Setup the universal extern mainwindow that is the actual GUI
-    mainwindow = new MainWindow(notify);
+    mainwindow = new MainWindow();
     instance.setActivationWindow(mainwindow);
     //The main window can minimize to system tray, and when minimized, we don't want the program to quit when the last visible window closes.
     instance.setQuitOnLastWindowClosed(false);
+
     //For MixologistApplication (extending QTSingleApplication) to pass urls to an already running instance.
     QObject::connect(&instance, SIGNAL(messageReceived(QString)),
                      mainwindow->transfersDialog, SLOT(download(QString)));
-    //To display a label at the bottom while hashing files.
-    QObject::connect(notify, SIGNAL(hashingInfoChanged(QString)),
-                     mainwindow, SLOT(updateHashingInfo(QString)));
-    //To display transfers on the TransfersDialog, as well as the total rate info in the corner.
-    QObject::connect(notify, SIGNAL(transfersChanged()),
-                     mainwindow->transfersDialog, SLOT(insertTransfers()));
-    //To display friends on the PeersDialog, as well as the friends in the corner.
-    QObject::connect(notify, SIGNAL(friendsChanged()),
-                     mainwindow->peersDialog, SLOT(insertPeers()));
-    //To display chat status in chat windows.
-    QObject::connect(notify, SIGNAL(chatStatusChanged(unsigned int, QString)),
-                     mainwindow->peersDialog, SLOT(updatePeerStatusString(unsigned int, QString)));
-    //To popup a chat box on incoming requests where a chat window is needed
-    QObject::connect(notify, SIGNAL(requestEventOccurred(int,unsigned int,unsigned int)),
-                     mainwindow->peersDialog, SLOT(insertRequestEvent(int,unsigned int,unsigned int)));
-    //To popup a chat box on transfer events where the friend's response requests chatting or indicates an error.
-    QObject::connect(notify, SIGNAL(transferChatEventOccurred(int,unsigned int,QString,QString)),
-                     mainwindow->peersDialog, SLOT(insertTransferEvent(int,unsigned int,QString,QString)));
-    //To popup a box informing that a friend is attempting to send a file.
-    //QList<qlonglong> is not a default registerd type for QT's meta-object system, so we must first manually register it.
-    qRegisterMetaType<QList<qlonglong> >("QList<qlonglong>");
-    QObject::connect(notify, SIGNAL(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)),
-                     mainwindow->transfersDialog, SLOT(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)));
-    /* When we have an attempted connection from a peer with a bad authentication certificate, update friends from the server
-       to make sure that it's not because we have outdated information. Routing this through the GUI enables us
-       to show the update graphics while doing an automatic update. */
-    QObject::connect(notify, SIGNAL(connectionDenied()),
-                     mainwindow->peersDialog, SLOT(updateFriends()));
-    QObject::connect(notify, SIGNAL(userOptionalInfo(unsigned int,int,QString)),
-                     mainwindow->peersDialog, SLOT(insertUserOptional(unsigned int,int,QString)));
 
     QSettings *settings = new QSettings(*mainSettings, QSettings::IniFormat);
     if (!settings->value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool()) mainwindow->show();
@@ -133,12 +110,12 @@ int main(int argc, char *argv[]) {
 
     /* Startup a Timer to keep the gui's updated */
     QTimer *timer = new QTimer(mainwindow);
-    timer->connect(timer, SIGNAL(timeout()), notify, SLOT(UpdateGUI()));
+    timer->connect(timer, SIGNAL(timeout()), guiNotify, SLOT(UpdateGUI()));
     timer->start(1000);
 
     /* the main loop */
-    int ti = instance.exec();
-    delete mainwindow;
-    return ti;
+    int execResult = instance.exec();
 
+    delete mainwindow;
+    return execResult;
 }

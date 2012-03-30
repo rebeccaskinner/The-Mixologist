@@ -34,7 +34,9 @@
 #include "pqi/authmgr.h"
 
 p3Peers::p3Peers(QString &ownName)
-    :ownName(ownName) {}
+    :ownName(ownName) {
+    connect(connMgr, SIGNAL(connectionStateChanged(int)), this, SIGNAL(connectionStateChanged(int)));
+}
 
 /* Peer Details (Net & Auth) */
 std::string p3Peers::getOwnCertId() {
@@ -86,13 +88,11 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
 
     /* Translate */
 
-    if (pcs.state & PEER_S_CONNECTED)
+    if (pcs.state == FCS_CONNECTED)
         d.state = PEER_STATE_CONNECTED;
-    else if (pcs.schedulednexttry != 0)
-        d.state = PEER_STATE_WAITING_FOR_RETRY;
-    else if (pcs.inConnAttempt)
+    else if (pcs.inConnectionAttempt)
         d.state = PEER_STATE_TRYING;
-    else if (pcs.state & PEER_S_NO_CERT)
+    else if (pcs.state == FCS_NOT_MIXOLOGIST_ENABLED)
         d.state = PEER_STATE_NO_CERT;
     else d.state = PEER_STATE_OFFLINE;
 
@@ -118,12 +118,8 @@ bool p3Peers::addUpdateFriend(unsigned int librarymixer_id, const QString &cert,
 }
 
 /* Network Stuff */
-void p3Peers::connectAttempt(unsigned int librarymixer_id) {
-    connMgr->retryConnect(librarymixer_id);
-}
-
 void p3Peers::connectAll() {
-    connMgr->retryConnectAll();
+    connMgr->tryConnectAll();
 }
 
 PeerDetails::PeerDetails()
