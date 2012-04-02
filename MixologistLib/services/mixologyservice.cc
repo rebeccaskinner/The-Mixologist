@@ -36,6 +36,7 @@
 #include <QDir>
 #include <util/dir.h>
 #include <util/debug.h>
+#include <time.h>
 
 
 /****

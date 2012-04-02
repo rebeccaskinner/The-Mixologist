@@ -20,10 +20,7 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-//Must be included before connectionrequestpacket.h which includes util/net.h to avoid _WIN32_WINNT redefine warnings on Windows
-#include "pqi/pqinetwork.h"
-
-#include "tcponudp/connectionrequestpacket.h"
+#include <tcponudp/connectionrequestpacket.h>
 
 #include <util/debug.h>
 

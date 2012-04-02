@@ -97,6 +97,7 @@ extern int errno; /* Define extern errno, to duplicate unix behaviour */
 #include <iostream>
 #include <string>
 #include <list>
+#include <QString>
 
 // Same def - different functions...
 
@@ -114,6 +115,8 @@ int inaddr_cmp(struct sockaddr_in addr1, unsigned long);
    In the case of Windows, if there is an all 0 address, returns it instead of loopback. */
 struct in_addr getPreferredInterface();
 
+bool interfaceStillExists(struct in_addr* currentInterface);
+
 /* Returns all local interfaces. */
 std::list<std::string> getLocalInterfaces();
 
@@ -125,6 +128,9 @@ bool isSameAddress(struct sockaddr_in *addr, struct sockaddr_in *addr2);
 in_addr_t pqi_inet_netof(struct in_addr addr); // our implementation.
 
 bool LookupDNSAddr(std::string name, struct sockaddr_in *addr);
+
+/* Utility function for usedSockets to convert a sockaddr_in into a string representation of form ###.###.###.###:## */
+QString addressToString(const struct sockaddr_in *addr);
 
 /* universal socket interface */
 

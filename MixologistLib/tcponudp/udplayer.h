@@ -49,6 +49,9 @@ public:
     /* Returns whether any errors have occurred, true on okay. */
     bool okay();
 
+    /* Halts the thread loop. */
+    void stop();
+
     /* Closes the listener socket. */
     void close();
 
@@ -84,6 +87,9 @@ private:
 
     /* The TTL for this socket. */
     int ttl;
+
+    /* When set to true, execution will halt. */
+    bool stopCalled;
 
     mutable QMutex sockMtx;
 };

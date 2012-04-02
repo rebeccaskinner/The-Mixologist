@@ -71,7 +71,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include "util/net.h"
+#include "pqi/pqinetwork.h"
 #include <QString>
 
 /* 0b 0000 0000 0001 XXXX UInt8       */

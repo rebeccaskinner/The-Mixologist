@@ -25,7 +25,7 @@
 #include <server/librarymixer-friendlibrary.h>
 
 #include <pqi/pqinetwork.h>
-#include <pqi/connectivitymanager.h>
+#include <pqi/ownConnectivityManager.h>
 
 #include <interface/settings.h>
 #include <interface/peers.h> //for peers variable
@@ -487,7 +487,7 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         if (externalIPNode.isNull()) goto addressUploadError;
         if (uploaded_externalIPNode.isNull()) goto addressUploadError;
         if (uploaded_externalIPNode.text() == "[[set_ip]]") {
-            connMgr->setFallbackExternalIP(externalIPNode.text());
+            ownConnectivityManager->setFallbackExternalIP(externalIPNode.text());
         } else {
             if (externalIPNode.text() != uploaded_externalIPNode.text()) goto addressUploadError;
         }

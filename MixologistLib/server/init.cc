@@ -6,6 +6,9 @@
 #include "ft/ftborrower.h"
 
 #include "pqi/authmgr.h"
+#include "pqi/friendsConnectivityManager.h"
+#include "pqi/ownConnectivityManager.h"
+#include "pqi/pqinetwork.h"
 #include "pqi/pqinotify.h"
 #include "pqi/pqiloopback.h"
 #include "pqi/aggregatedConnections.h"
@@ -26,7 +29,6 @@
 
 #include "util/debug.h"
 #include "util/dir.h"
-#include "util/net.h"
 
 #include <list>
 #include <string>
@@ -57,7 +59,9 @@ Files *files = NULL;
 ftServer *ftserver = NULL;
 ftController *fileDownloadController = NULL;
 Control *control = NULL;
-ConnectivityManager *connMgr = NULL;
+FriendsConnectivityManager *friendsConnectivityManager = NULL;
+OwnConnectivityManager *ownConnectivityManager = NULL;
+UdpSorter *udpMainSocket = NULL;
 AuthMgr *authMgr = NULL;
 Notify *notify = NULL;
 Msgs *msgs = NULL;
@@ -258,10 +262,11 @@ Control *Init::createControl(QString ownName) {
 
     notify = new pqiNotify();
 
-    connMgr = new ConnectivityManager();
+    friendsConnectivityManager = new FriendsConnectivityManager();
+    ownConnectivityManager = new OwnConnectivityManager();
 
     aggregatedConnectionsToFriends = new AggregatedConnectionsToFriends();
-    connMgr->addMonitor(aggregatedConnectionsToFriends);
+    friendsConnectivityManager->addMonitor(aggregatedConnectionsToFriends);
 
     /* Create this before LibraryMixerLibraryManager so it can use it to begin hashing files that need hashing. */
     QThread* fileWatcherThread = new QThread();
@@ -288,7 +293,7 @@ Control *Init::createControl(QString ownName) {
     /* create Services */
     statusService = new StatusService();
     aggregatedConnectionsToFriends->addService(statusService);
-    connMgr->addMonitor(statusService);
+    friendsConnectivityManager->addMonitor(statusService);
 
     p3ChatService *chatservice = new p3ChatService();
     aggregatedConnectionsToFriends->addService(chatservice);
@@ -297,20 +302,12 @@ Control *Init::createControl(QString ownName) {
     aggregatedConnectionsToFriends->addService(mixologyService);
     ftserver->setupMixologyService();
 
-    /**************************************************************************/
-    /* (2) Load configuration files */
-    /**************************************************************************/
-
     aggregatedConnectionsToFriends->load_transfer_rates();
 
-    /* Find IP and set up ports. */
-    connMgr->connectionSetup();
-    aggregatedConnectionsToFriends->init_listener();
+    ownConnectivityManager->select_NetInterface_OpenPorts();
 
     pqiloopback *loopback = new pqiloopback(authMgr->OwnCertId(), authMgr->OwnLibraryMixerId());
     aggregatedConnectionsToFriends->AddPQI(loopback);
-
-    /* Setup GUI Interfaces. */
 
     peers = new p3Peers(ownName);
     msgs = new p3Msgs(chatservice); //not actually for messages, used to be for both chat and messages, now only chat

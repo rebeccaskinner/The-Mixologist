@@ -21,7 +21,7 @@
 
 #include "upnp/upnphandler.h"
 #include "util/debug.h"
-#include "util/net.h"
+#include <pqi/pqinetwork.h>
 
 #include <QThread>
 

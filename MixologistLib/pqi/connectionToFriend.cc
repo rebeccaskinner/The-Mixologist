@@ -78,11 +78,9 @@ int ConnectionToFriend::tick() {
 // This is only used for out-of-band info....
 // otherwise could get dangerous loops.
 int ConnectionToFriend::notifyEvent(NetInterface *notifyingInterface, NetNotificationEvent newState) {
-    ConnectionType type = TCP_CONNECTION;
     connectionMethod *pqi = NULL;
     foreach (ConnectionType currentType, connectionMethods.keys()) {
         if (connectionMethods[currentType]->thisNetInterface(notifyingInterface)) {
-            type = currentType;
             pqi = connectionMethods[currentType];
             break;
         }
@@ -95,7 +93,7 @@ int ConnectionToFriend::notifyEvent(NetInterface *notifyingInterface, NetNotific
 
     switch (newState) {
     case NET_CONNECT_SUCCESS:
-        aggregatedConnectionsToFriends->notifyConnect(PeerId(), type, 1);
+        aggregatedConnectionsToFriends->notifyConnect(PeerId(), 1);
 
         if (active && (activeConnectionMethod != pqi)) {
             log(LOG_DEBUG_ALERT, CONNECTION_TO_FRIEND_ZONE,
@@ -130,9 +128,9 @@ int ConnectionToFriend::notifyEvent(NetInterface *notifyingInterface, NetNotific
         }
 
         if (newState == NET_CONNECT_FAILED)
-            aggregatedConnectionsToFriends->notifyConnect(PeerId(), type, -1);
+            aggregatedConnectionsToFriends->notifyConnect(PeerId(), -1);
         else if (newState == NET_CONNECT_FAILED_RETRY)
-            aggregatedConnectionsToFriends->notifyConnect(PeerId(), type, 0);
+            aggregatedConnectionsToFriends->notifyConnect(PeerId(), 0);
         return 1;
     }
     return -1;
@@ -186,12 +184,11 @@ int ConnectionToFriend::stoplistening() {
     return 1;
 }
 
-int ConnectionToFriend::connect(ConnectionType type, struct sockaddr_in raddr, uint32_t delay, uint32_t period, uint32_t timeout) {
+int ConnectionToFriend::connect(ConnectionType type, struct sockaddr_in raddr, uint32_t period, uint32_t timeout) {
     if (!connectionMethods.contains(type)) return 0;
 
     connectionMethods[type]->reset();
 
-    connectionMethods[type]->setConnectionParameter(NetInterface::NET_PARAM_CONNECT_DELAY, delay);
     connectionMethods[type]->setConnectionParameter(NetInterface::NET_PARAM_CONNECT_PERIOD, period);
     connectionMethods[type]->setConnectionParameter(NetInterface::NET_PARAM_CONNECT_TIMEOUT, timeout);
 

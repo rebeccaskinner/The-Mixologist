@@ -24,8 +24,8 @@
 #define TOU_UDP_SORTER_H
 
 /* universal networking functions */
-#include "tcponudp/udplayer.h"
-#include "util/net.h"
+#include <tcponudp/udplayer.h>
+#include <pqi/pqinetwork.h>
 
 #include <QList>
 #include <QMap>

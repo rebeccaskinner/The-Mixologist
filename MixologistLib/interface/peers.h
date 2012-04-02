@@ -33,19 +33,23 @@
 class Peers;
 extern Peers *peers;
 
-/* State */
-enum PeerDetailsState {
-    PEER_STATE_CONNECTED,
-    PEER_STATE_TRYING,
-    PEER_STATE_OFFLINE,
-    PEER_STATE_NO_CERT
+/* Used to indicate the state of friends.
+   Not Mixologist enabled is set when we don't have an encryption cert for the friend,
+   because they haven't ever used the Mixologist (but are friends on LibraryMixer). */
+enum FriendConnectState {
+    FCS_NOT_MIXOLOGIST_ENABLED,
+    FCS_NOT_CONNECTED,
+    FCS_IN_CONNECT_ATTEMPT,
+    FCS_CONNECTED_TCP,
+    FCS_CONNECTED_UDP
 };
 
 /* The current state of the connection's setup. */
 enum ConnectionStatus {
     /* The states below here are initial set up states. */
     /* We attempt to find two STUN servers that we will use.
-       First we check if we can get two of our friends who are online and available to be our STUN servers. */
+       First we check if we can get two of our friends who are online and available to be our STUN servers
+       by sending normal STUN requests from our test port requesting back on the test port. */
     CONNECTION_STATUS_FINDING_STUN_FRIENDS,
     /* If we failed to get at least two friends as STUN servers, we fall back to public STUN servers in order to fill us out.
        If we can't get two STUN servers then we can't auto-configure and are CONNECTION_STATUS_UNKNOWN. */
@@ -79,7 +83,8 @@ enum ConnectionStatus {
        If we receive no response, our STUN servers are again behaving erratically and we are CONNECTION_STATUS_UNKNOWN. */
     CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
 
-    /* The states below here are final states. */
+    /* The states below here are final states.
+       CONNECTION_STATUS_UNFIREWALLED being the lowest numbered final state is relied upon elsewhere. */
     CONNECTION_STATUS_UNFIREWALLED,
     CONNECTION_STATUS_PORT_FORWARDED,
     CONNECTION_STATUS_UPNP_IN_USE,
@@ -88,6 +93,7 @@ enum ConnectionStatus {
     CONNECTION_STATUS_SYMMETRIC_NAT,
     CONNECTION_STATUS_UNKNOWN
 };
+inline bool connectionStatusInFinalState(int status) {return status >= CONNECTION_STATUS_UNFIREWALLED;}
 
 /* Details class */
 class PeerDetails {
@@ -101,7 +107,7 @@ public:
     QString name;
 
     /* Network details (only valid if friend) */
-    PeerDetailsState state; //Current connection status
+    FriendConnectState state; //Current connection status
 
     std::string localAddr;
     uint16_t localPort;

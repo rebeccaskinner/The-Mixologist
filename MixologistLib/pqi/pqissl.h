@@ -33,8 +33,6 @@
 
 #include "pqi/pqi_base.h"
 
-#include "pqi/connectivitymanager.h"
-
 #include "pqi/authmgr.h"
 
 #include <QMutex>
@@ -126,23 +124,15 @@ protected:
        A completed connection and an idle connection are both STATE_IDLE. */
     enum connectionStates {
         STATE_IDLE = 0,
-        STATE_INITIALIZED = 1,
-        STATE_WAITING_FOR_SOCKET_CONNECT = 2,
-        STATE_WAITING_FOR_SSL_CONNECT = 3,
-        STATE_WAITING_FOR_SSL_AUTHORIZE = 4,
-        STATE_FAILED = 5,
-        STATE_FAILED_REQUEST_DELAYED_RETRY
+        STATE_WAITING_FOR_SOCKET_CONNECT = 1,
+        STATE_WAITING_FOR_SSL_CONNECT = 2,
+        STATE_WAITING_FOR_SSL_AUTHORIZE = 3,
+        STATE_FAILED = 4
     };
     connectionStates connectionState;
 
     /* This looks at the connectionState and calls other functions to handle based upon that. */
     int ConnectAttempt();
-
-    /* Looks at whether we have been requested to delay connecting.
-       If we have, then sets the appropriate state and delay.
-       If we haven't, or if we've fulfilled the delay request, immediately calls Initiate_Connection().
-       Returns 0 while delayed, -1 on errors. */
-    int Init_Or_Delay_Connection();
 
     /* Opens a socket, makes it non-blocking, then connects it to the target address.
        Returns 1 on success, 0 if not ready, -1 on errors. */
@@ -214,10 +204,6 @@ protected:
     /* SSL will throw an error called zero return when the connection is closed.
        If this repeatedly occurs, the connection should be marked dead, so this tracks the number of occurrences. */
     int errorZeroReturnCount;
-
-    /* Variables for the delay set by setConnectionParameter. */
-    uint32_t mRequestedConnectionDelay;
-    time_t mConnectionDelayedUntil;
 
     /* Variables for the connection attempt timeout set by setConnectionParameter. */
     uint32_t mConnectionAttemptTimeout;

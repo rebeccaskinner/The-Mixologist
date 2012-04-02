@@ -159,7 +159,7 @@ public:
     /********************** pqiMonitor Functions********************/
     /***************************************************************/
 
-    //Called by the ConnectivityManager to inform about changes in friends' online statuses
+    //Called by the FriendsConnectivityManager to inform about changes in friends' online statuses
     virtual void statusChange(const std::list<pqipeer> &changeList);
 
 private:

@@ -30,7 +30,6 @@
 #include <openssl/err.h>
 
 #include "util/debug.h"
-#include "util/net.h"
 
 pqissludp::pqissludp(PQInterface *parent)
     :pqissl(NULL, parent), tou_bio(NULL), mConnectPeriod(0) {
@@ -74,7 +73,7 @@ int pqissludp::Initiate_Connection() {
     if (LibraryMixerId() < authMgr->OwnLibraryMixerId()) sslmode = PQISSL_ACTIVE;
     else sslmode = PQISSL_PASSIVE;
 
-    if (connectionState != STATE_INITIALIZED) {
+    if (connectionState != STATE_IDLE) {
         log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::Initiate_Connection() Already Attempt in Progress!");
         return -1;
     }
@@ -84,7 +83,7 @@ int pqissludp::Initiate_Connection() {
     {
         QString out("pqissludp::Initiate_Connection() ");
         out.append("Connecting To: " + QString::number(LibraryMixerId()));
-        out.append(" via: " + QString(inet_ntoa(remote_addr.sin_addr)) + ":" + QString::number(ntohs(remote_addr.sin_port)));
+        out.append(" via: " + addressToString(&remote_addr));
         if (sslmode == PQISSL_ACTIVE) {
             out.append(" ACTIVE Connect (SSL_Connect)");
         } else {

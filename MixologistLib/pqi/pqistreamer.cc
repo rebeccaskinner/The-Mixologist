@@ -31,7 +31,7 @@
 #include "serialiser/serial.h"
 #include "serialiser/baseitems.h"  /***** For FileData *****/
 
-#include "pqi/connectivitymanager.h" //For updating last heard from stats
+#include "pqi/friendsConnectivityManager.h" //For updating last heard from stats
 
 const int PQISTREAM_ABS_MAX = 900000000; /* ~900 MB/sec (actually per loop) */
 
@@ -502,7 +502,7 @@ start_packet_read:
             pkt -> PeerId(PeerId());
             incoming.push_back(pkt);
 
-            connMgr->heardFrom(LibraryMixerId());
+            friendsConnectivityManager->heardFrom(LibraryMixerId());
 
             pqioutput(PQL_DEBUG_BASIC, PQISTREAMERZONE, "Successfully read a packet");
         }

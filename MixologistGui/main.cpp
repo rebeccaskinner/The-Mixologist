@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
     MixologistApplication instance(argc, argv);
 
     if (instance.isRunning()) {
-        if (args.last().startsWith("mixology:", Qt::CaseInsensitive)) {
+        if (!args.isEmpty() && args.last().startsWith("mixology:", Qt::CaseInsensitive)) {
             instance.sendMessage(args.last());
         }
         return 0;

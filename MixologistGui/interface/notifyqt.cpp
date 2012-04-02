@@ -94,7 +94,9 @@ void NotifyQt::displaySysMessage(int type, QString title, QString msg) {
             break;
         default:
         case SYS_INFO:
-            QMessageBox::information(0, title, msg);
+            mainwindow->trayIcon->showMessage(title,
+                                              msg,
+                                              QSystemTrayIcon::Information, INT_MAX);
             break;
     }
 }

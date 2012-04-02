@@ -37,7 +37,7 @@ const int ftserverzone = 29539;
 #include "server/librarymixer-friendlibrary.h"
 
 #include "pqi/pqi.h"
-#include "pqi/connectivitymanager.h"
+#include <pqi/friendsConnectivityManager.h>
 
 #include "serialiser/serviceids.h"
 
@@ -97,7 +97,7 @@ void ftServer::SetupFtServer() {
         connect(offLMList, SIGNAL(offLMOwnItemRemoved()), this, SIGNAL(offLMOwnItemRemoved()));
     }
 
-    connMgr->addMonitor(fileDownloadController);
+    friendsConnectivityManager->addMonitor(fileDownloadController);
 
     return;
 }

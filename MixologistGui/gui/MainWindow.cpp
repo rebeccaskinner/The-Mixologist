@@ -99,7 +99,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     preferencesWindow = NULL;
 
     /* StatusBar */
-    connectionStatus = new ClickableQWidget();
+    connectionStatus = new QWidget();
     QSizePolicy connectionStatusSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
     connectionStatusSizePolicy.setHorizontalStretch(0);
     connectionStatusSizePolicy.setVerticalStretch(0);
@@ -118,6 +118,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     connectionStatusLabel->setMargin(5);
     connectionStatusHorizontalLayout->addWidget(connectionStatusLabel);
     ui.statusbar->addWidget(connectionStatus);
+    connect(connectionStatusLabel, SIGNAL(linkActivated(QString)), this, SLOT(connectionStatusClicked()));
 
     hashingHolder = new QWidget();
     QSizePolicy sizePolicy(QSizePolicy::Maximum, QSizePolicy::Expanding);
@@ -300,7 +301,7 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         infoTextTypeToDisplay = INFO_TEXT_UNFIREWALLED;
         break;
     case CONNECTION_STATUS_PORT_FORWARDED:
-        connectionStatusLabel->setText("Internet: Port-forwarded Connection");
+        connectionStatusLabel->setText("Port-forwarded Connection");
         infoTextTypeToDisplay = INFO_TEXT_PORT_FORWARDED;
         break;
     case CONNECTION_STATUS_UPNP_IN_USE:
@@ -354,13 +355,15 @@ void MainWindow::updateConnectionStatus(int newStatus) {
                                               QSystemTrayIcon::Information, 30);
     }
 
-    if (newStatus >= CONNECTION_STATUS_UNFIREWALLED) {
-        /* Enable clicking now to display more info. */
-        connectionStatus->setToolTip("Click for more info");
-        connect(connectionStatus, SIGNAL(clicked()), this, SLOT(connectionStatusClicked()));
-        connectionStatus->layout()->removeWidget(connectionStatusMovieLabel);
-        connectionStatusMovieLabel->deleteLater();
+    if (connectionStatusInFinalState(newStatus)) {
+        connectionStatusLabel->setText("<span style='color:grey'>Internet: <a href='filler' style='color:grey'>" +
+                                       connectionStatusLabel->text() +
+                                       "</a></span>");
+        connectionStatusMovieLabel->hide();
         hashingHolder->show();
+    } else {
+        connectionStatusMovieLabel->show();
+        hashingHolder->hide();
     }
 }
 
@@ -446,6 +449,8 @@ void MainWindow::displayInfoText(InfoTextType type) {
         info += "<p>You might be able to connect to your friends still, or you might not.</p>";
         info += "<p>Try restarting to resolve this problem.</p>";
         info += "<p>If you always see this message when you have a working Internet connection, consider filing a bug report with details about your network situation.</p>";
+    } else {
+        return;
     }
 
     if (INFO_TEXT_UDP_HOLE_PUNCHING == type ||
@@ -482,7 +487,3 @@ void MainWindow::setTrayIcon(float downKb, float upKb){
     else if (upKb > 0 && downKb > 0) trayIcon->setIcon(QIcon(":/Images/Up1Down1.png"));
     else trayIcon->setIcon(QIcon(":/Images/Up0Down0.png"));
 }*/
-
-void ClickableQWidget::mouseReleaseEvent(QMouseEvent *event) {
-    emit clicked();
-}

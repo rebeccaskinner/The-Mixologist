@@ -52,19 +52,22 @@ public:
     /* Creates the listener and has it begin listening on the listen address. */
     void init_listener();
 
+    /* Stops the listener and destroys it. */
+    void stop_listener();
+
     /* Loads the transfer rates from the settings files and sets them. */
     void load_transfer_rates();
 
     /* This tick is called from ftserver, which perhaps should be revisited. */
     virtual int tick();
 
-    /* Called by the ConnectivityManager's tick function with a list of pqipeers whose statuses have changed.
+    /* Called by the FriendsConnectivityManager's tick function with a list of pqipeers whose statuses have changed.
        For each friend in the list, handles if their action is PEER_NEW, PEER_CONNECT_REQ, or PEER_TIMEOUT. */
     virtual void statusChange(const std::list<pqipeer> &changedFriends);
 
     /* Called by the contained ConnectionToFriends to inform when a connection has been made.
        If result is 1 it indicates connection, -1 is either disconnect or connection failure, 0 is failure but request to schedule another try. */
-    bool notifyConnect(std::string id, ConnectionType type, int result);
+    bool notifyConnect(std::string id, int result);
 
 private:
     /* Creates a new ConnectionToFriend object to represent a friend. */
@@ -73,7 +76,7 @@ private:
     /* These functions are called by statusChange to handle the various events. */
     /* Creates and adds a new friend. */
     int addPeer(std::string id, unsigned int librarymixer_id);
-    /* Calls the connectivityManager and dequeues and processes a queued connection attempt. */
+    /* Calls the FriendsConnectivityManager and dequeues and processes a queued connection attempt. */
     int connectPeer(std::string cert_id, unsigned int librarymixer_id);
     /* Resets the connection with a connected friend. */
     void timeoutPeer(std::string cert_id);

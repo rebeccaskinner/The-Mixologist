@@ -21,7 +21,8 @@
  ****************************************************************/
 
 #include "server/server.h"
-#include "pqi/connectivitymanager.h"
+#include "pqi/ownConnectivityManager.h"
+#include "pqi/friendsConnectivityManager.h"
 #include "pqi/aggregatedConnections.h"
 #include "ft/ftserver.h"
 #include "tcponudp/tou.h"
@@ -49,8 +50,7 @@ void Server::beginTimers() {
 }
 
 bool Server::ShutdownMixologist() {
-    //Should also disconnect all peers here
-    connMgr->shutdown();
+    ownConnectivityManager->shutdown();
     return true;
 }
 
@@ -81,7 +81,8 @@ qulonglong Server::latestKnownVersion() {
 }
 
 void Server::oneSecondTick() {
-    connMgr->tick();
+    ownConnectivityManager->tick();
+    friendsConnectivityManager->tick();
 }
 
 #define MAX_SECONDS_TO_SLEEP 1

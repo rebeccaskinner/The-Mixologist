@@ -79,7 +79,8 @@ HEADERS += ft/ftcontroller.h \
            ft/ftserver.h \
            ft/ftborrower.h \
            pqi/authmgr.h \
-           pqi/connectivitymanager.h \
+           pqi/ownConnectivityManager.h \
+           pqi/friendsConnectivityManager.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
            pqi/pqihandler.h \
@@ -175,7 +176,8 @@ SOURCES = \
                                 pqi/authmgr.cc \
 				pqi/pqissllistener.cc \
 				pqi/pqissl.cc \
-                                pqi/connectivitymanager.cc \
+                                pqi/ownConnectivityManager.cc \
+                                pqi/friendsConnectivityManager.cc \
 				pqi/pqistreamer.cc \
 				pqi/pqiloopback.cc \
 				pqi/pqinetwork.cc \

@@ -25,7 +25,7 @@
 
 /* Some Types need to be defined before the interface can be declared */
 
-#include "util/net.h"
+#include "pqi/pqinetwork.h"
 
 /* C Interface */
 #ifdef  __cplusplus

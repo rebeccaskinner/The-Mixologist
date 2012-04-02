@@ -187,21 +187,28 @@ void  PeersDialog::insertPeers() {
 
         /* Input state information */
         int i;
-        if (detail.state == PEER_STATE_CONNECTED) {
+        if (detail.state == FCS_CONNECTED_TCP ||
+            detail.state == FCS_CONNECTED_UDP) {
             for (i = 1; i <= 2; i++) {
                 item->setTextColor(i,(Qt::darkCyan));
                 QFont font;
                 font.setBold(true);
                 item->setFont(i,font);
-                item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTED)));
-                item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("1").append(detail.name.toLower()));
-                item->setText(FRIEND_STATUS_COLUMN, QString("Connected"));
             }
-        } else if (detail.state == PEER_STATE_TRYING) {
+            item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTED)));
+            item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("1").append(detail.name.toLower()));
+            item->setText(FRIEND_STATUS_COLUMN, QString("Connected"));
+            if (detail.state == FCS_CONNECTED_UDP) {
+                QSettings settings(*mainSettings, QSettings::IniFormat, this);
+                if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
+                    item->setText(FRIEND_STATUS_COLUMN, QString("Connected (UDP)"));
+                }
+            }
+        } else if (detail.state == FCS_IN_CONNECT_ATTEMPT) {
             item->setIcon(FRIEND_ICON_AND_SORT_COLUMN,(QIcon(IMAGE_CONNECTING)));
             item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("2").append(detail.name.toLower()));
             item->setText(FRIEND_STATUS_COLUMN, QString("Trying"));
-        } else if (detail.state == PEER_STATE_NO_CERT) {
+        } else if (detail.state == FCS_NOT_MIXOLOGIST_ENABLED) {
             item->setText(FRIEND_ICON_AND_SORT_COLUMN, QString("4").append(detail.name.toLower()));
             item->setText(FRIEND_STATUS_COLUMN, QString("Not signed up for the Mixologist"));
             item->setTextColor(FRIEND_NAME_COLUMN, Qt::lightGray);
@@ -218,7 +225,10 @@ void  PeersDialog::insertPeers() {
         /* If there is a chat window open for this peer, keep it updated on connection state. */
         std::map<int, PopupChatDialog *>::iterator chatit;
         chatit = chatDialogs.find(detail.librarymixer_id);
-        if (chatit != chatDialogs.end()) chatit->second->setOnlineStatus(detail.state == PEER_STATE_CONNECTED);
+        if (chatit != chatDialogs.end()) {
+            chatit->second->setOnlineStatus(detail.state == FCS_CONNECTED_TCP ||
+                                            detail.state == FCS_CONNECTED_UDP);
+        }
     }
 
     /* add the items in */
@@ -288,7 +298,7 @@ void PeersDialog::updatePeerStatusString(unsigned int friend_librarymixer_id, co
 }
 
 void PeersDialog::connectionStateChanged(int newStatus) {
-    if (newStatus >= CONNECTION_STATUS_UNFIREWALLED) {
+    if (connectionStatusInFinalState(newStatus)) {
         /* Now that the connection is ready, we can begin displaying the friends list. */
         QObject::connect(guiNotify, SIGNAL(friendsChanged()), mainwindow->peersDialog, SLOT(insertPeers()));
         insertPeers();
@@ -334,7 +344,8 @@ void PeersDialog::friendDoubleClicked() {
 
     PeerDetails detail;
     if (!peers->getPeerDetails(id, detail)) return;
-    if (detail.state == PEER_STATE_CONNECTED) chatFriend();
+    if (detail.state == FCS_CONNECTED_TCP ||
+        detail.state == FCS_CONNECTED_UDP) chatFriend();
     else return;
 }
 

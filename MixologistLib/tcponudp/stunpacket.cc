@@ -20,10 +20,7 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-//Must be included before udpsorter.h which includes util/net.h to avoid _WIN32_WINNT redefine warnings on Windows
-#include "pqi/pqinetwork.h"
-
-#include "tcponudp/stunpacket.h"
+#include <tcponudp/stunpacket.h>
 
 #include <util/debug.h>
 

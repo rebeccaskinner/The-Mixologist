@@ -22,9 +22,9 @@
 
 #include <stdlib.h> /* Included because GCC4.4 wants it */
 #include <string.h>     /* Included because GCC4.4 wants it */
+#include <pqi/pqinetwork.h>
 
 #include "serialiser/baseserial.h"
-#include "util/net.h"
 
 /* UInt16 get/set */
 

@@ -94,17 +94,22 @@ void NetworkDialog::insertConnect() {
         item->setText(0, detail.name);
 
         /* (1) Status  */
-        if (detail.state == PEER_STATE_CONNECTED)
-            item->setText(1, "Connected");
-        else if (detail.state == PEER_STATE_TRYING)
-            item->setText(1, "Trying");
-        else
+        if (detail.state == FCS_CONNECTED_TCP)
+            item->setText(1, "Connected (TCP)");
+        else if (detail.state == FCS_CONNECTED_UDP)
+            item->setText(1, "Connected (UDP)");
+        else if (detail.state == FCS_NOT_CONNECTED)
             item->setText(1, "Offline");
+        else if (detail.state == FCS_NOT_MIXOLOGIST_ENABLED)
+            item->setText(1, "Not signed up");
+        else if (detail.state == FCS_IN_CONNECT_ATTEMPT)
+            item->setText(1, "Trying");
 
         /* (2) Last Connect */
         {
             // Show anouncement if a friend never was connected.
-            if (detail.state == PEER_STATE_CONNECTED)
+            if (detail.state == FCS_CONNECTED_TCP ||
+                detail.state == FCS_CONNECTED_UDP)
                 item->setText(2, "Now");
             else if (detail.lastConnect==0 )
                 item->setText(2, "");

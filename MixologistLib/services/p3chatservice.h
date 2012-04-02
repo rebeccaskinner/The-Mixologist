@@ -33,7 +33,6 @@
 
 #include "serialiser/msgitems.h"
 #include "services/p3service.h"
-#include "pqi/connectivitymanager.h"
 
 class p3ChatService: public p3Service {
 public:

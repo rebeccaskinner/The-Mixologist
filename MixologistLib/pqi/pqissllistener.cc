@@ -112,17 +112,7 @@ int pqissllistener::setuplisten() {
     // setup listening address.
     listenAddress.sin_family = AF_INET;
 
-    {
-        std::ostringstream out;
-        out << "pqissllistener::setuplisten()";
-        out << "\tAddress Family: " << (int) listenAddress.sin_family;
-        out << std::endl;
-        out << "\tSetup Address: " << inet_ntoa(listenAddress.sin_addr);
-        out << std::endl;
-        out << "\tSetup Port: " << ntohs(listenAddress.sin_port);
-
-        pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, out.str().c_str());
-    }
+    pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Setting up on " + addressToString(&listenAddress));
 
     if (0 != (err = bind(listeningSocket, (struct sockaddr *) &listenAddress, sizeof(listenAddress)))) {
         std::ostringstream out;
@@ -130,23 +120,18 @@ int pqissllistener::setuplisten() {
         out << " Cannot Bind to Local Address!" << std::endl;
         showSocketError(out);
         pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
-        getPqiNotify()->AddSysMessage(SYS_ERROR,
-                                      "Network failure",
-                                      QString("Unable to open TCP port ") + inet_ntoa(listenAddress.sin_addr) +
-                                      ":" + QString::number(listenAddress.sin_port));
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", QString("Unable to open TCP port ") + addressToString(&listenAddress));
 
         exit(1);
         return -1;
     } else {
-        pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE,
-                  "pqissllistener::setuplisten() Bound to Address.");
+        pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Bound to Address.");
     }
 
     if (0 != (err = listen(listeningSocket, 100))) {
         getPqiNotify()->AddSysMessage(SYS_ERROR,
                                       "Network failure",
-                                      QString("Unable to open TCP port ") + inet_ntoa(listenAddress.sin_addr) +
-                                      ":" + QString::number(listenAddress.sin_port));
+                                      QString("Unable to open TCP port ") + addressToString(&listenAddress));
 
         exit(1);
         return -1;
@@ -230,8 +215,7 @@ int pqissllistener::acceptconnection() {
     /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
 
     log(LOG_WARNING, SSL_LISTENER_ZONE,
-        QString("Established incoming connection from ") + inet_ntoa(remote_addr.sin_addr) +
-        ":" + QString::number(ntohs(remote_addr.sin_port)) + ", initializing encrypted connection");
+        QString("Established incoming connection from ") + addressToString(&remote_addr) + ", initializing encrypted connection");
 
     /* Create the basic SSL object so we can begin accepting an SSL connection. */
     SSL *ssl = SSL_new(authMgr->getCTX());
@@ -287,7 +271,7 @@ int pqissllistener::continueSSL(SSL *ssl, struct sockaddr_in remote_addr, bool n
         else if (ERR_GET_LIB(err_err) == 0 &&
                  ERR_GET_FUNC(err_err) == 0 &&
                  ERR_GET_REASON(err_err) == 0) {
-            log(LOG_WARNING, PQISSLZONE, "Friend disconnected before encryption initialization was completed, possibly to update friend list");
+            log(LOG_WARNING, PQISSLZONE, "Friend disconnected incoming before encryption initialization was completed, possibly to update friend list");
         }
         else {
             std::ostringstream out;
@@ -334,10 +318,7 @@ int pqissllistener::continueSSL(SSL *ssl, struct sockaddr_in remote_addr, bool n
         /************************** WINDOWS/UNIX SPECIFIC PART ******************/
         SSL_free(ssl);
 
-        std::ostringstream out;
-        out << "Unable to complete encrypted connection that was incoming from " << std::endl;
-        out << inet_ntoa(remote_addr.sin_addr);
-        pqioutput(PQL_WARNING, SSL_LISTENER_ZONE, out.str().c_str());
+        pqioutput(PQL_WARNING, SSL_LISTENER_ZONE, "Unable to complete encrypted connection that was incoming from " + addressToString(&remote_addr));
 
         return -1;
     }
@@ -373,7 +354,7 @@ int pqissllistener::completeConnection(int fd, SSL *ssl, struct sockaddr_in &rem
            At that point, the AuthMgr was already queried and verified the certificate was one it recognized.
            Most of the time our list of pqissl should be the same as the list of certs in AuthMgr.
            There is, however, the potential for a narrow window where the cert has been downloaded but the pqissl not yet created. */
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "Incoming connection presented an unrecognized certificate: " + QString(inet_ntoa(remote_addr.sin_addr)));
+        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "Incoming connection presented an unrecognized certificate: " + addressToString(&remote_addr));
         return -1;
     }
 

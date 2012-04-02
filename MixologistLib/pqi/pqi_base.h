@@ -157,17 +157,10 @@ public:
     virtual unsigned int LibraryMixerId() {return librarymixer_id;}
 
     /* Sets the specified parameter to value.
-       Returns false if no such parameter applies to the NetInterface.
-
-       NET_PARAM_CONNECT_DELAY: It is useful to be able to delay TCP connections to insure
-       simultaneous connections to one user via their different addresses don't occur
-       simultaneously. According to comments written by the RetroShare devs, this can
-       cause connection failures. Therefore, by delaying one or more of the addresses
-       we can ensure this doesn't happen. */
+       Returns false if no such parameter applies to the NetInterface. */
     enum netParameters {
-        NET_PARAM_CONNECT_DELAY   = 1,
-        NET_PARAM_CONNECT_PERIOD  = 2,
-        NET_PARAM_CONNECT_TIMEOUT = 3
+        NET_PARAM_CONNECT_PERIOD  = 1,
+        NET_PARAM_CONNECT_TIMEOUT = 2
     };
     virtual bool setConnectionParameter(netParameters type, uint32_t value) = 0;
 

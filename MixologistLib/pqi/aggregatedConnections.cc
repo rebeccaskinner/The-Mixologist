@@ -21,9 +21,11 @@
  ****************************************************************/
 
 #include "pqi/aggregatedConnections.h"
-#include "pqi/connectivitymanager.h"
+#include "pqi/friendsConnectivityManager.h"
+#include "pqi/ownConnectivityManager.h"
 #include "pqi/pqissl.h"
 #include "pqi/pqissllistener.h"
+#include "tcponudp/udpsorter.h"
 #include "util/debug.h"
 #include "interface/settings.h"
 #include "interface/peers.h"
@@ -102,7 +104,16 @@ int AggregatedConnectionsToFriends::tick() {
 /* Initialise pqilistener */
 void AggregatedConnectionsToFriends::init_listener() {
     QMutexLocker stack(&coreMtx);
-    pqil = new pqissllistener(connMgr->getOwnLocalAddress());
+    pqil = new pqissllistener(ownConnectivityManager->getOwnLocalAddress());
+}
+
+void AggregatedConnectionsToFriends::stop_listener() {
+    QMutexLocker stack(&coreMtx);
+    if (pqil) {
+        pqil->resetlisten();
+        delete pqil;
+        pqil = NULL;
+    }
 }
 
 void AggregatedConnectionsToFriends::load_transfer_rates() {
@@ -151,13 +162,12 @@ int AggregatedConnectionsToFriends::connectPeer(std::string cert_id, unsigned in
     ConnectionToFriend *currentFriend = (ConnectionToFriend *) connectionsToFriends[cert_id];
 
     /* Dequeue a connection attempt from ConnectivityManager */
-    if (!connMgr) return 0;
+    if (!friendsConnectivityManager) return 0;
 
     struct sockaddr_in addr;
-    uint32_t delay;
     QueuedConnectionType queuedConnectionType;
 
-    if (!connMgr->getQueuedConnectAttempt(librarymixer_id, addr, delay, queuedConnectionType)) {
+    if (!friendsConnectivityManager->getQueuedConnectAttempt(librarymixer_id, addr, queuedConnectionType)) {
         return 0;
     }
 
@@ -166,18 +176,24 @@ int AggregatedConnectionsToFriends::connectPeer(std::string cert_id, unsigned in
         queuedConnectionType == CONNECTION_TYPE_TCP_EXTERNAL) {
         ptype = TCP_CONNECTION;
         log(LOG_DEBUG_ALERT, AGGREGATED_CONNECTIONS_ZONE,
-            "Attempting TCP connection to " + QString::number(librarymixer_id) +
-            " via " + QString(inet_ntoa(addr.sin_addr)) +
-            ":" + QString::number(ntohs(addr.sin_port)));
-        currentFriend->connect(ptype, addr, delay, 0, TCP_STD_TIMEOUT_PERIOD);
+            "Attempting TCP connection to " + QString::number(librarymixer_id) + " via " + addressToString(&addr));
+        currentFriend->connect(ptype, addr, 0, TCP_STD_TIMEOUT_PERIOD);
     } else if (queuedConnectionType == CONNECTION_TYPE_UDP) {
         ptype = UDP_CONNECTION;
         log(LOG_DEBUG_ALERT, AGGREGATED_CONNECTIONS_ZONE,
-            "Attempting UDP connection to " + QString::number(librarymixer_id) +
-            " via " + QString(inet_ntoa(addr.sin_addr)) +
-            ":" + QString::number(ntohs(addr.sin_port)));
-        currentFriend->connect(ptype, addr, delay, UDP_STD_PERIOD, UDP_STD_PERIOD * 2);
-    } else return 0;
+            "Attempting UDP connection to " + QString::number(librarymixer_id) + " via " + addressToString(&addr));
+        if (udpMainSocket) {
+            udpMainSocket->sendUdpConnectionNotice(&addr, ownConnectivityManager->getOwnExternalAddress(), peers->getOwnLibraryMixerId());
+        }
+        currentFriend->connect(ptype, addr, UDP_STD_PERIOD, UDP_STD_PERIOD * 2);
+    } else if (queuedConnectionType == CONNECTION_TYPE_TCP_BACK) {
+        if (udpMainSocket) {
+            udpMainSocket->sendTcpConnectionRequest(&addr, ownConnectivityManager->getOwnExternalAddress(), peers->getOwnLibraryMixerId());
+        }
+        /* We can just immediately report failure now as this method doesn't produce an instant connection,
+           at best we'll have a new incoming connection that is handled seperately from here. */
+        friendsConnectivityManager->reportConnectionUpdate(librarymixer_id, -1);
+    }
 
     return 1;
 }
@@ -189,17 +205,10 @@ void AggregatedConnectionsToFriends::timeoutPeer(std::string cert_id) {
     ((ConnectionToFriend *) connectionsToFriends[cert_id])->reset();
 }
 
-bool AggregatedConnectionsToFriends::notifyConnect(std::string id, ConnectionType ptype, int result) {
-    bool tcpConnection;
-    if (ptype == TCP_CONNECTION) {
-        tcpConnection = true;
-    } else {
-        tcpConnection = false;
-    }
+bool AggregatedConnectionsToFriends::notifyConnect(std::string id, int result) {
+    if (friendsConnectivityManager) friendsConnectivityManager->reportConnectionUpdate(authMgr->findLibraryMixerByCertId(id), result);
 
-    if (connMgr) connMgr->reportConnectionUpdate(authMgr->findLibraryMixerByCertId(id), result, tcpConnection);
-
-    return (NULL != connMgr);
+    return (NULL != friendsConnectivityManager);
 }
 
 ConnectionToFriend *AggregatedConnectionsToFriends::createPerson(std::string id, unsigned int librarymixer_id, pqilistener *listener) {
@@ -245,29 +254,6 @@ int AggregatedConnectionsToFriends::removePeer(std::string id) {
         p->reset();
         delete p;
         connectionsToFriends.erase(it);
-    }
-    return 1;
-}
-#endif
-
-#ifdef false
-int AggregatedConnectionsToFriends::restart_listener() {
-    // stop it,
-    // change the address.
-    // restart.
-    bool haveListener = false;
-    {
-        QMutexLocker stack(&coreMtx);
-        haveListener = (pqil != NULL);
-    } /* UNLOCKED */
-
-
-    if (haveListener) {
-        QMutexLocker stack(&coreMtx);
-
-        pqil->resetlisten();
-        pqil->setListenAddr(connMgr->getOwnLocalAddress());
-        pqil->setuplisten();
     }
     return 1;
 }

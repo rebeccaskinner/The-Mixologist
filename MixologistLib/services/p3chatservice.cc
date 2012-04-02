@@ -24,6 +24,7 @@
 #include "interface/iface.h"
 #include "interface/peers.h"
 #include "pqi/pqinotify.h"
+#include <time.h>
 
 #include "services/p3chatservice.h"
 

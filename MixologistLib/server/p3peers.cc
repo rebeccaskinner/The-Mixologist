@@ -23,7 +23,8 @@
 
 #include "server/p3peers.h"
 #include "server/server.h"
-#include "pqi/connectivitymanager.h"
+#include "pqi/friendsConnectivityManager.h"
+#include "pqi/ownConnectivityManager.h"
 #include "pqi/authmgr.h"
 #include <interface/init.h>
 
@@ -35,7 +36,7 @@
 
 p3Peers::p3Peers(QString &ownName)
     :ownName(ownName) {
-    connect(connMgr, SIGNAL(connectionStateChanged(int)), this, SIGNAL(connectionStateChanged(int)));
+    connect(ownConnectivityManager, SIGNAL(connectionStateChanged(int)), this, SIGNAL(connectionStateChanged(int)));
 }
 
 /* Peer Details (Net & Auth) */
@@ -52,28 +53,28 @@ QString p3Peers::getOwnName(){
 }
 
 void p3Peers::getOnlineList(std::list<int> &ids) {
-    connMgr->getOnlineList(ids);
+    friendsConnectivityManager->getOnlineList(ids);
 }
 
 void p3Peers::getSignedUpList(std::list<int> &ids) {
-    connMgr->getSignedUpList(ids);
+    friendsConnectivityManager->getSignedUpList(ids);
 }
 
 void p3Peers::getFriendList(std::list<int> &ids) {
-    connMgr->getFriendList(ids);
+    friendsConnectivityManager->getFriendList(ids);
 }
 
 bool p3Peers::isOnline(unsigned int librarymixer_id) {
-    return connMgr->isOnline(librarymixer_id);
+    return friendsConnectivityManager->isOnline(librarymixer_id);
 }
 
 bool p3Peers::isFriend(unsigned int librarymixer_id) {
-    return connMgr->isFriend(librarymixer_id);
+    return friendsConnectivityManager->isFriend(librarymixer_id);
 }
 
 bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
     peerConnectState pcs;
-    if (!connMgr->getPeerConnectState(librarymixer_id, pcs)) return false;
+    if (!friendsConnectivityManager->getPeerConnectState(librarymixer_id, pcs)) return false;
     d.id = pcs.id;
     d.librarymixer_id = pcs.librarymixer_id;
     d.name = pcs.name;
@@ -87,14 +88,7 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
     d.lastConnect   = pcs.lastcontact;
 
     /* Translate */
-
-    if (pcs.state == FCS_CONNECTED)
-        d.state = PEER_STATE_CONNECTED;
-    else if (pcs.inConnectionAttempt)
-        d.state = PEER_STATE_TRYING;
-    else if (pcs.state == FCS_NOT_MIXOLOGIST_ENABLED)
-        d.state = PEER_STATE_NO_CERT;
-    else d.state = PEER_STATE_OFFLINE;
+    d.state = pcs.state;
 
     return true;
 }
@@ -108,21 +102,21 @@ unsigned int p3Peers::findLibraryMixerByCertId(std::string cert_id) {
 }
 
 QString p3Peers::getPeerName(unsigned int librarymixer_id) {
-    return connMgr->getPeerName(librarymixer_id);
+    return friendsConnectivityManager->getPeerName(librarymixer_id);
 }
 
 /* Add/Remove Friends */
 bool p3Peers::addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,
                               const QString &localIP, ushort localPort, const QString &externalIP, ushort externalPort) {
-    return connMgr->addUpdateFriend(librarymixer_id, cert, name, localIP, localPort, externalIP, externalPort);
+    return friendsConnectivityManager->addUpdateFriend(librarymixer_id, cert, name, localIP, localPort, externalIP, externalPort);
 }
 
 /* Network Stuff */
 void p3Peers::connectAll() {
-    connMgr->tryConnectAll();
+    friendsConnectivityManager->tryConnectAll();
 }
 
 PeerDetails::PeerDetails()
-    :state(PEER_STATE_OFFLINE), lastConnect(0) {
+    :state(FCS_NOT_CONNECTED), lastConnect(0) {
     return;
 }

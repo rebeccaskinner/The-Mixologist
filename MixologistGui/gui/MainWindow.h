@@ -41,8 +41,6 @@ class FriendsLibraryDialog;
 
 class RatesStatus;
 
-class ClickableQWidget;
-
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -82,7 +80,7 @@ public:
     PreferencesWindow *preferencesWindow;
 
     /* Status bar */
-    ClickableQWidget *connectionStatus;
+    QWidget *connectionStatus;
     QWidget *hashingHolder;
     RatesStatus *ratesstatus;
 
@@ -166,16 +164,4 @@ private:
     /* We read this to see if we need the tutorials. */
     bool offLM_enabled;
 };
-
-/* Used for the ConnectionStatus label display so we can display more info on clicking. */
-class ClickableQWidget: public QWidget {
-Q_OBJECT
-
-signals:
-    void clicked();
-
-protected:
-    void mouseReleaseEvent (QMouseEvent *event);
-};
-
 #endif

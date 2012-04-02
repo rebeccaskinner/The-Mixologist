@@ -86,9 +86,9 @@ bool isPrivateNet(struct in_addr *addr) {
     // 192.168.0.0/16
     // 169.254.0.0/16
     if ((taddr>>24 == 10) ||
-            (taddr>>20 == (172<<4 | 16>>4)) ||
-            (taddr>>16 == (192<<8 | 168)) ||
-            (taddr>>16 == (169<<8 | 254))) {
+        (taddr>>20 == (172<<4 | 16>>4)) ||
+        (taddr>>16 == (192<<8 | 168)) ||
+        (taddr>>16 == (169<<8 | 254))) {
         return true;
     } else {
         return false;

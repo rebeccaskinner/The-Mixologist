@@ -22,7 +22,6 @@
 
 #include "pqi/pqinetwork.h"
 #include "pqi/pqinotify.h"
-#include "util/net.h"
 
 #include <errno.h>
 #include <iostream>
@@ -434,6 +433,20 @@ struct in_addr getPreferredInterface() {
     return addr;
 }
 
+bool interfaceStillExists(struct in_addr *currentInterface) {
+    std::list<std::string> addrs = getLocalInterfaces();
+    std::list<std::string>::iterator it;
+
+    struct in_addr addr;
+
+    for (it = addrs.begin(); it != addrs.end(); it++) {
+        inet_aton((*it).c_str(), &addr);
+        if (addr.s_addr == currentInterface->s_addr) return true;
+    }
+
+    return false;
+}
+
 bool isSameAddress(struct sockaddr_in *addr, struct sockaddr_in *addr2) {
     return ((addr->sin_addr.s_addr == addr2->sin_addr.s_addr) &&
             addr->sin_port == addr2->sin_port);
@@ -498,6 +511,10 @@ bool LookupDNSAddr(std::string name, struct sockaddr_in *addr) {
     //std::cerr << "getaddrinfo disabled" << std::endl;
 #endif
     return false;
+}
+
+QString addressToString(const struct sockaddr_in *addr) {
+    return QString(inet_ntoa(addr->sin_addr)) + ":" + QString::number(ntohs(addr->sin_port));
 }
 
 /*************************************************************

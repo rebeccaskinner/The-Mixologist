@@ -51,13 +51,13 @@ public:
     uint32_t actions;
 };
 
-/* pqiMonitors are registered with ConnectivityManager to receive updates on changes in friends' connectivity. */
+/* pqiMonitors are registered with the FriendsConnectivityManager to receive updates on changes in friends' connectivity. */
 class pqiMonitor {
 public:
     pqiMonitor() {}
     virtual ~pqiMonitor() {}
 
-    /* Called by the ConnectivityManager's tick function with a list of pqipeers whose statuses have changed. */
+    /* Called by the FriendsConnectivityManager's tick function with a list of pqipeers whose statuses have changed. */
     virtual void statusChange(const std::list<pqipeer> &changedFriends) = 0;
 };
 

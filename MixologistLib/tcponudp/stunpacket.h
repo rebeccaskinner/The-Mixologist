@@ -23,7 +23,7 @@
 #ifndef STUN_BASICS_H
 #define STUN_BASICS_H
 
-#include "util/net.h"
+#include <pqi/pqinetwork.h>
 #include <QString>
 
 /* Reads the packet, and returns true if it is such a UDP STUN packet. */

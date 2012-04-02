@@ -24,7 +24,6 @@
 #define P3_PEER_INTERFACE_H
 
 #include "interface/peers.h"
-#include "pqi/connectivitymanager.h"
 #include "pqi/authmgr.h"
 #include <QString>
 

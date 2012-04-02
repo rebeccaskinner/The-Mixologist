@@ -344,7 +344,8 @@ void PopupChatDialog::sendChat() {
         addSysMsg("Catastrophic fail! Unable to load friend's details to send the message.");
         return;
     }
-    if (detail.state == PEER_STATE_CONNECTED) {
+    if (detail.state == FCS_CONNECTED_TCP ||
+        detail.state == FCS_CONNECTED_UDP) {
         addChatMsg(message, true);
         msgs->ChatSend(detail.id, message);
         ui.chattextEdit->clear();
@@ -507,7 +508,8 @@ void PopupChatDialog::sendFiles(QStringList paths) {
     {
         PeerDetails detail;
         peers->getPeerDetails(librarymixer_id, detail);
-        if (detail.state == PEER_STATE_CONNECTED) {
+        if (detail.state == FCS_CONNECTED_TCP ||
+            detail.state == FCS_CONNECTED_UDP) {
             offline = false;
         }
     }

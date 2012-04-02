@@ -23,17 +23,15 @@
 #include "tcponudp/udplayer.h"
 #include "tcponudp/tou_net.h"
 #include "util/debug.h"
+#include "pqi/pqinetwork.h"
 #include "pqi/pqinotify.h"
 
 static const int UDP_DEF_TTL = 64;
 
 UdpLayer::UdpLayer(UdpReceiver *udpr, struct sockaddr_in &local)
-    :udpReceiver(udpr), errorState(0), ttl(UDP_DEF_TTL) {
+    :udpReceiver(udpr), errorState(0), ttl(UDP_DEF_TTL), stopCalled(false) {
     if (!openSocket(local)) {
-        getPqiNotify()->AddSysMessage(SYS_ERROR,
-                                      "Network failure",
-                                      QString("Unable to open UDP port ") + inet_ntoa(local.sin_addr) +
-                                      ":" + QString::number(local.sin_port));
+        getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", QString("Unable to open UDP port ") + addressToString(&local));
     }
     return;
 }
@@ -58,6 +56,7 @@ void UdpLayer::run() {
         /* Repeatedly loop on select until a packet is available to read, and then break and read it. */
         fd_set rset;
         while (true) {
+            if (stopCalled) break;
             if (sockfd < 0) break;
             FD_ZERO(&rset);
             FD_SET((unsigned int)sockfd, &rset);
@@ -70,6 +69,7 @@ void UdpLayer::run() {
                 log(LOG_DEBUG_ALERT, UDPLAYERZONE, QString("UdpLayer::recv_loop() Error: ") + QString::number(tounet_errno()));
             }
         }
+        if (stopCalled) break;
 
         int nsize = maxsize;
         struct sockaddr_in from;
@@ -77,6 +77,10 @@ void UdpLayer::run() {
             udpReceiver->recvPkt(receivedData, nsize, from);
         }
     }
+}
+
+void UdpLayer::stop() {
+    stopCalled = true;
 }
 
 int UdpLayer::sendPkt(void *data, int size, const sockaddr_in *to, int ttl) {

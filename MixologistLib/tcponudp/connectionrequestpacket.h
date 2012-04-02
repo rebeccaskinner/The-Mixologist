@@ -23,7 +23,7 @@
 #ifndef CONNECTION_REQUEST_H
 #define CONNECTION_REQUEST_H
 
-#include "util/net.h"
+#include <pqi/pqinetwork.h>
 #include <QString>
 
 /* UdpTunneler

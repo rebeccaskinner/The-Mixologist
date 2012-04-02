@@ -22,8 +22,8 @@
 
 #include "pqi/pqissl.h"
 #include "pqi/pqinetwork.h"
+#include "pqi/ownConnectivityManager.h" //To be able to get own local address
 
-#include "util/net.h"
 #include "util/debug.h"
 
 #include "interface/librarymixer-connect.h"
@@ -69,7 +69,6 @@ pqissl::pqissl(pqissllistener *sslListener, PQInterface *parent)
      sslmode(PQISSL_ACTIVE), ssl_connection(NULL), mOpenSocket(-1),
      sslListener(sslListener),
      sameLAN(false), failedButRetry(false), errorZeroReturnCount(0),
-     mRequestedConnectionDelay(0), mConnectionDelayedUntil(0),
      mConnectionAttemptTimeout(0), mConnectionAttemptTimeoutAt(0) {
     /* set address to zero */
     sockaddr_clear(&remote_addr);
@@ -106,9 +105,7 @@ int pqissl::stoplistening() {
 
 void pqissl::reset() {
     log(LOG_DEBUG_ALERT, PQISSLZONE,
-        "pqissl::reset Resetting connection with: " + QString::number(LibraryMixerId()) +
-        " at " + QString(inet_ntoa(remote_addr.sin_addr)) +
-        ":" + QString::number(ntohs(remote_addr.sin_port)));
+        "pqissl::reset Resetting connection with: " + QString::number(LibraryMixerId()) + " at " + addressToString(&remote_addr));
 
     bool neededReset = false;
 
@@ -130,14 +127,18 @@ void pqissl::reset() {
     readSoFar = 0;
 
     /* We only notify of this event if we actually shut something down. */
-    if (neededReset && parent()) parent()->notifyEvent(this, NET_CONNECT_FAILED);
+    if (neededReset && parent()) {
+        if (failedButRetry) {
+            failedButRetry = false;
+            parent()->notifyEvent(this, NET_CONNECT_FAILED_RETRY);
+        } else {
+            parent()->notifyEvent(this, NET_CONNECT_FAILED);
+        }
+    }
 }
 
 bool pqissl::setConnectionParameter(netParameters type, uint32_t value) {
-    if (type == NET_PARAM_CONNECT_DELAY) {
-        mRequestedConnectionDelay = value;
-        return true;
-    } else if (type == NET_PARAM_CONNECT_TIMEOUT) {
+    if (type == NET_PARAM_CONNECT_TIMEOUT) {
         mConnectionAttemptTimeout = value;
         return true;
     }
@@ -205,7 +206,6 @@ int pqissl::readdata(void *data, int length) {
 
         /* bytesRead = 0 means unsuccessful read by SSL_read, < 0 means error */
         if (bytesRead <= 0) {
-            std::ostringstream out;
 
             int sslErrorCode = SSL_get_error(ssl_connection, bytesRead);
             unsigned long extraErrorInfo =  ERR_get_error();
@@ -222,6 +222,7 @@ int pqissl::readdata(void *data, int length) {
              * it occurs in a row (because the other one will not).
              */
             if ((sslErrorCode == SSL_ERROR_ZERO_RETURN) && (extraErrorInfo == 0)) {
+                std::ostringstream out;
                 ++errorZeroReturnCount;
                 out << "SSL_read() SSL_ERROR_ZERO_RETURN ERROR: Has socket been closed? Attempt: " << errorZeroReturnCount << "\n";
 
@@ -236,24 +237,20 @@ int pqissl::readdata(void *data, int length) {
 
             /* The only real error we expect */
             if (sslErrorCode == SSL_ERROR_SYSCALL) {
-                out << "Connection to " << inet_ntoa(remote_addr.sin_addr) << " lost";
-                log(LOG_WARNING, PQISSLZONE, out.str().c_str());
+                log(LOG_WARNING, PQISSLZONE, "Connection to " + addressToString(&remote_addr) + " lost");
                 reset();
                 return -1;
             } else if (sslErrorCode == SSL_ERROR_WANT_WRITE) {
-                out << "SSL_read() SSL_ERROR_WANT_WRITE";
-                out << std::endl;
-                log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
+                log(LOG_DEBUG_ALERT, PQISSLZONE, "SSL_read() SSL_ERROR_WANT_WRITE");
                 return -1;
             } else if (sslErrorCode == SSL_ERROR_WANT_READ) {
                 /* SSL_WANT_READ is not a critical error. It's just a sign that
                    the internal SSL buffer is not ready to accept more data. So -1
                    is returned, and the connection will be retried as is on next call of readdata().*/
-                out << "SSL_read() SSL_ERROR_WANT_READ";
-                out << std::endl;
-                log(LOG_DEBUG_ALL, PQISSLZONE, out.str().c_str());
+                log(LOG_DEBUG_ALL, PQISSLZONE, "SSL_read() SSL_ERROR_WANT_READ");
                 return -1;
             } else {
+                std::ostringstream out;
                 out << "SSL_read() UNKNOWN ERROR: " << sslErrorCode;
                 out << std::endl;
                 out << "\tResetting!";
@@ -262,8 +259,6 @@ int pqissl::readdata(void *data, int length) {
                 reset();
                 return -1;
             }
-
-            log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
         } else readSoFar += bytesRead;
     } while (readSoFar < length);
 
@@ -377,10 +372,7 @@ int pqissl::ConnectAttempt() {
         case STATE_IDLE:
             log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::ConnectAttempt() STATE = Not Waiting, starting connection");
             sslmode = PQISSL_ACTIVE; /* we're starting this one */
-            return Init_Or_Delay_Connection();
-        case STATE_INITIALIZED:
-            log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::ConnectAttempt() STATE = Waiting Delay, starting connection");
-            return Init_Or_Delay_Connection();
+            return Initiate_Connection();
         case STATE_WAITING_FOR_SOCKET_CONNECT:
             log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::ConnectAttempt() STATE = Waiting Sock Connect");
             return Initiate_SSL_Connection();
@@ -402,28 +394,13 @@ int pqissl::ConnectAttempt() {
     return -1;
 }
 
-int pqissl::Init_Or_Delay_Connection() {
-    if (connectionState == STATE_IDLE) {
-        connectionState = STATE_INITIALIZED;
-        if (mRequestedConnectionDelay == 0) return Initiate_Connection();
-        mConnectionDelayedUntil = time(NULL) + mRequestedConnectionDelay;
-        return 0;
-    } else if (connectionState == STATE_INITIALIZED) {
-        if (time(NULL) > mConnectionDelayedUntil) return Initiate_Connection();
-        return 0;
-    } else {
-        log(LOG_DEBUG_ALERT, PQISSLZONE, "pqissl::Init_Or_Delay_Connection() called with illegal state");
-        return -1;
-    }
-}
-
 int pqissl::Initiate_Connection() {
     int err;
     struct sockaddr_in address = remote_addr;
 
     log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::Initiate_Connection() Attempting Outgoing Connection.");
 
-    if (connectionState != STATE_INITIALIZED) {
+    if (connectionState != STATE_IDLE) {
         log(LOG_DEBUG_ALERT, PQISSLZONE, "pqissl::Initiate_Connection() Already Attempt in Progress!");
         return -1;
     }
@@ -452,12 +429,8 @@ int pqissl::Initiate_Connection() {
     }
 
     /* Initiate connection to remote address. */
-    {
-        std::ostringstream out;
-        out << "pqissl::Initiate_Connection() Connecting to: " << LibraryMixerId();
-        out << " via: " << inet_ntoa(address.sin_addr) << ":" << ntohs(address.sin_port);
-        log(LOG_DEBUG_ALERT, PQISSLZONE, out.str().c_str());
-    }
+    log(LOG_DEBUG_ALERT, PQISSLZONE,\
+        "pqissl::Initiate_Connection() Connecting to: " + QString::number(LibraryMixerId()) + " via " + addressToString(&address));
 
     if (address.sin_addr.s_addr == 0) {
         log(LOG_DEBUG_ALERT, PQISSLZONE, "pqissl::Initiate_Connection() Invalid (0.0.0.0) remote address, aborting\n");
@@ -593,9 +566,7 @@ int pqissl::Basic_Connection_Complete() {
         return -1;
     } else {
         if (err == 0) {
-            log(LOG_WARNING, PQISSLZONE,
-                QString("Established outgoing connection to ") + inet_ntoa(remote_addr.sin_addr) + ":" + QString::number(ntohs(remote_addr.sin_port)) +
-                ", initializing encrypted connection");
+            log(LOG_WARNING, PQISSLZONE, "Established outgoing connection to " + addressToString(&remote_addr) + ", initializing encrypted connection");
             return 1;
         }
 
@@ -726,7 +697,10 @@ int pqissl::SSL_Connection_Complete() {
             librarymixerconnect->downloadFriends();
         } else if (friendDisconnected) {
             log(LOG_WARNING, PQISSLZONE, "Friend disconnected before encryption initialization was completed, possibly to update friend list");
-            if (!isTcpOverUdpConnection) failedButRetry = true;
+            if (!isTcpOverUdpConnection) {
+                log(LOG_WARNING, PQISSLZONE, "Scheduling a quick retry of the connection after giving enough time for them to update their friend list");
+                failedButRetry = true;
+            }
         } else {
             log(LOG_WARNING, PQISSLZONE, "Error establishing encrypted connection, disconnecting");
             std::ostringstream out;
@@ -832,7 +806,7 @@ int pqissl::accept(SSL *ssl, int socket, struct sockaddr_in foreign_addr) { // i
     remote_addr = foreign_addr;
 
 
-    sameLAN = isSameSubnet(&(remote_addr.sin_addr), &(connMgr->getOwnLocalAddress()->sin_addr));
+    sameLAN = isSameSubnet(&(remote_addr.sin_addr), &(ownConnectivityManager->getOwnLocalAddress()->sin_addr));
 
     /* Make socket non-blocking. */
     int err = net_internal_fcntl_nonblock(mOpenSocket);
@@ -855,8 +829,7 @@ int pqissl::accept(SSL *ssl, int socket, struct sockaddr_in foreign_addr) { // i
     /* Notify the ConnectionToFriend. */
     if (parent()) parent()->notifyEvent(this, NET_CONNECT_SUCCESS);
 
-    log(LOG_WARNING, PQISSLZONE, QString("Completed creating encrypted connection with ") +
-                                 inet_ntoa(remote_addr.sin_addr) + QString(":") + QString::number(ntohs(remote_addr.sin_port)));
+    log(LOG_WARNING, PQISSLZONE, QString("Completed creating encrypted connection with ") + addressToString(&remote_addr));
     return 1;
 }
 
@@ -869,10 +842,7 @@ int pqissl::Failed_Connection() {
     log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::ConnectAttempt() Failed - Notifying");
 
     if (parent()) {
-        if (failedButRetry)
-            parent()->notifyEvent(this, NET_CONNECT_FAILED_RETRY);
-        else
-            parent()->notifyEvent(this, NET_CONNECT_FAILED);
+        parent()->notifyEvent(this, NET_CONNECT_FAILED);
     }
 
     connectionState = STATE_IDLE;

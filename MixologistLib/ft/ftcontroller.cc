@@ -38,7 +38,7 @@
 #include <util/dir.h>
 #include <util/debug.h>
 
-#include <pqi/connectivitymanager.h>
+#include <pqi/friendsConnectivityManager.h>
 #include <pqi/pqinotify.h>
 
 #include <QSettings>
@@ -398,7 +398,7 @@ ftTransferModule* ftController::internalRequestFile(unsigned int friend_id, cons
     log(LOG_DEBUG_ALERT, FTCONTROLLERZONE, "Beginning download for " + hash);
 
     ftTransferModule* file = new ftTransferModule(friend_id, size, hash);
-    setPeerState(file, friend_id, connMgr->isOnline(friend_id));
+    setPeerState(file, friend_id, friendsConnectivityManager->isOnline(friend_id));
 
     mDownloads[hash] = file;
 
