@@ -96,7 +96,7 @@ public:
     */
 
     //Called from ftDataDemultiplex when data is received, frees the data whether successful or not
-    bool recvFileData(std::string cert_id, uint64_t offset, uint32_t chunk_size, void *data);
+    bool recvFileData(unsigned int librarymixer_id, uint64_t offset, uint32_t chunk_size, void *data);
 
     /* Has an independent Mutex, can be accessed directly */
     ftFileCreator* mFileCreator;
@@ -115,8 +115,8 @@ private:
     //Controls the current status of the download
     fileTransferStatus mTransferStatus;
 
-    //List of all sources, with first element the cert_id of the source
-    QMap<std::string, peerInfo> mFileSources;
+    //List of all sources, with first element the LibraryMixer ID of the source
+    QMap<unsigned int, peerInfo> mFileSources;
 
     //Total transfer speed on this file
     double actualRate;
@@ -125,13 +125,12 @@ private:
 /* Used internally to hold information about each friend we have as a file source. */
 class peerInfo {
 public:
-    peerInfo(unsigned int _librarymixer_id, std::string cert_id)
-        :librarymixer_id(_librarymixer_id), cert_id(cert_id), state(PQIPEER_NOT_ONLINE), actualRate(0),
+    peerInfo(unsigned int _librarymixer_id)
+        :librarymixer_id(_librarymixer_id), state(PQIPEER_NOT_ONLINE), actualRate(0),
         offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransfered(0), nResets(0),
         rtt(0), rttActive(false), rttStart(0), rttOffset(0),mRateChange(1), fastStart(true) {return;}
 
     unsigned int librarymixer_id;
-    std::string cert_id;
     uint32_t state;
     double actualRate;
 

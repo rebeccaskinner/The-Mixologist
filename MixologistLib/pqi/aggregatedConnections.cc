@@ -21,6 +21,7 @@
  ****************************************************************/
 
 #include "pqi/aggregatedConnections.h"
+#include "pqi/connectionToFriend.h"
 #include "pqi/friendsConnectivityManager.h"
 #include "pqi/ownConnectivityManager.h"
 #include "pqi/pqissl.h"
@@ -55,13 +56,13 @@ int AggregatedConnectionsToFriends::tickServiceRecv() {
 
     while (NULL != (incomingItem = GetRawItem())) {
         ++i;
-        log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::tickTunnelServer() Incoming TunnelItem");
+        log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE,
+            "AggregatedConnectionsToFriends::tickTunnelServer() Incoming TunnelItem from " + QString::number(incomingItem->LibraryMixerId()));
         incoming(incomingItem);
     }
 
-    if (0 < i) {
-        return 1;
-    }
+    if (i > 0) return 1;
+
     return 0;
 }
 
@@ -73,13 +74,13 @@ int AggregatedConnectionsToFriends::tickServiceSend() {
 
     while (NULL != (outboundItem = outgoing())) { /* outgoing has own locking */
         ++i;
-        log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::tickTunnelServer() OutGoing NetItem");
+        log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE,
+            "AggregatedConnectionsToFriends::tickTunnelServer() OutGoing NetItem to " + QString::number(outboundItem->LibraryMixerId()));
 
         SendRawItem(outboundItem); /* Locked by pqihandler */
     }
-    if (0 < i) {
-        return 1;
-    }
+    if (i > 0) return 1;
+
     return 0;
 }
 
@@ -128,38 +129,55 @@ void AggregatedConnectionsToFriends::load_transfer_rates() {
 void AggregatedConnectionsToFriends::statusChange(const std::list<pqipeer> &changedFriends) {
     foreach(pqipeer currentPeer, changedFriends) {
         if (currentPeer.actions & PEER_NEW) addPeer(currentPeer.cert_id, currentPeer.librarymixer_id);
-        if (currentPeer.actions & PEER_CONNECT_REQ) connectPeer(currentPeer.cert_id, currentPeer.librarymixer_id);
-        if (currentPeer.actions & PEER_TIMEOUT) timeoutPeer(currentPeer.cert_id);
+        if (currentPeer.actions & PEER_CONNECT_REQ) connectPeer(currentPeer.librarymixer_id);
+        if (currentPeer.actions & PEER_TIMEOUT) timeoutPeer(currentPeer.librarymixer_id);
+        if (currentPeer.actions & PEER_CERT_AND_ADDRESS_UPDATED) {
+            removePeer(currentPeer.librarymixer_id);
+            addPeer(currentPeer.cert_id, currentPeer.librarymixer_id);
+        }
     }
 }
 
 int AggregatedConnectionsToFriends::addPeer(std::string id, unsigned int librarymixer_id) {
     log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::addPeer() id: " + QString::number(librarymixer_id));
 
-    ConnectionToFriend *newFriend;
     {
         QMutexLocker stack(&coreMtx);
-        QMap<std::string, PQInterface *>::iterator it;
-        it = connectionsToFriends.find(id);
-        if (it != connectionsToFriends.end()) {
-            log(LOG_DEBUG_ALERT, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::addPeer() Peer already in Use!");
+        if (connectionsToFriends.contains(librarymixer_id)) {
+            log(LOG_DEBUG_ALERT, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::addPeer() Peer with that ID already exists!");
             return -1;
         }
-
-        newFriend = createPerson(id, librarymixer_id, pqil);
-
-        //reset it to start it working.
-        newFriend->reset();
-        newFriend->listen();
     }
+
+    ConnectionToFriend *newFriend = createPerson(id, librarymixer_id, pqil);
+
+    //reset it to start it working.
+    newFriend->reset();
+    newFriend->listen();
+
     return AddPQI(newFriend);
 }
 
-int AggregatedConnectionsToFriends::connectPeer(std::string cert_id, unsigned int librarymixer_id) {
-    QMutexLocker stack(&coreMtx);
-    if (!connectionsToFriends.contains(cert_id)) return 0;
+bool AggregatedConnectionsToFriends::removePeer(unsigned int librarymixer_id) {
+    log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::removePeer() id: " + QString::number(librarymixer_id));
 
-    ConnectionToFriend *currentFriend = (ConnectionToFriend *) connectionsToFriends[cert_id];
+    QMutexLocker stack(&coreMtx);
+
+    if (!connectionsToFriends.contains(librarymixer_id)) return false;
+
+    ConnectionToFriend *friendToRemove = (ConnectionToFriend *) connectionsToFriends[librarymixer_id];
+    friendToRemove->reset();
+    delete friendToRemove;
+    connectionsToFriends.remove(librarymixer_id);
+
+    return true;
+}
+
+int AggregatedConnectionsToFriends::connectPeer(unsigned int librarymixer_id) {
+    QMutexLocker stack(&coreMtx);
+    if (!connectionsToFriends.contains(librarymixer_id)) return 0;
+
+    ConnectionToFriend *currentFriend = (ConnectionToFriend *) connectionsToFriends[librarymixer_id];
 
     /* Dequeue a connection attempt from ConnectivityManager */
     if (!friendsConnectivityManager) return 0;
@@ -192,21 +210,21 @@ int AggregatedConnectionsToFriends::connectPeer(std::string cert_id, unsigned in
         }
         /* We can just immediately report failure now as this method doesn't produce an instant connection,
            at best we'll have a new incoming connection that is handled seperately from here. */
-        friendsConnectivityManager->reportConnectionUpdate(librarymixer_id, -1);
+        friendsConnectivityManager->reportConnectionUpdate(librarymixer_id, -1, TCP_CONNECTION, &addr);
     }
 
     return 1;
 }
 
-void AggregatedConnectionsToFriends::timeoutPeer(std::string cert_id) {
+void AggregatedConnectionsToFriends::timeoutPeer(unsigned int librarymixer_id) {
     QMutexLocker stack(&coreMtx);
-    if (!connectionsToFriends.contains(cert_id)) return;
+    if (!connectionsToFriends.contains(librarymixer_id)) return;
 
-    ((ConnectionToFriend *) connectionsToFriends[cert_id])->reset();
+    ((ConnectionToFriend *) connectionsToFriends[librarymixer_id])->reset();
 }
 
-bool AggregatedConnectionsToFriends::notifyConnect(std::string id, int result) {
-    if (friendsConnectivityManager) friendsConnectivityManager->reportConnectionUpdate(authMgr->findLibraryMixerByCertId(id), result);
+bool AggregatedConnectionsToFriends::notifyConnect(unsigned int librarymixer_id, int result, ConnectionType type, struct sockaddr_in *remoteAddress) {
+    if (friendsConnectivityManager) friendsConnectivityManager->reportConnectionUpdate(librarymixer_id, result, type, remoteAddress);
 
     return (NULL != friendsConnectivityManager);
 }
@@ -239,23 +257,3 @@ ConnectionToFriend *AggregatedConnectionsToFriends::createPerson(std::string id,
 
     return newPerson;
 }
-
-#ifdef false
-int AggregatedConnectionsToFriends::removePeer(std::string id) {
-    QMap<std::string, PQInterface *>::iterator it;
-
-    QMutexLocker stack(&coreMtx);
-
-    it = connectionsToFriends.find(id);
-    if (it != connectionsToFriends.end()) {
-        // Don't duplicate remove!!!
-        //RemovePQInterface(p);
-        ConnectionToFriend *p = (ConnectionToFriend *) it->second;
-        p->reset();
-        delete p;
-        connectionsToFriends.erase(it);
-    }
-    return 1;
-}
-#endif
-

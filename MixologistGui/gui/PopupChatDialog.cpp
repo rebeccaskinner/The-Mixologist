@@ -136,7 +136,7 @@ void PopupChatDialog::resetStatusBar() {
 
 void PopupChatDialog::updateStatusTyping() {
     if (time(NULL) - last_status_send_time > 5) {   // limit 'peer is typing' packets to at most every 10 sec
-        msgs->sendStatusString(peers->findCertByLibraryMixerId(librarymixer_id), peers->getOwnName() + " is typing...");
+        msgs->sendStatusString(librarymixer_id, peers->getOwnName() + " is typing...");
         last_status_send_time = time(NULL) ;
     }
 }
@@ -149,9 +149,11 @@ void PopupChatDialog::updateStatusString(const QString &status_string) {
 
 void PopupChatDialog::addMsgFromFriend(ChatInfo *ci) {
     addChatMsg(ci->msg, false);
+#ifdef false
     if (ci->chatflags & CHAT_AVATAR_AVAILABLE) {
         updatePeerAvatar() ;
     }
+#endif
     resetStatusBar() ;
 }
 
@@ -347,7 +349,7 @@ void PopupChatDialog::sendChat() {
     if (detail.state == FCS_CONNECTED_TCP ||
         detail.state == FCS_CONNECTED_UDP) {
         addChatMsg(message, true);
-        msgs->ChatSend(detail.id, message);
+        msgs->ChatSend(detail.librarymixer_id, message);
         ui.chattextEdit->clear();
     } else {
         addSysMsg("Friend offline, could not send");
@@ -368,11 +370,12 @@ void PopupChatDialog::showAvatarFrame(bool show) {
     }
 }
 
+#ifdef false
 void PopupChatDialog::updatePeerAvatar() {
     unsigned char *data = NULL;
     int size = 0 ;
 
-    msgs->getAvatarData(peers->findCertByLibraryMixerId(librarymixer_id),data,size);
+    msgs->getAvatarData(librarymixer_id,data,size);
 
     if (size == 0) {
         return ;
@@ -417,6 +420,7 @@ void PopupChatDialog::getAvatar() {
         updateAvatar() ;
     }
 }
+#endif
 
 bool PopupChatDialog::eventFilter(QObject *obj, QEvent *event) {
     if (event->type() == QEvent::KeyPress) {

@@ -619,16 +619,16 @@ QString ftController::getPartialsDirectory() const {
     return mPartialsPath;
 }
 
-bool ftController::handleReceiveData(const std::string &peerId, const QString &hash, uint64_t offset, uint32_t chunksize, void *data) {
+bool ftController::handleReceiveData(unsigned int librarymixer_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data) {
     QMutexLocker stack(&ctrlMutex);
     QMap<QString, ftTransferModule*>::const_iterator it;
     it = mDownloads.find(hash);
     if (it != mDownloads.end()) {
-        it.value()->recvFileData(peerId, offset, chunksize, data);
+        it.value()->recvFileData(librarymixer_id, offset, chunksize, data);
         return true;
     } else if (offLMList) {
         /* If it's not for any of our files, see if it might be for ftOffLMList's Xmls. */
-        return offLMList->handleReceiveData(peerId, hash, offset, chunksize, data);
+        return offLMList->handleReceiveData(librarymixer_id, hash, offset, chunksize, data);
     }
     return false;
 }

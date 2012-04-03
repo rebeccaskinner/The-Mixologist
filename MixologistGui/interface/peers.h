@@ -83,8 +83,7 @@ enum ConnectionStatus {
        If we receive no response, our STUN servers are again behaving erratically and we are CONNECTION_STATUS_UNKNOWN. */
     CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
 
-    /* The states below here are final states.
-       CONNECTION_STATUS_UNFIREWALLED being the lowest numbered final state is relied upon elsewhere. */
+    /* The states below here are final states. */
     CONNECTION_STATUS_UNFIREWALLED,
     CONNECTION_STATUS_PORT_FORWARDED,
     CONNECTION_STATUS_UPNP_IN_USE,
@@ -94,6 +93,14 @@ enum ConnectionStatus {
     CONNECTION_STATUS_UNKNOWN
 };
 inline bool connectionStatusInFinalState(int status) {return status >= CONNECTION_STATUS_UNFIREWALLED;}
+inline bool connectionStatusUdpHolePunching(int status) {return (status == CONNECTION_STATUS_UDP_HOLE_PUNCHING ||
+                                                                 status == CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING);}
+/* Note we are treating status unknown as a good connection. Rationale is if auto-config failed, just treat is like unfirewalled. */
+inline bool connectionStatusGoodConnection(int status) {return (status == CONNECTION_STATUS_UNFIREWALLED ||
+                                                                status == CONNECTION_STATUS_PORT_FORWARDED ||
+                                                                status == CONNECTION_STATUS_UPNP_IN_USE ||
+                                                                status == CONNECTION_STATUS_UNKNOWN);}
+
 
 /* Details class */
 class PeerDetails {
@@ -132,13 +139,13 @@ public:
     virtual QString getOwnName() = 0;
 
     /* List of LibraryMixer ids for all online friends. */
-    virtual void getOnlineList(std::list<int> &ids) = 0;
+    virtual void getOnlineList(QList<unsigned int> &friend_ids) = 0;
 
     /* List of LibraryMixer ids for all friends with encryption keys. */
-    virtual void getSignedUpList(std::list<int> &ids) = 0;
+    virtual void getSignedUpList(QList<unsigned int> &friend_ids) = 0;
 
     /* List of LibraryMixer ids for all friends. */
-    virtual void getFriendList(std::list<int> &ids) = 0;
+    virtual void getFriendList(QList<unsigned int> &friend_ids) = 0;
 
     /* Returns true if that id belongs to a friend. */
     virtual bool isFriend(unsigned int librarymixer_id) = 0;
@@ -154,12 +161,6 @@ public:
        Can be used for friends or self.
        Returns true, or false if unable to find user with librarymixer_id*/
     virtual bool getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) = 0;
-
-    /* Returns the user's encryption certificacte id or "" if unable to find. */
-    virtual std::string findCertByLibraryMixerId(unsigned int librarymixer_id) = 0;
-
-    /* Returns the user's LibraryMixer id or -1 if unable to find. */
-    virtual unsigned int findLibraryMixerByCertId(std::string cert_id) = 0;
 
     /* Either adds a new friend, or updates the existing friend. */
     virtual bool addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,

@@ -52,13 +52,13 @@ public:
     virtual QString getOwnName();
 
     /* List of LibraryMixer ids for all online friends. */
-    virtual void getOnlineList(std::list<int> &ids);
+    virtual void getOnlineList(QList<unsigned int> &friend_ids);
 
     /* List of LibraryMixer ids for all friends with encryption keys. */
-    virtual void getSignedUpList(std::list<int> &ids);
+    virtual void getSignedUpList(QList<unsigned int> &friend_ids);
 
     /* List of LibraryMixer ids for all friends. */
-    virtual void getFriendList(std::list<int> &ids);
+    virtual void getFriendList(QList<unsigned int> &friend_ids);
 
     /* Returns true if that id belongs to a friend. */
     virtual bool isFriend(unsigned int librarymixer_id);
@@ -74,12 +74,6 @@ public:
        Can be used for friends or self.
        Returns true, or false if unable to find user with librarymixer_id*/
     virtual bool getPeerDetails(unsigned int librarymixer_id, PeerDetails &d);
-
-    /* Returns the user's encryption certificacte id or "" if unable to find. */
-    virtual std::string findCertByLibraryMixerId(unsigned int librarymixer_id);
-
-    /* Returns the user's LibraryMixer id or -1 if unable to find. */
-    virtual unsigned int findLibraryMixerByCertId(std::string cert_id);
 
     /* Either adds a new friend, or updates the existing friend. */
     virtual bool addUpdateFriend(unsigned int librarymixer_id, const QString &cert, const QString &name,

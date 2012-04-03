@@ -53,7 +53,7 @@ class ftFileMethod;
 class ftRequest {
 public:
 
-    ftRequest(uint32_t type, std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunk, void *data);
+    ftRequest(uint32_t type, unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunk, void *data);
 
     ftRequest()
         :mType(0), mSize(0), mOffset(0), mChunk(0), mData(NULL) {
@@ -61,7 +61,7 @@ public:
     }
 
     uint32_t mType;
-    std::string mPeerId;
+    unsigned int mLibraryMixerId;
     QString mHash;
     uint64_t mSize;
     uint64_t mOffset;
@@ -90,10 +90,10 @@ public:
     /*************** RECV INTERFACE (provides ftDataRecv) ****************/
 
     /* Client receive of a piece of data */
-    virtual bool recvData(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize, void *data);
+    virtual bool recvData(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize, void *data);
 
     /* Server receive of a request for data */
-    virtual bool recvDataRequest(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
+    virtual bool recvDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
 
 public slots:
     /* Should be called whenever any of the file providing classes knows that a given file that was previously available
@@ -108,17 +108,17 @@ private:
 
     /* Handling Job Queues */
     /* Passes incoming data to the appropriate transfer module, or returns false if this data is for a file we're not downloading. */
-    bool handleIncomingData(std::string peerId, QString hash, uint64_t offset, uint32_t chunksize, void *data);
+    bool handleIncomingData(unsigned int librarymixer_id, QString hash, uint64_t offset, uint32_t chunksize, void *data);
 
     /* Either responds to the data request by sending the requested data via locked_handleServerRequest,
        or adds it to mSearchQueue for further processing */
-    void handleOutgoingDataRequest(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
+    void handleOutgoingDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
 
     /* Uses mFileMethods to find the file specified, and if the file is found, adds it to activeFileServes. */
-    bool handleSearchRequest(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
+    bool handleSearchRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
 
     /* Sends the requested file data */
-    bool sendRequestedData(ftFileProvider *provider, std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
+    bool sendRequestedData(ftFileProvider *provider, unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
 
     /* Moves an ftFileProvider from activeFileServes to deadFileServes. */
     void deactivateFileServe(QString hash, uint64_t filesize);

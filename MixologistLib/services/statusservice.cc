@@ -33,46 +33,54 @@
   145 seconds (two and a half minutes)
   Note that this is slightly less than half of the connection timeout period, so we should
   have two opportunities per timeout period to keep alive. */
-#define RETRY_DELAY 145
+#define SEND_ALL_PERIOD 145
 
 StatusService::StatusService()
     :p3Service(SERVICE_TYPE_STATUS) {
     addSerialType(new StatusSerialiser());
-    timeOfLastTry = time(NULL);
+    timeOfLastSendAll = time(NULL);
 }
 
 int StatusService::tick() {
     QMutexLocker stack(&statusMutex);
-    if (time(NULL) - timeOfLastTry > RETRY_DELAY) {
-        std::list<int> friends;
-        std::list<int>::iterator it;
+
+    /* Send */
+    QList<unsigned int> *listToUse;
+    QList<unsigned int> friends;
+    if (time(NULL) - timeOfLastSendAll > SEND_ALL_PERIOD) {
         peers->getOnlineList(friends);
-        QString offLMXmlHash = "";
-        qlonglong offLMXmlSize = 0;
-        if (offLMList) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
-        for (it = friends.begin(); it != friends.end(); it++) {
-            BasicStatusItem *item = new BasicStatusItem();
-            item->PeerId(peers->findCertByLibraryMixerId(*it));
-
-            item->offLMXmlHash = offLMXmlHash;
-            item->offLMXmlSize = offLMXmlSize;
-
-            sendItem(item);
-        }
-        timeOfLastTry = time(NULL);
+        listToUse = &friends;
+        timeOfLastSendAll = time(NULL);
+    } else {
+        listToUse = &friendsToSendKeepAlive;
     }
+    QString offLMXmlHash = "";
+    qlonglong offLMXmlSize = 0;
+    if (offLMList) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
+    foreach (unsigned int friend_id, *listToUse) {
+        BasicStatusItem *item = new BasicStatusItem();
+        item->LibraryMixerId(friend_id);
+
+        item->offLMXmlHash = offLMXmlHash;
+        item->offLMXmlSize = offLMXmlSize;
+
+        sendItem(item);
+    }
+    friendsToSendKeepAlive.clear();
+
+    /* Receive */
     NetItem *netitem;
     while ((netitem=recvItem()) != NULL) {
         BasicStatusItem *statusItem = dynamic_cast<BasicStatusItem*>(netitem);
         if (statusItem != NULL) {
-            if (offLMList) offLMList->receiveFriendOffLMXmlInfo(peers->findLibraryMixerByCertId(statusItem->PeerId()),
+            if (offLMList) offLMList->receiveFriendOffLMXmlInfo(statusItem->LibraryMixerId(),
                                                                 statusItem->offLMXmlHash,
                                                                 statusItem->offLMXmlSize);
         }
 
         OnConnectStatusItem *onConnectItem = dynamic_cast<OnConnectStatusItem*>(netitem);
         if (onConnectItem != NULL) {
-            if (offLMList) offLMList->receiveFriendOffLMXmlInfo(peers->findLibraryMixerByCertId(onConnectItem->PeerId()),
+            if (offLMList) offLMList->receiveFriendOffLMXmlInfo(onConnectItem->LibraryMixerId(),
                                                                 onConnectItem->offLMXmlHash,
                                                                 onConnectItem->offLMXmlSize);
             if (onConnectItem->clientName == control->clientName() &&
@@ -82,7 +90,7 @@ int StatusService::tick() {
                     "Friend connected with new version " + QString::number(onConnectItem->clientVersion) +
                     ", own version is " + QString::number(control->clientVersion()));
                 getPqiNotify()->AddPopupMessage(POPUP_NEW_VERSION_FROM_FRIEND,
-                                                peers->getPeerName(peers->findLibraryMixerByCertId(onConnectItem->PeerId())),
+                                                peers->getPeerName(onConnectItem->LibraryMixerId()),
                                                 QString::number(onConnectItem->clientVersion));
                 control->setVersion(control->clientName(), control->clientVersion(), onConnectItem->clientVersion);
             }
@@ -95,7 +103,12 @@ int StatusService::tick() {
 
 void StatusService::sendStatusUpdateToAll() {
     QMutexLocker stack(&statusMutex);
-    timeOfLastTry = 0;
+    timeOfLastSendAll = 0;
+}
+
+void StatusService::sendKeepAlive(unsigned int friend_id) {
+    QMutexLocker stack(&statusMutex);
+    friendsToSendKeepAlive.append(friend_id);
 }
 
 void StatusService::statusChange(const std::list<pqipeer> &changedFriends) {
@@ -109,7 +122,7 @@ void StatusService::statusChange(const std::list<pqipeer> &changedFriends) {
             OnConnectStatusItem *item = new OnConnectStatusItem(control->clientName(), control->clientVersion());
             item->offLMXmlHash = offLMXmlHash;
             item->offLMXmlSize = offLMXmlSize;
-            item->PeerId(currentPeer.cert_id);
+            item->LibraryMixerId(currentPeer.librarymixer_id);
             sendItem(item);
         }
     }

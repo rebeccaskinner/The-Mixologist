@@ -206,7 +206,6 @@ bool UdpStun_response(void *stun_pkt, int size, QString &transaction_id, struct 
                 xorMappedAddress.sin_port != mappedAddress.sin_port ||
                 xorMappedAddress.sin_addr.s_addr != mappedAddress.sin_addr.s_addr) {
                 log(LOG_WARNING, UDPSORTERZONE, "STUN response shows signs of tampering by a router or firewall.");
-                /* TODO We should probably do something with this information. */
             }
         }
     } else if (mappedAddressFound) {

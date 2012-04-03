@@ -114,8 +114,7 @@ int p3Service::receive(RawItem *raw) {
         std::cerr << std::endl;
 #endif
 
-        /* ensure PeerId is transferred */
-        item->PeerId(raw->PeerId());
+        item->LibraryMixerId(raw->LibraryMixerId());
         recv_queue.push_back(item);
     }
 
@@ -175,8 +174,7 @@ RawItem *p3Service::send() {
         raw = NULL;
     }
 
-    /* ensure PeerId is transferred */
-    raw->PeerId(si->PeerId());
+    raw->LibraryMixerId(si->LibraryMixerId());
 
     /* cleanup */
     delete si;

@@ -52,12 +52,15 @@ public:
 
     /*************** INTERFACE ******************************/
     /* called from Thread/tick/GUI */
-    //Adds an item to the output queue.
-    int             sendItem(NetItem *);
-    //Returns the first item off the input queue.
-    NetItem         *recvItem();
-    //Returns whether or not new data has been received.
-    bool        receivedItems();
+
+    /* Adds an item to the output queue. */
+    int sendItem(NetItem *);
+
+    /* Returns the first item off the input queue. */
+    NetItem *recvItem();
+
+    /* Returns whether or not new data has been received. */
+    bool receivedItems();
 
     virtual int tick() {
         return 0;
@@ -67,11 +70,11 @@ public:
 
 public:
     // overloaded pqiService interface.
-    virtual int     receive(RawItem *);
-    virtual RawItem    *send();
+    virtual int receive(RawItem *);
+    virtual RawItem *send();
 
 protected:
-    void    addSerialType(SerialType *);
+    void addSerialType(SerialType *);
 
 private:
 

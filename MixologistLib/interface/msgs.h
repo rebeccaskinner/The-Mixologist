@@ -33,17 +33,15 @@
 
 //#define CHAT_PUBLIC        0x0001
 #define CHAT_PRIVATE     0x0002
-#define CHAT_AVATAR_AVAILABLE 0x0004
+//#define CHAT_AVATAR_AVAILABLE 0x0004
 
 class ChatInfo {
 public:
-    std::string rsid;
+    unsigned int librarymixer_id;
     unsigned int chatflags;
     QString name;
     QString msg;
 };
-
-std::ostream &operator<<(std::ostream &out, const ChatInfo &info);
 
 class Msgs;
 extern Msgs *msgs;
@@ -51,30 +49,27 @@ extern Msgs *msgs;
 class Msgs {
 public:
 
-    Msgs() {
-        return;
-    }
-    virtual ~Msgs() {
-        return;
-    }
+    Msgs() {}
+    virtual ~Msgs() {}
 
-    /****************************************/
-    /* Chat */
     /*Returns true if there is a new chat service item available.*/
     virtual bool chatAvailable() = 0;
+
     /*Sends a message to friend with peer_id.*/
-    virtual void ChatSend(const std::string &id,const QString &message) = 0;
+    virtual void ChatSend(unsigned int librarymixer_id, const QString &message) = 0;
+
     /*Processes all items on the incoming chat queue, including avatars and status.
       For each ChatMsgItem in the queue, creates a ChatInfo and adds it to the list to return.*/
-    virtual bool getNewChat(std::list<ChatInfo> &chats) = 0;
+    virtual bool getNewChat(QList<ChatInfo> &chats) = 0;
+
     /*Sends the specified status string status_string to friend with id peer_id.*/
-    virtual void sendStatusString(const std::string &id,const QString &status_string) = 0 ;
+    virtual void sendStatusString(unsigned int librarymixer_id, const QString &status_string) = 0 ;
 
-    // get avatar data for peer pid
-    virtual void getAvatarData(std::string pid,unsigned char *& data,int &size) = 0 ;
-    virtual void setOwnAvatarData(const unsigned char *data,int size) = 0 ;
-    virtual void getOwnAvatarData(unsigned char *& data,int &size) = 0 ;
-
+#ifdef false
+    virtual void getAvatarData(std::string pid, unsigned char *& data, int &size) = 0 ;
+    virtual void setOwnAvatarData(const unsigned char *data, int size) = 0 ;
+    virtual void getOwnAvatarData(unsigned char *& data, int &size) = 0 ;
+#endif
     /****************************************/
 
 };

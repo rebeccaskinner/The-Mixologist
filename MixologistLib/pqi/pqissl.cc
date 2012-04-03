@@ -104,20 +104,25 @@ int pqissl::stoplistening() {
 }
 
 void pqissl::reset() {
-    log(LOG_DEBUG_ALERT, PQISSLZONE,
-        "pqissl::reset Resetting connection with: " + QString::number(LibraryMixerId()) + " at " + addressToString(&remote_addr));
-
     bool neededReset = false;
 
     if (ssl_connection != NULL) {
         SSL_shutdown(ssl_connection);
         neededReset = true;
     }
-
     if (mOpenSocket > 0) {
         net_internal_close(mOpenSocket);
         neededReset = true;
     }
+
+    if (neededReset) {
+        log(LOG_DEBUG_ALERT, PQISSLZONE,
+            "pqissl::reset Resetting connection with: " + QString::number(LibraryMixerId()) + " at " + addressToString(&remote_addr));
+    } else {
+        log(LOG_DEBUG_BASIC, PQISSLZONE,
+            "pqissl::reset Resetting inactive connection with: " + QString::number(LibraryMixerId()));
+    }
+
     currentlyConnected = false;
     mOpenSocket = -1;
     connectionState = STATE_IDLE;
@@ -130,9 +135,9 @@ void pqissl::reset() {
     if (neededReset && parent()) {
         if (failedButRetry) {
             failedButRetry = false;
-            parent()->notifyEvent(this, NET_CONNECT_FAILED_RETRY);
+            parent()->notifyEvent(this, NET_CONNECT_FAILED_RETRY, &remote_addr);
         } else {
-            parent()->notifyEvent(this, NET_CONNECT_FAILED);
+            parent()->notifyEvent(this, NET_CONNECT_FAILED, &remote_addr);
         }
     }
 }
@@ -695,6 +700,10 @@ int pqissl::SSL_Connection_Complete() {
             log(LOG_WARNING, PQISSLZONE, "Connected to friend's address but received an unrecognized encryption key, disconnecting and updating friend list.");
             /* If SSL failed because of an unrecognized encryption certificate, we should update our certificates from LibraryMixer. */
             librarymixerconnect->downloadFriends();
+            if (!isTcpOverUdpConnection) {
+                log(LOG_WARNING, PQISSLZONE, "Scheduling a quick retry of the connection after updating the friend list");
+                failedButRetry = true;
+            }
         } else if (friendDisconnected) {
             log(LOG_WARNING, PQISSLZONE, "Friend disconnected before encryption initialization was completed, possibly to update friend list");
             if (!isTcpOverUdpConnection) {
@@ -737,7 +746,7 @@ int pqissl::Authorize_SSL_Connection() {
 
     if (cert_id != PeerId()) {
         pqioutput(LOG_WARNING, PQISSLZONE, "While attempting to connect to " + QString::number(LibraryMixerId()) +
-                                           " somehow got " + QString::number(peers->findLibraryMixerByCertId(cert_id)) +
+                                           " somehow got " + QString::number(authMgr->findLibraryMixerByCertId(cert_id)) +
                                            " instead!");
         reset();
         connectionState = STATE_FAILED;
@@ -827,7 +836,7 @@ int pqissl::accept(SSL *ssl, int socket, struct sockaddr_in foreign_addr) { // i
     connectionState = STATE_IDLE;
 
     /* Notify the ConnectionToFriend. */
-    if (parent()) parent()->notifyEvent(this, NET_CONNECT_SUCCESS);
+    if (parent()) parent()->notifyEvent(this, NET_CONNECT_SUCCESS, &remote_addr);
 
     log(LOG_WARNING, PQISSLZONE, QString("Completed creating encrypted connection with ") + addressToString(&remote_addr));
     return 1;
@@ -842,7 +851,7 @@ int pqissl::Failed_Connection() {
     log(LOG_DEBUG_BASIC, PQISSLZONE, "pqissl::ConnectAttempt() Failed - Notifying");
 
     if (parent()) {
-        parent()->notifyEvent(this, NET_CONNECT_FAILED);
+        parent()->notifyEvent(this, NET_CONNECT_FAILED, &remote_addr);
     }
 
     connectionState = STATE_IDLE;

@@ -61,7 +61,7 @@ public:
     uint64_t getFileSize() const;
 
     //Called from ftDataDemultiplex to update the stat on the last friend to have requested this
-    void setLastRequestor(const std::string &id);
+    void setLastRequestor(unsigned int librarymixer_id);
 
     //Moves the old file to new location and updates internal variables
     bool moveFile(QString newPath);
@@ -87,8 +87,8 @@ protected:
     //These stats are used to report information to the GUI
     //Right now, we are combining stats if multiple friends are requesting the same file
     //This is not ideal, and should be fixed in the future
-    //The cert_id of the last friend to have requested this
-    std::string lastRequestor;
+    //The librarymixer_id of the last friend to have requested this
+    unsigned int lastRequestor;
     //The offset of the last request + the amount last requested
     uint64_t lastRequestedEnd;
     uint32_t lastRequestSize;

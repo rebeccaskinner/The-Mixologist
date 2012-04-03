@@ -61,9 +61,8 @@ protected:
     }
 
 public:
-    //
-    virtual int     receive(RawItem *) = 0;
-    virtual RawItem    *send() = 0;
+    virtual int receive(RawItem *) = 0;
+    virtual RawItem *send() = 0;
 
     uint32_t getType() {
         return type;

@@ -786,8 +786,7 @@ int TcpStream::incoming_SynSent(TcpPacket *pkt) {
     if ((pkt->hasSyn()) && (pkt->hasAck())) {
         /* check stuff */
         if (pkt->getAck() != outSeqno) {
-            //TODO this shouldn't be this high logging
-            log(LOG_WARNING, TCP_STREAM_ZONE, "TcpStream::incoming_SynSent() Bad Ack - " + QString::number(pkt->getAck()));
+            log(LOG_DEBUG_ALERT, TCP_STREAM_ZONE, "TcpStream::incoming_SynSent() Bad Ack - " + QString::number(pkt->getAck()));
             delete pkt;
             return -1;
         }

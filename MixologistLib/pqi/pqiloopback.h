@@ -42,9 +42,7 @@ public:
     // PQI interface.
     virtual int tick();
 
-    virtual int     notifyEvent(NetInterface *ni, NetNotificationEvent event) {
-        (void) ni;    /* Not used */
-        (void) event;
+    virtual int notifyEvent(NetInterface */*ni*/, NetNotificationEvent /*event*/, struct sockaddr_in */*remoteAddress*/) {
         return 0;
     }
 private:

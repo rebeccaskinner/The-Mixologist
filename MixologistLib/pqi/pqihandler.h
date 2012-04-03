@@ -85,8 +85,9 @@ protected:
 
     /* Where all the aggregated PQInterfaces are held.
        In practice, this is all the connection to our friends, as well as one loopback for ourself.
-       map is by cert_id. */
-    QMap<std::string, PQInterface *> connectionsToFriends;
+       Keyed by librarymixer_id. */
+    QMap<unsigned int, PQInterface *> connectionsToFriends;
+
     //Incoming queues
     QList<NetItem *> in_request, in_data, in_service;
 

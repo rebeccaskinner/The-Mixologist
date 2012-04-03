@@ -40,11 +40,11 @@
 
 #define UDP_PUNCHING_PERIOD 20 //20 seconds between UDP hole punches
 #define UPNP_INIT_TIMEOUT 10 //10 second timeout for UPNP to initialize the firewall
-#define STUN_TEST_TIMEOUT 4 //3 second timeout from a STUN request for a STUN response to be received
+#define STUN_TEST_TIMEOUT 5 //5 second timeout from a STUN request for a STUN response to be received
 
 OwnConnectivityManager::OwnConnectivityManager()
     :connectionStatus(CONNECTION_STATUS_FINDING_STUN_FRIENDS),
-     contactLibraryMixerState(CONTACT_LIBRARYMIXER_IDLE),
+     contactLibraryMixerState(CONTACT_LIBRARYMIXER_PENDING),
      enableFriendsConnectAfterUpdate(false),
      connectionSetupStepTimeOutAt(0),
      udpTestSocket(NULL), mUpnpMgr(NULL),
@@ -149,7 +149,7 @@ void OwnConnectivityManager::shutdown() {
     sockaddr_clear(&ownExternalAddress);
 
     connectionStatus = CONNECTION_STATUS_UNKNOWN;
-    contactLibraryMixerState = CONTACT_LIBRARYMIXER_IDLE;
+    contactLibraryMixerState = CONTACT_LIBRARYMIXER_PENDING;
     enableFriendsConnectAfterUpdate = false;
     connectionSetupStepTimeOutAt = 0;
 
@@ -390,6 +390,7 @@ void OwnConnectivityManager::receivedStunBindingResponse(QString transactionId, 
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_INITIAL) {
         inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
         ownExternalAddress.sin_port = ownLocalAddress.sin_port;
+        //We now know our own address definitively, and should update LibraryMixer with it
         contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
         if (QString(inet_ntoa(ownLocalAddress.sin_addr)) == mappedAddress) {
             setNewConnectionStatus(CONNECTION_STATUS_UNFIREWALLED);
@@ -407,6 +408,7 @@ void OwnConnectivityManager::receivedStunBindingResponse(QString transactionId, 
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UPNP_TEST) {
         inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
         ownExternalAddress.sin_port = ownLocalAddress.sin_port;
+        //We now know our own address definitively, and should update LibraryMixer with it
         contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
         setNewConnectionStatus(CONNECTION_STATUS_UPNP_IN_USE);
         log(LOG_WARNING,
@@ -416,6 +418,7 @@ void OwnConnectivityManager::receivedStunBindingResponse(QString transactionId, 
     } else if (connectionStatus == CONNECTION_STATUS_STUNNING_MAIN_PORT) {
         inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
         ownExternalAddress.sin_port = htons(mappedPort);
+        //We now know our own address definitively, and should update LibraryMixer with it
         contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
         setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST);
         log(LOG_WARNING,
@@ -468,25 +471,30 @@ void OwnConnectivityManager::setNewConnectionStatus(ConnectionStatus newStatus) 
     connectionSetupStepTimeOutAt = 0;
     pendingStunTransactions.clear();
     emit connectionStateChanged(newStatus);
+
+    /* We don't know whether we will reach the final state first, or we will update LibraryMixer with our address first.
+       We do know that we don't want to start connecting to our friends until both of these have happened.
+       Therefore, we check here if we're done with both, if we are, we enable friendsConnectivityManager.
+       Otherwise, if only our state is final, we set a flag to enable friendsConnectivityManager when we finish updating LibraryMixer with our address. */
     if (connectionStatusInFinalState(newStatus)) {
-        enableFriendsConnectAfterUpdate = true;
+        if (contactLibraryMixerState == CONTACT_LIBRARYMIXER_DONE) friendsConnectivityManager->setEnabled(true);
+        else enableFriendsConnectAfterUpdate = true;
     }
 }
 
 void OwnConnectivityManager::addressUpdatedOnLibraryMixer() {
     QMutexLocker stack(&ownConMtx);
-    contactLibraryMixerState = CONTACT_LIBRARYMIXER_IDLE;
+    contactLibraryMixerState = CONTACT_LIBRARYMIXER_DONE;
     if (enableFriendsConnectAfterUpdate) {
         enableFriendsConnectAfterUpdate = false;
         friendsConnectivityManager->setEnabled(true);
     }
 }
 
-#define ADDRESS_UPLOAD_TIMEOUT 5
+#define ADDRESS_UPLOAD_TIMEOUT 15
 void OwnConnectivityManager::contactLibraryMixerTick() {
     QMutexLocker stack(&ownConMtx);
-    if (contactLibraryMixerState == CONTACT_LIBRARYMIXER_IDLE) return;
-    else if (contactLibraryMixerState == CONTACT_LIBRARYMIXER_UPDATE) {
+    if (contactLibraryMixerState == CONTACT_LIBRARYMIXER_UPDATE) {
         static time_t addressLastUploaded = 0;
         if (time(NULL) > addressLastUploaded + ADDRESS_UPLOAD_TIMEOUT) {
             librarymixerconnect->uploadAddress(inet_ntoa(ownLocalAddress.sin_addr), ntohs(ownLocalAddress.sin_port),
@@ -504,7 +512,6 @@ void OwnConnectivityManager::contactLibraryMixerTick() {
             addressLastUploaded = time(NULL);
         }
     }
-    return;
 }
 
 void OwnConnectivityManager::setFallbackExternalIP(QString address) {

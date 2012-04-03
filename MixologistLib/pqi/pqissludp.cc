@@ -38,18 +38,17 @@ pqissludp::pqissludp(PQInterface *parent)
 }
 
 pqissludp::~pqissludp() {
-    log(LOG_ALERT, SSL_UDP_ZONE, "pqissludp::~pqissludp -> destroying pqissludp");
+    log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::~pqissludp -> destroying pqissludp");
 
     /* Must call reset from here, so that the virtual functions will still work.
-     * (Virtual functions are not called in the base class destructor.
+     * (Virtual functions called in reset are not called in the base class destructor.
      *
-     * This means that reset() will be called twice, but this should  be harmless.
+     * This means that reset() will be called a second time in pqissl's destructor, but this should be harmless.
      */
 
-    stoplistening(); /* remove from p3proxy listenqueue */
     reset();
 
-    if (tou_bio) { // this should be in the reset?
+    if (tou_bio) {
         BIO_free(tou_bio);
     }
 }
@@ -172,8 +171,7 @@ int pqissludp::Basic_Connection_Complete() {
     /* <===================== UDP Difference *******************/
     if (tou_connected(mOpenSocket)) {
     /* <===================== UDP Difference *******************/
-        log(LOG_DEBUG_ALERT, SSL_UDP_ZONE, "pqissludp::Basic_Connection_Complete() Connection Complete: friend " + QString::number(LibraryMixerId()));
-
+        log(LOG_WARNING, SSL_UDP_ZONE, "Established TCP over UDP connection to " + addressToString(&remote_addr) + ", initializing encrypted connection");
         return 1;
     } else {
         log(LOG_DEBUG_BASIC, SSL_UDP_ZONE, "pqissludp::Basic_Connection_Complete() Not Yet Ready!");

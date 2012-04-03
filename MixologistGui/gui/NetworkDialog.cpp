@@ -61,12 +61,9 @@ NetworkDialog::NetworkDialog(QWidget *parent)
 }
 
 void NetworkDialog::insertConnect() {
-    if (!peers) {
-        return;
-    }
+    if (!peers) return;
 
-    std::list<int> friends;
-    std::list<int>::iterator it;
+    QList<unsigned int> friends;
     peers->getFriendList(friends);
 
     /* get a link to the table */
@@ -79,9 +76,9 @@ void NetworkDialog::insertConnect() {
     }
 
     QList<QTreeWidgetItem *> items;
-    for (it = friends.begin(); it != friends.end(); it++) {
+    foreach (unsigned int friend_id, friends) {
         PeerDetails detail;
-        if (!peers->getPeerDetails(*it, detail)) {
+        if (!peers->getPeerDetails(friend_id, detail)) {
             continue; /* BAD */
         }
 

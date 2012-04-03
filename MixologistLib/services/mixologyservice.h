@@ -82,7 +82,7 @@ private:
     bool prepFileResponse(unsigned int item_id, int status, MixologyResponse *response);
 
     /* Sends a LibraryMixerRequestItem. Not mutex protected, must be called from within the mutex. */
-    void sendRequest(std::string cert_id, uint32_t item_id, pendingRequest *pending);
+    void sendRequest(unsigned int librarymixer_id, uint32_t item_id, pendingRequest *pending);
 
     /* List of LibraryMixer requests to be sent, as well as those that have been receieved and errored. */
     std::list<pendingRequest> mPending;

@@ -87,7 +87,9 @@ private slots:
         //Sends the entered text
 	void sendChat();
 
-	void getAvatar();
+#ifdef false
+        void getAvatar();
+#endif
         //Reimplements the close event to send the closeChat signal.
         void closeEvent(QCloseEvent *event);
 
@@ -102,10 +104,13 @@ private slots:
         void addTimeStamp();
 
 private:
+#ifdef false
         //Updates the avatar of friend
         void updatePeerAvatar();
         //Updates own avatar
         void updateAvatar();
+#endif
+
         /* Sends the files to friends.
            Called internally after a drag and drop of files or a selection of files. */
         void sendFiles(QStringList paths);

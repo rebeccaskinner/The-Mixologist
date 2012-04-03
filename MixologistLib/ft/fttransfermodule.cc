@@ -40,8 +40,8 @@ ftTransferModule::ftTransferModule(unsigned int initial_friend_id, uint64_t size
     QString temporaryLocation =  files->getPartialsDirectory() + QDir::separator() + hash;
     mFileCreator = new ftFileCreator(temporaryLocation, size, hash);
 
-    peerInfo pInfo(initial_friend_id, peers->findCertByLibraryMixerId(initial_friend_id));
-    mFileSources.insert(pInfo.cert_id, pInfo);
+    peerInfo pInfo(initial_friend_id);
+    mFileSources.insert(pInfo.librarymixer_id, pInfo);
 
     /* If we're already done on completion (i.e. resuming a multifile transfer where some files are done)
        then flag this as completed.
@@ -78,7 +78,7 @@ int ftTransferModule::tick() {
             {
                 QMutexLocker stack(&tfMtx);
 
-                QMap<std::string,peerInfo>::iterator mit;
+                QMap<unsigned int, peerInfo>::iterator mit;
                 for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
                     locked_tickPeerTransfer(mit.value());
                 }
@@ -112,8 +112,8 @@ bool ftTransferModule::setFileSources(QList<unsigned int> sourceIds) {
     log(LOG_DEBUG_BASIC, FTTRANSFERMODULEZONE, "Resetting sources list for file " + QString(mFileCreator->getHash()));
 
     for (int i = 0; i < sourceIds.size(); i++) {
-        peerInfo pInfo(sourceIds[i], peers->findCertByLibraryMixerId(sourceIds[i]));
-        mFileSources.insert(pInfo.cert_id, pInfo);
+        peerInfo pInfo(sourceIds[i]);
+        mFileSources.insert(pInfo.librarymixer_id, pInfo);
     }
 
     return true;
@@ -121,7 +121,7 @@ bool ftTransferModule::setFileSources(QList<unsigned int> sourceIds) {
 
 bool ftTransferModule::getFileSources(QList<unsigned int> &sourceIds) {
     QMutexLocker stack(&tfMtx);
-    QMap<std::string,peerInfo>::iterator it;
+    QMap<unsigned int, peerInfo>::iterator it;
     for (it = mFileSources.begin(); it != mFileSources.end(); it++) {
         sourceIds.push_back(it.value().librarymixer_id);
     }
@@ -130,15 +130,15 @@ bool ftTransferModule::getFileSources(QList<unsigned int> &sourceIds) {
 
 bool ftTransferModule::addFileSource(unsigned int librarymixer_id) {
     QMutexLocker stack(&tfMtx);
-    QMap<std::string,peerInfo>::iterator mit;
+    QMap<unsigned int, peerInfo>::iterator mit;
     for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
         if (mit.value().librarymixer_id == librarymixer_id) break;
     }
 
     if (mit == mFileSources.end()) {
         /* add in new source */
-        peerInfo pInfo(librarymixer_id, peers->findCertByLibraryMixerId(librarymixer_id));
-        mFileSources.insert(pInfo.cert_id, pInfo);
+        peerInfo pInfo(librarymixer_id);
+        mFileSources.insert(pInfo.librarymixer_id, pInfo);
     }
     return true;
 }
@@ -146,7 +146,7 @@ bool ftTransferModule::addFileSource(unsigned int librarymixer_id) {
 bool ftTransferModule::setPeerState(unsigned int librarymixer_id, uint32_t state) {
     QMutexLocker stack(&tfMtx);
 
-    QMap<std::string,peerInfo>::iterator mit;
+    QMap<unsigned int, peerInfo>::iterator mit;
 
     //Try and find by librarymixer_id. If not present, return false.
     for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
@@ -159,21 +159,12 @@ bool ftTransferModule::setPeerState(unsigned int librarymixer_id, uint32_t state
     //If we've been disconnected, set the module to restart the transfer rate next time
     if (state == PQIPEER_NOT_ONLINE) mit.value().fastStart = true;
 
-    //If we found the librarymixer_id, but the cert has changed, be sure to update.
-    std::string new_cert = peers->findCertByLibraryMixerId(librarymixer_id);
-    if (new_cert.compare(mit.value().cert_id) != 0) {
-        QMap<std::string,peerInfo>::iterator newit;
-        newit = mFileSources.insert(new_cert, mit.value());
-        newit.value().cert_id = new_cert;
-        mFileSources.erase(mit);
-    }
-
     return true;
 }
 
 bool ftTransferModule::getPeerState(unsigned int librarymixer_id, uint32_t &state, uint32_t &tfRate) {
     QMutexLocker stack(&tfMtx);
-    QMap<std::string,peerInfo>::const_iterator mit;
+    QMap<unsigned int, peerInfo>::const_iterator mit;
 
     for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
         if (mit.value().librarymixer_id == librarymixer_id) break;
@@ -193,7 +184,7 @@ bool ftTransferModule::getPeerState(unsigned int librarymixer_id, uint32_t &stat
     return true;
 }
 
-bool ftTransferModule::recvFileData(std::string peerId, uint64_t offset, uint32_t chunk_size, void *data) {
+bool ftTransferModule::recvFileData(unsigned int librarymixer_id, uint64_t offset, uint32_t chunk_size, void *data) {
     {
         QString toLog = "ftTransferModule::recvFileData()";
         toLog += (" hash: " + mFileCreator->getHash());
@@ -205,8 +196,8 @@ bool ftTransferModule::recvFileData(std::string peerId, uint64_t offset, uint32_
     {
         QMutexLocker stack(&tfMtx);
 
-        QMap<std::string,peerInfo>::iterator mit;
-        mit = mFileSources.find(peerId);
+        QMap<unsigned int, peerInfo>::iterator mit;
+        mit = mFileSources.find(librarymixer_id);
 
         if (mit == mFileSources.end()) {
             {
@@ -228,7 +219,7 @@ void ftTransferModule::updateActualRate() {
     QMutexLocker stack(&tfMtx);
 
     actualRate = 0;
-    QMap<std::string,peerInfo>::iterator mit;
+    QMap<unsigned int, peerInfo>::iterator mit;
     for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
         actualRate += mit.value().actualRate;
     }
@@ -351,7 +342,7 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
                 toLog.append(" requestSize: " + QString::number(requestSize));
                 log(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE, toLog);
             }
-            ftserver->sendDataRequest(info.cert_id, mFileCreator->getHash(), mFileCreator->getFileSize(), requestOffset, requestSize);
+            ftserver->sendDataRequest(info.librarymixer_id, mFileCreator->getHash(), mFileCreator->getFileSize(), requestOffset, requestSize);
 
             /* if it's time to start next rtt measurement period */
             if (!info.rttActive) {

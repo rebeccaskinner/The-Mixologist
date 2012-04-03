@@ -24,7 +24,6 @@
 #define AGGREGATED_CONNECTIONS_H
 
 #include "pqi/pqihandler.h"
-#include "pqi/connectionToFriend.h"
 #include "pqi/pqilistener.h"
 #include "pqi/pqiservice.h"
 #include "pqi/pqimonitor.h"
@@ -42,8 +41,16 @@
  *
  */
 
+/* Used to describe types of connections. */
+enum ConnectionType {
+    TCP_CONNECTION,
+    UDP_CONNECTION
+};
+
 class AggregatedConnectionsToFriends;
 extern AggregatedConnectionsToFriends *aggregatedConnectionsToFriends;
+
+class ConnectionToFriend;
 
 class AggregatedConnectionsToFriends: public pqihandler, public pqiMonitor, public p3ServiceServer {
 public:
@@ -67,7 +74,7 @@ public:
 
     /* Called by the contained ConnectionToFriends to inform when a connection has been made.
        If result is 1 it indicates connection, -1 is either disconnect or connection failure, 0 is failure but request to schedule another try. */
-    bool notifyConnect(std::string id, int result);
+    bool notifyConnect(unsigned int librarymixer_id, int result, ConnectionType type, struct sockaddr_in *remoteAddress);
 
 private:
     /* Creates a new ConnectionToFriend object to represent a friend. */
@@ -76,10 +83,15 @@ private:
     /* These functions are called by statusChange to handle the various events. */
     /* Creates and adds a new friend. */
     int addPeer(std::string id, unsigned int librarymixer_id);
+
+    /* Removes an existing friend, resetting any connections to them. */
+    bool removePeer(unsigned int librarymixer_id);
+
     /* Calls the FriendsConnectivityManager and dequeues and processes a queued connection attempt. */
-    int connectPeer(std::string cert_id, unsigned int librarymixer_id);
+    int connectPeer(unsigned int librarymixer_id);
+
     /* Resets the connection with a connected friend. */
-    void timeoutPeer(std::string cert_id);
+    void timeoutPeer(unsigned int librarymixer_id);
 
     /* Handles the ticking for the p3ServiceServer. */
     int tickServiceRecv();

@@ -40,67 +40,59 @@ const int p3facemsgzone = 11453;
 
 /****************************************/
 /****************************************/
-void    p3Msgs::ChatSend(const std::string &peer_id,const QString &message) {
-    mChatSrv->sendPrivateChat(peer_id, message);
+void p3Msgs::ChatSend(unsigned int librarymixer_id, const QString &message) {
+    mChatSrv->sendPrivateChat(librarymixer_id, message);
 }
 
-void p3Msgs::sendStatusString(const std::string &peer_id,const QString &status_string) {
-    mChatSrv->sendStatusString(peer_id,status_string);
+void p3Msgs::sendStatusString(unsigned int librarymixer_id, const QString &status_string) {
+    mChatSrv->sendStatusString(librarymixer_id, status_string);
 }
 
-bool    p3Msgs::chatAvailable() {
+bool p3Msgs::chatAvailable() {
     return mChatSrv->receivedItems();
 }
 
-bool    p3Msgs::getNewChat(std::list<ChatInfo> &chats) {
+bool p3Msgs::getNewChat(QList<ChatInfo> &chats) {
     /* get any messages and push them to iface */
+    QList<ChatMsgItem *> chatList = mChatSrv->getChatQueue();
+    if (chatList.size() < 1) return false;
 
-    // get the items from the list.
-    std::list<ChatMsgItem *> clist = mChatSrv -> getChatQueue();
-    if (clist.size() < 1) {
-        return false;
+    foreach (ChatMsgItem *currentItem, chatList) {
+        ChatInfo info;
+        initChatInfo(currentItem, info);
+        chats.append(info);
+        delete currentItem;
     }
 
-    std::list<ChatMsgItem *>::iterator it;
-    for (it = clist.begin(); it != clist.end(); it++) {
-        ChatInfo ci;
-        initChatInfo((*it), ci);
-        chats.push_back(ci);
-        delete (*it);
-    }
     return true;
 }
 
-/**** HELPER FNS For Chat/Msg/Channel Lists ************
- *
- * The iface->Mutex is required to be locked
- * for intAddChannel / intAddChannelMsg.
- */
+void p3Msgs::initChatInfo(ChatMsgItem *chatMsgItem, ChatInfo &chatInfo) {
+    chatInfo.librarymixer_id = chatMsgItem->LibraryMixerId();
+    chatInfo.name = peers->getPeerName(chatMsgItem->LibraryMixerId());
+    chatInfo.chatflags = 0;
+    chatInfo.msg = chatMsgItem->message;
 
-void p3Msgs::initChatInfo(ChatMsgItem *c, ChatInfo &i) {
-    i.rsid = c -> PeerId();
-    i.name = peers->getPeerName(peers->findLibraryMixerByCertId(i.rsid));
-    i.chatflags = 0 ;
-    i.msg  = c -> message;
-
-    if (c -> chatFlags & CHAT_FLAG_PRIVATE) {
-        i.chatflags |= CHAT_PRIVATE;
+    if (chatMsgItem->chatFlags & CHAT_FLAG_PRIVATE) {
+        chatInfo.chatflags |= CHAT_PRIVATE;
     }
-    if (c->chatFlags & CHAT_FLAG_AVATAR_AVAILABLE) {
-        i.chatflags |= CHAT_AVATAR_AVAILABLE;
+#ifdef false
+    if (chatMsgItem->chatFlags & CHAT_FLAG_AVATAR_AVAILABLE) {
+        chatInfo.chatflags |= CHAT_AVATAR_AVAILABLE;
     }
+#endif
 }
 
+#ifdef false
 void p3Msgs::getOwnAvatarData(unsigned char *& data,int &size) {
-    mChatSrv->getOwnAvatarJpegData(data,size) ;
+    mChatSrv->getOwnAvatarJpegData(data,size);
 }
 
 void p3Msgs::setOwnAvatarData(const unsigned char *data,int size) {
-    mChatSrv->setOwnAvatarJpegData(data,size) ;
+    mChatSrv->setOwnAvatarJpegData(data,size);
 }
 
 void p3Msgs::getAvatarData(std::string pid,unsigned char *& data,int &size) {
-    mChatSrv->getAvatarJpegData(pid,data,size) ;
+    mChatSrv->getAvatarJpegData(pid,data,size);
 }
-
-
+#endif

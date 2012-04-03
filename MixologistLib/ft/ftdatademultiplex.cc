@@ -38,8 +38,8 @@ const double   DMULTIPLEX_RELAX = 0.5; /* ??? */
 const uint32_t FT_DATA      = 0x0001;
 const uint32_t FT_DATA_REQ  = 0x0002;
 
-ftRequest::ftRequest(uint32_t type, std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunk, void *data)
-    :mType(type), mPeerId(peerId), mHash(hash), mSize(size),
+ftRequest::ftRequest(uint32_t type, unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunk, void *data)
+    :mType(type), mLibraryMixerId(librarymixer_id), mHash(hash), mSize(size),
      mOffset(offset), mChunk(chunk), mData(data) {
     return;
 }
@@ -95,19 +95,19 @@ void ftDataDemultiplex::FileUploads(QList<uploadFileInfo> &uploads) {
 /*************** RECV INTERFACE (provides ftDataRecv) ****************/
 
 /* Client Recv */
-bool ftDataDemultiplex::recvData(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize, void *data) {
+bool ftDataDemultiplex::recvData(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize, void *data) {
     /* Store in Queue */
     QMutexLocker stack(&dataMtx);
-    mRequestQueue.push_back(ftRequest(FT_DATA,peerId,hash,size,offset,chunksize,data));
+    mRequestQueue.push_back(ftRequest(FT_DATA, librarymixer_id, hash, size, offset, chunksize, data));
 
     return true;
 }
 
 /* Server Recv */
-bool ftDataDemultiplex::recvDataRequest(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
+bool ftDataDemultiplex::recvDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
     /* Store in Queue */
     QMutexLocker stack(&dataMtx);
-    mRequestQueue.push_back(ftRequest(FT_DATA_REQ,peerId,hash,size,offset,chunksize,NULL));
+    mRequestQueue.push_back(ftRequest(FT_DATA_REQ, librarymixer_id, hash, size, offset, chunksize, NULL));
 
     return true;
 }
@@ -154,11 +154,11 @@ bool ftDataDemultiplex::doWork() {
 
         switch (req.mType) {
             case FT_DATA:
-                handleIncomingData(req.mPeerId, req.mHash, req.mOffset, req.mChunk, req.mData);
+                handleIncomingData(req.mLibraryMixerId, req.mHash, req.mOffset, req.mChunk, req.mData);
                 break;
 
             case FT_DATA_REQ:
-                handleOutgoingDataRequest(req.mPeerId, req.mHash, req.mSize,  req.mOffset, req.mChunk);
+                handleOutgoingDataRequest(req.mLibraryMixerId, req.mHash, req.mSize,  req.mOffset, req.mChunk);
                 break;
 
             default:
@@ -181,17 +181,17 @@ bool ftDataDemultiplex::doWork() {
         mSearchQueue.pop_front();
     }
 
-    handleSearchRequest(req.mPeerId, req.mHash, req.mSize, req.mOffset, req.mChunk);
+    handleSearchRequest(req.mLibraryMixerId, req.mHash, req.mSize, req.mOffset, req.mChunk);
 
     return true;
 }
 
 
-bool ftDataDemultiplex::handleIncomingData(std::string peerId, QString hash, uint64_t offset, uint32_t chunksize, void *data) {
-    return mController->handleReceiveData(peerId, hash, offset, chunksize, data);
+bool ftDataDemultiplex::handleIncomingData(unsigned int librarymixer_id, QString hash, uint64_t offset, uint32_t chunksize, void *data) {
+    return mController->handleReceiveData(librarymixer_id, hash, offset, chunksize, data);
 }
 
-void ftDataDemultiplex::handleOutgoingDataRequest(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
+void ftDataDemultiplex::handleOutgoingDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
     /**** Find Files *****/
 
     QMutexLocker stack(&dataMtx);
@@ -201,19 +201,19 @@ void ftDataDemultiplex::handleOutgoingDataRequest(std::string peerId, QString ha
 
     //If the data being requested is something we're currently uploading
     if (activeFileServes.contains(hash) && activeFileServes[hash]->getFileSize() == size) {
-        sendRequestedData(activeFileServes[hash], peerId, hash, size, offset, chunksize);
+        sendRequestedData(activeFileServes[hash], librarymixer_id, hash, size, offset, chunksize);
         return;
     }
 
     /* Not present in our available files. We'll do a search for it in our file list when we have a chance.
        The results won't be available immediately, at best it will be added to activeFileServes, and become
        available for the next time the requestor sends a request for this. */
-    mSearchQueue.push_back(ftRequest(FT_DATA_REQ, peerId, hash, size, offset, chunksize, NULL));
+    mSearchQueue.push_back(ftRequest(FT_DATA_REQ, librarymixer_id, hash, size, offset, chunksize, NULL));
 
     return;
 }
 
-bool ftDataDemultiplex::sendRequestedData(ftFileProvider *provider, std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
+bool ftDataDemultiplex::sendRequestedData(ftFileProvider *provider, unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
     void *data = malloc(chunksize);
 
     if (data == NULL) {
@@ -228,8 +228,8 @@ bool ftDataDemultiplex::sendRequestedData(ftFileProvider *provider, std::string 
             " hash: " + hash +
             " offset: " + QString::number(offset) +
             " chunksize: " + QString::number(chunksize));
-        provider->setLastRequestor(peerId);
-        ftserver->sendData(peerId, hash, size, offset, chunksize, data);
+        provider->setLastRequestor(librarymixer_id);
+        ftserver->sendData(librarymixer_id, hash, size, offset, chunksize, data);
         return true;
     } else {
         log(LOG_WARNING, FTDATADEMULTIPLEXZONE, "Unable to read file " + provider->getPath());
@@ -250,7 +250,7 @@ void ftDataDemultiplex::clearUploads() {
     deadFileServes.clear();
 }
 
-bool ftDataDemultiplex::handleSearchRequest(std::string peerId, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
+bool ftDataDemultiplex::handleSearchRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
     QString path;
     uint32_t hintflags = (FILE_HINTS_TEMP |
                           FILE_HINTS_ITEM |
@@ -276,7 +276,7 @@ bool ftDataDemultiplex::handleSearchRequest(std::string peerId, QString hash, ui
             activeFileServes[hash] = provider;
 
             /* handle request finally */
-            sendRequestedData(provider, peerId, hash, size, offset, chunksize);
+            sendRequestedData(provider, librarymixer_id, hash, size, offset, chunksize);
             return true;
         } else delete provider;
     }

@@ -190,12 +190,10 @@ void ftOffLMList::receiveFriendOffLMXmlInfo(unsigned int friend_id, const QStrin
     friendsXmlDownloads[friend_id] = newXmlDownload;
 }
 
-bool ftOffLMList::handleReceiveData(const std::string &peerId, const QString &hash, uint64_t offset, uint32_t chunksize, void *data) {
+bool ftOffLMList::handleReceiveData(unsigned int friend_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data) {
     QMutexLocker stack(&offLmMutex);
-    QMap<QString, ftTransferModule*>::const_iterator it;
-    unsigned int friend_id = peers->findLibraryMixerByCertId(peerId);
     if (friendsXmlDownloads.contains(friend_id)) {
-        friendsXmlDownloads[friend_id]->recvFileData(peerId, offset, chunksize, data);
+        friendsXmlDownloads[friend_id]->recvFileData(friend_id, offset, chunksize, data);
         return true;
     }
     return false;

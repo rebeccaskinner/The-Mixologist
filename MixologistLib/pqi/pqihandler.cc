@@ -41,8 +41,8 @@ int pqihandler::tick() {
     {
         QMutexLocker stack(&coreMtx);
 
-        foreach(std::string cert_id, connectionsToFriends.keys()) {
-            if (connectionsToFriends[cert_id]->tick() > 0)
+        foreach(PQInterface* currentInterface, connectionsToFriends.values()) {
+            if (currentInterface->tick() > 0)
                 moreToTick = 1;
         }
 
@@ -59,19 +59,17 @@ int pqihandler::tick() {
 bool pqihandler::AddPQI(PQInterface *pqi) {
     QMutexLocker stack(&coreMtx);
 
-    if (pqi->PeerId() == "") {
-        log(LOG_ALERT, PQIHANDLERZONE, "ERROR cert_id == NULL");
+    if (pqi->LibraryMixerId() == 0) {
+        log(LOG_ALERT, PQIHANDLERZONE, "pqihandler::AddPQI() No LibraryMixer ID supplied");
         return false;
     }
 
-    // if peerid used->error.
-    if (connectionsToFriends.find(pqi->PeerId()) != connectionsToFriends.end()) {
+    if (connectionsToFriends.contains(pqi->LibraryMixerId())) {
         log(LOG_ALERT, PQIHANDLERZONE, "ERROR pqi already exists!");
         return false;
     }
 
-    // store.
-    connectionsToFriends[pqi->PeerId()] = pqi;
+    connectionsToFriends[pqi->LibraryMixerId()] = pqi;
     return true;
 }
 
@@ -82,14 +80,14 @@ int pqihandler::HandleNetItem(NetItem *item) {
     QMap<std::string, PQInterface *>::iterator it;
     log(LOG_DEBUG_BASIC, PQIHANDLERZONE, "pqihandler::HandleNetItem()");
 
-    if (!connectionsToFriends.contains(item->PeerId())) {
+    if (!connectionsToFriends.contains(item->LibraryMixerId())) {
         log(LOG_DEBUG_BASIC, PQIHANDLERZONE, "pqihandler::HandleNetItem() Invalid cert_id!");
 
         delete item;
         return -1;
     }
 
-    connectionsToFriends[item->PeerId()]->SendItem(item);
+    connectionsToFriends[item->LibraryMixerId()]->SendItem(item);
     return 1;
 }
 
@@ -118,9 +116,9 @@ int pqihandler::locked_GetItems() {
 
     foreach (PQInterface* currentFriend, connectionsToFriends.values()) {
         while ((item = currentFriend->GetItem()) != NULL) {
-            if (item->PeerId() != currentFriend->PeerId()) {
-                log(LOG_ALERT, PQIHANDLERZONE, "ERROR PeerIds dont match!");
-                item->PeerId(currentFriend->PeerId());
+            if (item->LibraryMixerId() != currentFriend->LibraryMixerId()) {
+                log(LOG_ALERT, PQIHANDLERZONE, "ERROR IDs dont match!");
+                item->LibraryMixerId(currentFriend->LibraryMixerId());
             }
 
             locked_SortnStoreItem(item);
@@ -271,7 +269,7 @@ void pqihandler::updateRateCaps() {
     /* Lock once rates have been retrieved */
     QMutexLocker stack(&coreMtx);
 
-    foreach (PQInterface *currentFriend, connectionsToFriends) {
+    foreach (PQInterface *currentFriend, connectionsToFriends.values()) {
         //Actual rates being used by this pqi
         float pqi_rate_in = currentFriend->getRate(true);
         float pqi_rate_out = currentFriend->getRate(false);
@@ -347,18 +345,3 @@ void pqihandler::setRateCaps(bool downloading, float total_max_rate, float indiv
         }
     }
 }
-
-
-#ifdef false
-bool pqihandler::RemovePQI(PQInterface *pqi) {
-    QMutexLocker stack(&coreMtx);
-    foreach (std::string cert_id, connectionsToFriends.keys()) {
-        if (pqi == connectionsToFriends[cert_id]) {
-            connectionsToFriends.remove(cert_id);
-            return true;
-        }
-    }
-
-    return false;
-}
-#endif

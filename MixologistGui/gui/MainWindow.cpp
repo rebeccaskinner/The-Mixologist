@@ -463,6 +463,7 @@ void MainWindow::displayInfoText(InfoTextType type) {
             ownIP = detail.localAddr.c_str();
             ownPort = QString::number(detail.localPort);
         }
+        info += "<p><b>Fixing the Problem</b></p>";
         info += "<p>Ideally, you should fix this by configuring your firewall to open up a port for your computer.</p>";
         info += QString("<p>If you don't know how to configure your router, ") +
                 "<a href='http://www.pcwintech.com/port-forwarding-guides'>click here for a guide</a> (not affiliated with the Mixologist).</p>";

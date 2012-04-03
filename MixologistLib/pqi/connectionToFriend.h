@@ -24,6 +24,7 @@
 
 
 #include "pqi/pqi.h"
+#include "pqi/aggregatedConnections.h"
 
 #include <QMap>
 
@@ -67,7 +68,7 @@ public:
     virtual int tick();
 
     // Called by connectionMethods to notify the ConnectionToFriend of a connection event.
-    int notifyEvent(NetInterface *notifyingInterface, NetNotificationEvent event);
+    int notifyEvent(NetInterface *notifyingInterface, NetNotificationEvent event, struct sockaddr_in *remoteAddress);
 
     // PQInterface for rate control overloaded....
     virtual float getRate(bool in);

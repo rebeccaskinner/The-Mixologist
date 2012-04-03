@@ -61,9 +61,6 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
         unsigned int librarymixer_id;
         struct sockaddr_in friendAddress;
         if (parseUdpTunneler(data, size, &friendAddress, &librarymixer_id)) {
-            log(LOG_WARNING, UDPSORTERZONE,
-                QString("Received a packet indicating ") + QString::number(librarymixer_id) +
-                " has punched a UDP hole in their firewall for us to connect to at address " + addressToString(&friendAddress));
             emit receivedUdpTunneler(librarymixer_id, inet_ntoa(friendAddress.sin_addr), ntohs(friendAddress.sin_port));
         }
         return;
@@ -71,9 +68,6 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
         unsigned int librarymixer_id;
         struct sockaddr_in friendAddress;
         if (parseUdpConnectionNotice(data, size, &friendAddress, &librarymixer_id)) {
-            log(LOG_WARNING, UDPSORTERZONE,
-                QString("Received request to connect via UDP from ") + QString::number(librarymixer_id) +
-                " at address " + addressToString(&friendAddress));
             emit receivedUdpConnectionNotice(librarymixer_id, inet_ntoa(friendAddress.sin_addr), ntohs(friendAddress.sin_port));
         }
         return;
@@ -81,9 +75,6 @@ void UdpSorter::recvPkt(void *data, int size, struct sockaddr_in &from) {
         unsigned int librarymixer_id;
         struct sockaddr_in friendAddress;
         if (parseTcpConnectionRequest(data, size, &friendAddress, &librarymixer_id)) {
-            log(LOG_WARNING, UDPSORTERZONE,
-                QString("Received request to connect back via TCP from ") + QString::number(librarymixer_id) +
-                " at address " + addressToString(&friendAddress));
             emit receivedTcpConnectionRequest(librarymixer_id, inet_ntoa(friendAddress.sin_addr), ntohs(friendAddress.sin_port));
         }
         return;

@@ -156,12 +156,14 @@ private:
 
     /* Whether we need to contact LibraryMixer with our address */
     enum ContactLibraryMixerState {
-        /* Nothing needs to be done */
-        CONTACT_LIBRARYMIXER_IDLE,
+        /* LibraryMixer does not have our current address info, but neither do we, so just wait for now. */
+        CONTACT_LIBRARYMIXER_PENDING,
         /* Our own connection state is discovered, so update LibraryMixer with that information. */
         CONTACT_LIBRARYMIXER_UPDATE,
         /* Our own connection state discovery was a total failure, as a fallback have LibraryMixer set our IP information itself. */
-        CONTACT_LIBRARYMIXER_GET_ADDRESS_FROM_LIBRARYMIXER
+        CONTACT_LIBRARYMIXER_GET_ADDRESS_FROM_LIBRARYMIXER,
+        /* We have updated LibraryMixer with our current address info. We are done, until next time our address info changes. */
+        CONTACT_LIBRARYMIXER_DONE
     };
     ContactLibraryMixerState contactLibraryMixerState;
     /* Whether we should enable FriendsConnectivityManager to begin attempting connections to friends after we finish updating LibraryMixer. */

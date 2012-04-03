@@ -23,6 +23,7 @@
 #ifndef FRIENDS_CONNECTIVITY_MANAGER_H
 #define FRIENDS_CONNECTIVITY_MANAGER_H
 
+#include <pqi/aggregatedConnections.h>
 #include <pqi/pqimonitor.h>
 #include <pqi/authmgr.h>
 #include <pqi/pqinetwork.h>
@@ -45,58 +46,8 @@ enum QueuedConnectionType {
     CONNECTION_TYPE_UDP
 };
 
-/* A pending connection attempt. */
-class QueuedConnectionAttempt {
-public:
-    QueuedConnectionAttempt();
-
-    /* The address to connect to. */
-    struct sockaddr_in addr;
-
-    /* What type of connection attempt should be made when dequeued. */
-    QueuedConnectionType queuedConnectionType;
-};
-
-/* There is one of these for each friend, stored in mFriendsList to record status of connection.
-   Also there is one for self stored in ownState. */
-class peerConnectState {
-public:
-    peerConnectState();
-
-    QString name;
-    std::string id;
-    unsigned int librarymixer_id;
-
-    /* The local and external addresses of the friend. */
-    struct sockaddr_in localaddr;
-    struct sockaddr_in serveraddr;
-
-    /* When connected, this will show when connected, when disconnected, show time of last disconnect. */
-    time_t lastcontact;
-
-    /* Time of last received packet from a friend, used to calculate timeout. */
-    time_t lastheard;
-
-    /* Request a next try to connect at a specific time. Disabled if set to 0.
-       Used with usedSockets for when an IP is in use during a connection attempt and retry must be scheduled.
-       Also used when a connection fails due to the other side not recognizing our encryption certificate,
-       and then we schedule a try so that they have time to update their friend list before we connect again. */
-    time_t nextTcpTryAt;
-
-    /* Indicates the state of the friend, such as if we are connected or if they are not signed up for the Mixologist. */
-    FriendConnectState state;
-
-    /* Bitwise flags for actions that need to be taken. The flags are defined in pqimonitors.h. */
-    uint32_t actions;
-
-    /* A list of connect attempts to make (in order). */
-    QList<QueuedConnectionAttempt> queuedConnectionAttempts;
-
-    /* If our state is FCS_IN_CONNECT_ATTEMPT, the current attempt being tried. */
-    QueuedConnectionAttempt currentConnectionAttempt;
-};
-
 class FriendsConnectivityManager;
+class friendListing;
 class upnpHandler;
 class UdpSorter;
 
@@ -113,14 +64,12 @@ extern FriendsConnectivityManager *friendsConnectivityManager;
  * The main idea of our connection to friends strategy is as follows:
  * After our connection is set up, attempt TCP connections to all friends, which will connect all non-firewalled friends.
  *
- * If we are unfirewalled, we send a TCP connect back request, which will catalyze connections with all full-
+ * If we are unfirewalled, we also send TCP connect back requests, which will catalyze connections with all full-
  * cone firewalled friends as well as restrictive-cone firewalled friends if our IP/port haven't changed.
  *
  * If we are firewalled, we begin sending a UDP tunneler packet every 20 seconds,
  * which not only opens a hole in our firewall for them, but serves as a combined
- * TCP/UDP connection request as well, which will catalyze connections with all full-
- * cone firewalled friends as well as restrictive-cone firewalled friends if our IP/port
- * haven't changed.
+ * TCP/UDP connection request as well.
  *
  * On receipt of one of these, those friends now know we are online and firewalled, as
  * only firewalled friends send these.
@@ -142,7 +91,13 @@ extern FriendsConnectivityManager *friendsConnectivityManager;
  * if we are unfirewalled) and only after they update their friends list to find us
  * again.
  *
- * We ordinarily update our friends list
+ * We ordinarily update our friends list only when a friend connects to us that we don't recognize.
+ * However, if we are behind a restrictive-cone NAT or a symmetric NAT then we check for friends list updates every 5 minutes.
+ * This is because we may not be able to receive inbound friend requests from some friends, and so we need to keep the list updated
+ * so we can try outbound requests frequently.
+ *
+ * Similarly, we normally retry TCP connections with friends only infrequently. However, if we are behind a symmetric NAT, that is
+ * our only opportunity to make connections at all, therefore we try those frequently.
  *
  **********************************************************************************/
 
@@ -172,12 +127,10 @@ public:
      * MixologistLib functions, not shared via interface with GUI
      **********************************************************************************/
 
-    /* Fills in state for user with librarymixer_id
-       Can be used for friends or self.
-       Returns true, or false if unable to find user with librarymixer_id. */
-    bool getPeerConnectState(unsigned int librarymixer_id, peerConnectState &state);
+    /* Returns a pointer to that friend's listing, or NULL if not found. */
+    friendListing* getFriendListing(unsigned int librarymixer_id);
 
-    /* Called by pqistreamer whenever we received a packet from a friend, updates their peerConnectState so we know not to time them out. */
+    /* Called by pqistreamer whenever we received a packet from a friend, updates their friendListing so we know not to time them out. */
     void heardFrom(unsigned int librarymixer_id);
 
     void getExternalAddresses(QList<struct sockaddr_in> &toFill);
@@ -186,9 +139,9 @@ public:
      * The interface to AggregatedConnectionsToFriends
      **********************************************************************************/
     /* AggregatedConnectionsToFriends holds the actual network connections to friends, and receives order to connect/disconnect from the FriendsConnectivityManager.
-       Whenever we want to connect to a friend via a certain method, we queue an attempt into that friend's peerConnectState.
+       Whenever we want to connect to a friend via a certain method, we queue an attempt into that friend's friendListing.
        We then inform the monitors, of which AggregatedConnectionsToFriends is one, that a pending connection request exists. */
-public:
+
     /* Called by AggregatedConnectionsToFriends to pop off a given friend's next queuedConnectionAttempt,
        which is used to populate the references so that it can use that information to actually connect.
        Returns true if the address information was successfully set into the references. */
@@ -199,25 +152,20 @@ public:
        If result is 1 it indicates connection, -1 is either disconnect or connection failure, 0 is failure but request to schedule another try via TCP.
        If the report was not of success, if there are more addresses to try, informs the monitors a pending connection request exists.
        Returns false if unable to find the friend, true in all other cases. */
-    bool reportConnectionUpdate(unsigned int librarymixer_id, int result);
-
-private:
-    /* Queues the given connectionType of a friend identified by connectState for a connection attempt.
-       localOrExternal is only used if queuedConnectionType is TCP. */
-    void queueConnectionAttempt(peerConnectState* connectState, QueuedConnectionType queuedConnectionType);
+    bool reportConnectionUpdate(unsigned int librarymixer_id, int result, ConnectionType type, struct sockaddr_in *remoteAddress);
 
     /**********************************************************************************
      * Body of public-facing API functions called through p3peers
      **********************************************************************************/
-public:
+
     /* List of LibraryMixer ids for all online friends. */
-    void getOnlineList(std::list<int> &ids);
+    void getOnlineList(QList<unsigned int> &friend_ids);
 
     /* List of LibraryMixer ids for all friends with encryption keys. */
-    void getSignedUpList(std::list<int> &ids);
+    void getSignedUpList(QList<unsigned int> &friend_ids);
 
     /* List of LibraryMixer ids for all friends. */
-    void getFriendList(std::list<int> &ids);
+    void getFriendList(QList<unsigned int> &friend_ids);
 
     /* Returns true if that id belongs to a friend. */
     bool isFriend(unsigned int librarymixer_id);
@@ -235,7 +183,7 @@ public:
                                  const QString &externalIP, ushort externalPort);
 
     /* Immediate retry to connect to all offline friends. */
-    void tryConnectAll();
+    void tryConnectToAll();
 
 private slots:
     /* Connected to the UDP Sorter for when we receive a UDP Tunneler packet. */
@@ -268,16 +216,24 @@ private:
      * Other helpers
      **********************************************************************************/
     /* Tries the TCP connection with the given friend.
-       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY. */
+       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY.
+       Needs mutex protection. */
     bool tryConnectTCP(unsigned int librarymixer_id);
 
     /* Sends a UDP packet requesting a connect back via TCP connection with the given friend.
-       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY. */
+       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY.
+       Needs mutex protection. */
     bool tryConnectBackTCP(unsigned int librarymixer_id);
 
     /* Tries the UDP connection with the given friend.
-       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY. */
+       Any function that calls this should know not to call it if the variable readyToConnectToFriends != CONNECT_FRIENDS_READY.
+       Needs mutex protection. */
     bool tryConnectUDP(unsigned int librarymixer_id);
+
+    /* If the friend is ready for a connection attempt (not already in attempt, not delayed, has methods to try),
+       sets everything up so that the next monitorsTick will notify the monitors.
+       Needs mutex protection. */
+    void informMonitorsTryConnect(unsigned int librarymixer_id);
 
     mutable QMutex connMtx;
 
@@ -290,11 +246,15 @@ private:
     /* Whether connecting to friends is currently enabled. */
     bool friendsManagerEnabled;
 
-    /* When the last time our friends list was updated from LibraryMixer. */
+    /* The last time our friends list was updated from LibraryMixer. */
     time_t friendsListUpdateTime;
 
-    /* This is the master friends list for the Mixologist, and also tracks their connectivity. */
-    QMap<unsigned int, peerConnectState> mFriendList; //librarymixer_ids and peerConnectStates
+    /* The last time we retried connections with all friends. */
+    time_t outboundConnectionTryAllTime;
+
+    /* This is the master friends list for the Mixologist, and also tracks their connectivity.
+       Keyed by librarymixer_id. */
+    QMap<unsigned int, friendListing*> mFriendList;
 
     /* A map of IP+port combo's already in use, and their state.
        The first element is a string representation of the IP + port combo,
@@ -305,8 +265,45 @@ private:
         USED_IP_CONNECTED
     };
     QMap<QString, UsedSocketState> usedSockets;
+};
 
-    friend class OwnConnectivityManager;
+/* There is one of these for each friend, stored in mFriendsList to record status of connection.
+   Also there is one for self stored in ownState. */
+struct friendListing {
+    friendListing();
+
+    QString name;
+    std::string id; //The encryption certificate ID
+    unsigned int librarymixer_id;
+
+    /* The local and external addresses of the friend. */
+    struct sockaddr_in localaddr;
+    struct sockaddr_in serveraddr;
+
+    /* When connected, this will show when connected, when disconnected, show time of last disconnect. */
+    time_t lastcontact;
+
+    /* Time of last received packet from a friend, used to calculate timeout. */
+    time_t lastheard;
+
+    /* Indicates the state of the friend, such as if we are connected or if they are not signed up for the Mixologist. */
+    FriendConnectState state;
+
+    /* Bitwise flags for actions that need to be taken. The flags are defined in pqimonitors.h. */
+    uint32_t actions;
+
+    /* Whether trying each of these connection types is scheduled.
+       These are ordered by order of priority - if more than one is true, will generally try in this order. */
+    bool tryTcpLocal;
+    bool tryTcpExternal;
+    bool tryTcpConnectBackRequest;
+    bool tryUdp;
+
+    /* Used to delay the next try. */
+    time_t nextTryDelayedUntil;
+
+    /* Which of the connection types, if any, is currently being tried. */
+    QueuedConnectionType currentlyTrying;
 };
 
 #endif // FRIENDS_CONNECTIVITY_MANAGER_H

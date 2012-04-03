@@ -35,12 +35,6 @@
 /*** Base DataTypes: ****/
 #include "serialiser/serial.h"
 
-/**** Consts for ConnectionToFriend */
-enum ConnectionType {
-    TCP_CONNECTION,
-    UDP_CONNECTION
-};
-
 /*********************** PQI INTERFACE ******************************\
 The basic exchange interface.
 Includes methods for getting and sending items, ongoing maintenance,
@@ -79,10 +73,10 @@ public:
 
     virtual std::string PeerId() {return cert;}
 
-    virtual int LibraryMixerId() {return librarymixer_id;}
+    virtual unsigned int LibraryMixerId() {return librarymixer_id;}
 
     //Called by NetInterfaces to inform the PQInterface of connection events.
-    virtual int notifyEvent(NetInterface *ni, NetNotificationEvent event) {
+    virtual int notifyEvent(NetInterface *ni, NetNotificationEvent event, struct sockaddr_in *remoteAddress) {
         (void)ni;
         (void)(event);
         return 0;
@@ -152,6 +146,8 @@ public:
        Can be called even if not currently connected. */
     virtual void reset() = 0;
 
+    /* Returns the certificate ID that this connection is associated with.
+       This needs to be stored so that when we complete connections we can make sure the certificate presented matches. */
     virtual std::string PeerId() {return cert;}
 
     virtual unsigned int LibraryMixerId() {return librarymixer_id;}

@@ -52,16 +52,16 @@ QString p3Peers::getOwnName(){
     return ownName;
 }
 
-void p3Peers::getOnlineList(std::list<int> &ids) {
-    friendsConnectivityManager->getOnlineList(ids);
+void p3Peers::getOnlineList(QList<unsigned int> &friend_ids) {
+    friendsConnectivityManager->getOnlineList(friend_ids);
 }
 
-void p3Peers::getSignedUpList(std::list<int> &ids) {
-    friendsConnectivityManager->getSignedUpList(ids);
+void p3Peers::getSignedUpList(QList<unsigned int> &friend_ids) {
+    friendsConnectivityManager->getSignedUpList(friend_ids);
 }
 
-void p3Peers::getFriendList(std::list<int> &ids) {
-    friendsConnectivityManager->getFriendList(ids);
+void p3Peers::getFriendList(QList<unsigned int> &friend_ids) {
+    friendsConnectivityManager->getFriendList(friend_ids);
 }
 
 bool p3Peers::isOnline(unsigned int librarymixer_id) {
@@ -72,33 +72,30 @@ bool p3Peers::isFriend(unsigned int librarymixer_id) {
     return friendsConnectivityManager->isFriend(librarymixer_id);
 }
 
-bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &d) {
-    peerConnectState pcs;
-    if (!friendsConnectivityManager->getPeerConnectState(librarymixer_id, pcs)) return false;
-    d.id = pcs.id;
-    d.librarymixer_id = pcs.librarymixer_id;
-    d.name = pcs.name;
+bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &detailsToFill) {
+    if (librarymixer_id == getOwnLibraryMixerId()) {
+        detailsToFill.localAddr = inet_ntoa(ownConnectivityManager->getOwnLocalAddress()->sin_addr);
+        detailsToFill.localPort = ntohs(ownConnectivityManager->getOwnLocalAddress()->sin_port);
+        detailsToFill.extAddr = inet_ntoa(ownConnectivityManager->getOwnExternalAddress()->sin_addr);
+        detailsToFill.extPort = ntohs(ownConnectivityManager->getOwnExternalAddress()->sin_port);
+        detailsToFill.id = getOwnCertId();
+        detailsToFill.librarymixer_id = librarymixer_id;
+    } else {
+        friendListing *requestedListing = friendsConnectivityManager->getFriendListing(librarymixer_id);
 
-    /* fill from pcs */
+        if (!requestedListing) return false;
 
-    d.localAddr = inet_ntoa(pcs.localaddr.sin_addr);
-    d.localPort = ntohs(pcs.localaddr.sin_port);
-    d.extAddr   = inet_ntoa(pcs.serveraddr.sin_addr);
-    d.extPort   = ntohs(pcs.serveraddr.sin_port);
-    d.lastConnect   = pcs.lastcontact;
-
-    /* Translate */
-    d.state = pcs.state;
+        detailsToFill.librarymixer_id = requestedListing->librarymixer_id;
+        detailsToFill.name = requestedListing->name;
+        detailsToFill.localAddr = inet_ntoa(requestedListing->localaddr.sin_addr);
+        detailsToFill.localPort = ntohs(requestedListing->localaddr.sin_port);
+        detailsToFill.extAddr   = inet_ntoa(requestedListing->serveraddr.sin_addr);
+        detailsToFill.extPort   = ntohs(requestedListing->serveraddr.sin_port);
+        detailsToFill.lastConnect   = requestedListing->lastcontact;
+        detailsToFill.state = requestedListing->state;
+    }
 
     return true;
-}
-
-std::string p3Peers::findCertByLibraryMixerId(unsigned int librarymixer_id) {
-    return authMgr->findCertByLibraryMixerId(librarymixer_id);
-}
-
-unsigned int p3Peers::findLibraryMixerByCertId(std::string cert_id) {
-    return authMgr->findLibraryMixerByCertId(cert_id);
 }
 
 QString p3Peers::getPeerName(unsigned int librarymixer_id) {
@@ -113,7 +110,7 @@ bool p3Peers::addUpdateFriend(unsigned int librarymixer_id, const QString &cert,
 
 /* Network Stuff */
 void p3Peers::connectAll() {
-    friendsConnectivityManager->tryConnectAll();
+    friendsConnectivityManager->tryConnectToAll();
 }
 
 PeerDetails::PeerDetails()

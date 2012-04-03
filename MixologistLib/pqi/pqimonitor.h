@@ -34,12 +34,14 @@
 /* ACTIONS */
 //Signal to AggregatedConnectionsToFriends that a new peer has been added, so a new ConnectionToFriend must be created
 const uint32_t PEER_NEW = 0x0001;
-//Signal to ftcontroller that a connection attempt succeeded
+//Signal that a connection attempt succeeded
 const uint32_t PEER_CONNECTED = 0x0002;
 //Signal to AggregatedConnectionsToFriends that it should try the connection again
 const uint32_t PEER_CONNECT_REQ = 0x0004;
 //Signal to AggregatedConnectionsToFriends that an existing peer has been timed out, and their connection must be reset
 const uint32_t PEER_TIMEOUT = 0x0008;
+//Signal to AggregatedConnectionsToFriends that we have updated info from LibraryMixer on this friend
+const uint32_t PEER_CERT_AND_ADDRESS_UPDATED = 0x0010;
 
 /* Used in a list to describe changed friends for monitors. */
 class pqipeer {

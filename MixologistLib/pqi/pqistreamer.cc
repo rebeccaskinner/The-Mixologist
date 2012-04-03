@@ -148,7 +148,7 @@ int pqistreamer::SendItem(NetItem *si) {
     {
         std::ostringstream out;
         out << "pqistreamer::SendItem():" << std::endl;
-        si -> print(out);
+        si->print(out);
         pqioutput(PQL_DEBUG_ALL, PQISTREAMERZONE, out.str().c_str());
     }
 
@@ -183,7 +183,7 @@ int pqistreamer::SendItem(NetItem *si) {
         out << "pqistreamer::SendItem() Null Pkt generated!";
         out << std::endl;
         out << "Caused By: " << std::endl;
-        si -> print(out);
+        si->print(out);
         pqioutput(PQL_ALERT, PQISTREAMERZONE, out.str().c_str());
     }
 
@@ -306,7 +306,7 @@ int pqistreamer::handleoutgoing() {
             it = out_pkt.erase(it);
 
             std::ostringstream out;
-            out << "pqistreamer::handleoutgoing() Not active -> Clearing Pkt!";
+            out << "pqistreamer::handleoutgoing() Not active->Clearing Pkt!";
             pqioutput(PQL_DEBUG_BASIC, PQISTREAMERZONE, out.str().c_str());
         }
         for (it = out_data.begin(); it != out_data.end(); ) {
@@ -314,7 +314,7 @@ int pqistreamer::handleoutgoing() {
             it = out_data.erase(it);
 
             std::ostringstream out;
-            out << "pqistreamer::handleoutgoing() Not active -> Clearing DPkt!";
+            out << "pqistreamer::handleoutgoing() Not active->Clearing DPkt!";
             pqioutput(PQL_DEBUG_BASIC, PQISTREAMERZONE, out.str().c_str());
         }
 
@@ -488,7 +488,7 @@ start_packet_read:
         // create packet, based on header.
         {
             std::ostringstream out;
-            out << "Read Data Block -> Incoming Pkt(";
+            out << "Read Data Block->Incoming Pkt(";
             out << baseLength + extraLength << ")" << std::endl;
             pqioutput(PQL_DEBUG_BASIC, PQISTREAMERZONE, out.str().c_str());
         }
@@ -499,7 +499,8 @@ start_packet_read:
 
         if (pkt != NULL){
             // Use overloaded Contact function
-            pkt -> PeerId(PeerId());
+            pkt->LibraryMixerId(LibraryMixerId());
+
             incoming.push_back(pkt);
 
             friendsConnectivityManager->heardFrom(LibraryMixerId());
@@ -538,7 +539,7 @@ int pqistreamer::outAllowedBytes() {
     }
 
     int timeElapsed = currentTime - currSentTS;
-    // limiter -> for when currSentTs -> 0.
+    // limiter->for when currSentTs->0.
     if (timeElapsed > 5) timeElapsed = 5;
 
     currSent -= timeElapsed * maxout;
@@ -572,7 +573,7 @@ int     pqistreamer::inAllowedBytes() {
     }
 
     int timeElapsed = currentTime - currReadTS;
-    // limiter -> for when currReadTs -> 0.
+    // limiter->for when currReadTs->0.
     if (timeElapsed > 5) timeElapsed = 5;
 
     currRead -= timeElapsed * maxin;

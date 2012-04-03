@@ -66,14 +66,14 @@ int MixologyService::tick() {
     }
     NetItem *item ;
     if ((item=recvItem()) != NULL) {
-        unsigned int friend_id = peers->findLibraryMixerByCertId(item->PeerId());
+        unsigned int friend_id = item->LibraryMixerId();
 
         MixologyRequest *request = dynamic_cast<MixologyRequest *>(item);
         if (request != NULL) {
             log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a request for " + QString::number(request->item_id));
             MixologyResponse *response = new MixologyResponse();
             LibraryMixerItem* libraryItem;
-            response->PeerId(request->PeerId());
+            response->LibraryMixerId(request->LibraryMixerId());
             response->item_id = request->item_id;
 
             switch(files->getLibraryMixerItemStatus(response->item_id, true)){
@@ -193,7 +193,7 @@ int MixologyService::tick() {
         MixologyLending *lending = dynamic_cast<MixologyLending *>(item);
         if (lending != NULL) {
             if (lending->flags & TRANSFER_COMPLETE_BORROWED) {
-                unsigned int friend_id = peers->findLibraryMixerByCertId(lending->PeerId());
+                unsigned int friend_id = lending->LibraryMixerId();
                 log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Lent " + QString::number(lending->source_type) + ", " + lending->source_id + " to " + QString::number(friend_id));
                 if (lending->source_type & FILE_HINTS_ITEM) {
                     librarymixermanager->setLent(friend_id, lending->source_id);
@@ -219,10 +219,10 @@ int MixologyService::tick() {
     QMutexLocker stack(&mMixologyServiceMutex);
     for(it = mPending.begin(); it != mPending.end(); it++) {
         if(it->status == pendingRequest::REPLY_NONE && (time(NULL) - it->timeOfLastTry > REQUEST_RETRY_DELAY)) {
-            sendRequest(peers->findCertByLibraryMixerId(it->friend_id), it->item_id, &*it);
+            sendRequest(it->friend_id, it->item_id, &*it);
         }
         if(it->status == pendingRequest::REPLY_LENT_OUT && (time(NULL) - it->timeOfLastTry > REQUEST_LENT_RETRY_DELAY)) {
-            sendRequest(peers->findCertByLibraryMixerId(it->friend_id), it->item_id, &*it);
+            sendRequest(it->friend_id, it->item_id, &*it);
         }
     }
 
@@ -278,7 +278,7 @@ bool  MixologyService::LibraryMixerRequestCancel(unsigned int item_id) {
 void MixologyService::sendSuggestion(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes) {
     MixologySuggestion *suggest = new MixologySuggestion();
     suggest->title = title;
-    suggest->PeerId(peers->findCertByLibraryMixerId(friend_id));
+    suggest->LibraryMixerId(friend_id);
     suggest->files(files);
     suggest->hashes(hashes);
     suggest->filesizes(filesizes);
@@ -290,7 +290,7 @@ void MixologyService::sendSuggestion(unsigned int friend_id, const QString &titl
 void MixologyService::sendReturn(unsigned int friend_id, int source_type, const QString &source_id,
                                  const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes) {
     MixologyReturn *returnItem = new MixologyReturn();
-    returnItem->PeerId(peers->findCertByLibraryMixerId(friend_id));
+    returnItem->LibraryMixerId(friend_id);
     returnItem->source_type = source_type;
     returnItem->source_id = source_id;
     returnItem->files(files);
@@ -303,7 +303,7 @@ void MixologyService::sendReturn(unsigned int friend_id, int source_type, const 
 
 void MixologyService::sendBorrowed(unsigned int friend_id, int source_type, const QString &source_id) {
     MixologyLending *lend = new MixologyLending();
-    lend->PeerId(peers->findCertByLibraryMixerId(friend_id));
+    lend->LibraryMixerId(friend_id);
     lend->flags = TRANSFER_COMPLETE_BORROWED;
     lend->source_type = source_type;
     lend->source_id = source_id;
@@ -312,8 +312,8 @@ void MixologyService::sendBorrowed(unsigned int friend_id, int source_type, cons
 }
 
 void MixologyService::sendBorrowedReturned(unsigned int friend_id, int source_type, const QString &source_id) {
-    MixologyLending *lend= new MixologyLending();
-    lend->PeerId(peers->findCertByLibraryMixerId(friend_id));
+    MixologyLending *lend = new MixologyLending();
+    lend->LibraryMixerId(friend_id);
     lend->flags = TRANSFER_COMPLETE_RETURNED;
     lend->source_type = source_type;
     lend->source_id = source_id;
@@ -369,9 +369,9 @@ bool MixologyService::prepFileResponse(unsigned int item_id, int status, Mixolog
     return true;
 }
 
-void MixologyService::sendRequest(std::string cert_id, uint32_t item_id, pendingRequest *pending) {
+void MixologyService::sendRequest(unsigned int librarymixer_id, uint32_t item_id, pendingRequest *pending) {
     MixologyRequest *mrequest = new MixologyRequest();
-    mrequest->PeerId(cert_id);
+    mrequest->LibraryMixerId(librarymixer_id);
     mrequest->item_id = item_id;
     pending->timeOfLastTry = time(NULL);
     log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending a request for " + pending->name);

@@ -48,33 +48,29 @@ NetItem::~NetItem() {
     return;
 }
 
-std::string NetItem::PeerId() {
-    return peerId;
-}
-void NetItem::PeerId(std::string id) {
-    peerId = id;
-}
+unsigned int NetItem::LibraryMixerId() {return librarymixer_id;}
+void NetItem::LibraryMixerId(unsigned int new_id) {librarymixer_id = new_id;}
 
-uint32_t    NetItem::PacketId() {
+uint32_t NetItem::PacketId() {
     return type;
 }
 
-uint8_t    NetItem::PacketVersion() {
+uint8_t NetItem::PacketVersion() {
     return (type >> 24);
 }
 
 
-uint8_t    NetItem::PacketClass() {
+uint8_t NetItem::PacketClass() {
     return (type >> 16) & 0xFF;
 }
 
 
-uint8_t    NetItem::PacketType() {
+uint8_t NetItem::PacketType() {
     return (type >> 8) & 0xFF;
 }
 
 
-uint8_t    NetItem::PacketSubType() {
+uint8_t NetItem::PacketSubType() {
     return (type & 0xFF);
 }
 
@@ -85,7 +81,7 @@ NetItem::NetItem(uint8_t ver, uint16_t service, uint8_t subtype) {
     return;
 }
 
-uint16_t    NetItem::PacketService() {
+uint16_t NetItem::PacketService() {
     return (type >> 8) & 0xFFFF;
 }
 
@@ -110,7 +106,7 @@ SerialType::~SerialType() {
     return;
 }
 
-uint32_t    SerialType::size(NetItem *) {
+uint32_t SerialType::size(NetItem *) {
 #ifdef  SERIAL_DEBUG
     std::cerr << "SerialType::size()" << std::endl;
 #endif
@@ -119,21 +115,21 @@ uint32_t    SerialType::size(NetItem *) {
     return 8;
 }
 
-bool        SerialType::serialise(NetItem *, void *, uint32_t *) {
+bool SerialType::serialise(NetItem *, void *, uint32_t *) {
 #ifdef  SERIAL_DEBUG
     std::cerr << "SerialType::serialise()" << std::endl;
 #endif
     return false;
 }
 
-NetItem     *SerialType::deserialise(void *, uint32_t *) {
+NetItem *SerialType::deserialise(void *, uint32_t *) {
 #ifdef  SERIAL_DEBUG
     std::cerr << "SerialType::deserialise()" << std::endl;
 #endif
     return NULL;
 }
 
-uint32_t    SerialType::PacketId() {
+uint32_t SerialType::PacketId() {
     return type;
 }
 
@@ -157,7 +153,7 @@ Serialiser::~Serialiser() {
 
 
 
-bool        Serialiser::addSerialType(SerialType *serialiser) {
+bool Serialiser::addSerialType(SerialType *serialiser) {
     uint32_t type = (serialiser->PacketId() & 0xFFFFFF00);
     std::map<uint32_t, SerialType *>::iterator it;
     if (serialisers.end() != (it = serialisers.find(type))) {
@@ -174,7 +170,7 @@ bool        Serialiser::addSerialType(SerialType *serialiser) {
 
 
 
-uint32_t    Serialiser::size(NetItem *item) {
+uint32_t Serialiser::size(NetItem *item) {
     /* find the type */
     uint32_t type = (item->PacketId() & 0xFFFFFF00);
     std::map<uint32_t, SerialType *>::iterator it;
@@ -212,7 +208,7 @@ uint32_t    Serialiser::size(NetItem *item) {
     return (it->second)->size(item);
 }
 
-bool        Serialiser::serialise  (NetItem *item, void *data, uint32_t *size) {
+bool Serialiser::serialise  (NetItem *item, void *data, uint32_t *size) {
     /* find the type */
     uint32_t type = (item->PacketId() & 0xFFFFFF00);
     std::map<uint32_t, SerialType *>::iterator it;
@@ -251,7 +247,7 @@ bool        Serialiser::serialise  (NetItem *item, void *data, uint32_t *size) {
 
 
 
-NetItem     *Serialiser::deserialise(void *data, uint32_t *size) {
+NetItem *Serialiser::deserialise(void *data, uint32_t *size) {
     /* find the type */
     if (*size < 8) {
 #ifdef  SERIAL_DEBUG
@@ -317,7 +313,7 @@ NetItem     *Serialiser::deserialise(void *data, uint32_t *size) {
 }
 
 
-bool   setNetItemHeader(void *data, uint32_t size, uint32_t type, uint32_t pktsize) {
+bool setNetItemHeader(void *data, uint32_t size, uint32_t type, uint32_t pktsize) {
     if (size < 8)
         return false;
 
@@ -346,23 +342,23 @@ uint32_t getNetItemSize(void *data) {
     return size;
 }
 
-uint8_t  getNetItemVersion(uint32_t type) {
+uint8_t getNetItemVersion(uint32_t type) {
     return (type >> 24);
 }
 
-uint8_t  getNetItemClass(uint32_t type) {
+uint8_t getNetItemClass(uint32_t type) {
     return (type >> 16) & 0xFF;
 }
 
-uint8_t  getNetItemType(uint32_t type) {
+uint8_t getNetItemType(uint32_t type) {
     return (type >> 8) & 0xFF;
 }
 
-uint8_t  getNetItemSubType(uint32_t type) {
+uint8_t getNetItemSubType(uint32_t type) {
     return (type & 0xFF);
 }
 
-uint16_t  getNetItemService(uint32_t type) {
+uint16_t getNetItemService(uint32_t type) {
     return (type >> 8) & 0xFFFF;
 }
 

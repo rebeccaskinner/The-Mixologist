@@ -51,9 +51,9 @@ bool ftFileProvider::checkFileValid() {
     return true;
 }
 
-void ftFileProvider::setLastRequestor(const std::string &id) {
+void ftFileProvider::setLastRequestor(unsigned int librarymixer_id) {
     QMutexLocker stack(&ftcMutex);
-    lastRequestor = id ;
+    lastRequestor = librarymixer_id;
 }
 
 bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
@@ -68,7 +68,7 @@ bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
     fileInfo.peers.clear();
 
     TransferInfo tInfo;
-    tInfo.librarymixer_id = peers->findLibraryMixerByCertId(lastRequestor);
+    tInfo.librarymixer_id = lastRequestor;
     tInfo.status = FT_STATE_TRANSFERRING;
     tInfo.transferRate = transferRate/1024.0;
 

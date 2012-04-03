@@ -73,7 +73,7 @@ public:
     void receiveFriendOffLMXmlInfo(unsigned int friend_id, const QString &hash, qlonglong size);
 
     /* Called from ftDataDemultiplex through ftController when we receive new data to pass it to the appropriate transferModule. */
-    bool handleReceiveData(const std::string &peerId, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
+    bool handleReceiveData(unsigned int friend_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
 
     /* Sets the given item that is currently set to lend to lent to friend with friend_id
        and deletes all files that it matches. */

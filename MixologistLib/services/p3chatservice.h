@@ -28,8 +28,7 @@
  *
  */
 
-#include <list>
-#include <string>
+#include <QMap>
 
 #include "serialiser/msgitems.h"
 #include "services/p3service.h"
@@ -42,20 +41,21 @@ public:
     virtual int   tick();
     virtual int   status();
 
-    //Fills out all appropriate header information, and adds to the send queue a chat message with body msg to id.
-    int sendPrivateChat(const std::string &peer_id, const QString &message);
-    //Adds to the send queue a status string update status_str to peer_id
-    void  sendStatusString(const std::string &peer_id, const QString &status_str) ;
+    /* Fills out all appropriate header information, and adds to the send queue a chat message with body msg to id. */
+    int sendPrivateChat(unsigned int librarymixer_id, const QString &message);
+
+    /* Adds to the send queue a status string update status_str */
+    void sendStatusString(unsigned int librarymixer_id, const QString &status_str);
 
     /// gets the peer's avatar in jpeg format, if available. Null otherwise. Also asks the peer to send
     /// its avatar, if not already available. Creates a new unsigned char array. It's the caller's
     /// responsibility to delete this once used.
     ///
-    void getAvatarJpegData(const std::string &peer_id,unsigned char *& data,int &size) ;
+    void getAvatarJpegData(const std::string &peer_id,unsigned char *& data,int &size);
 
     /// Sets the avatar data and size. Data is copied, so should be destroyed by the caller.
-    void setOwnAvatarJpegData(const unsigned char *data,int size) ;
-    void getOwnAvatarJpegData(unsigned char *& data,int &size) ;
+    void setOwnAvatarJpegData(const unsigned char *data,int size);
+    void getOwnAvatarJpegData(unsigned char *& data,int &size);
 
     /* Pulls all items off of the chat input queue.
        For each item, if the item is
@@ -66,25 +66,25 @@ public:
        2) If it is flagged CHAT_FLAG_REQUESTS_AVATAR, then calls sendAvatarJpegData.
        3) Otherwise, adds it to a list of ChatMsgItems to return.
           If it is flagged CHAT_FLAG_AVATAR_AVAILABLE, calls sendAvatarRequest, and clears the flag unless it is marked as a new avatar. (?)*/
-    std::list<ChatMsgItem *> getChatQueue();
+    QList<ChatMsgItem *> getChatQueue();
 
 private:
     mutable QMutex mChatMtx;
 
-    class AvatarInfo ;
+    class AvatarInfo;
 
     /// Send avatar info to peer in jpeg format.
-    void sendAvatarJpegData(const std::string &peer_id) ;
+    void sendAvatarJpegData(unsigned int librarymixer_id);
 
-    void receiveAvatarJpegData(ChatAvatarItem *ci) ;    // new method
+    void receiveAvatarJpegData(ChatAvatarItem *ci);    // new method
 
     /// Sends a request for an avatar to the peer of given id
-    void sendAvatarRequest(const std::string &peer_id) ;
+    void sendAvatarRequest(unsigned int librarymixer_id);
 
-    ChatAvatarItem *makeOwnAvatarItem() ;
+    ChatAvatarItem *makeOwnAvatarItem();
 
-    AvatarInfo *_own_avatar ;
-    std::map<std::string,AvatarInfo *> _avatars ;
+    AvatarInfo *_own_avatar;
+    QMap<unsigned int, AvatarInfo *> _avatars;
 
 };
 

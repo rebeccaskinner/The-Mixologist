@@ -40,12 +40,10 @@ public:
     }
 
     /* Client Send */
-    virtual bool    sendDataRequest(std::string peerId, QString hash,
-                                    uint64_t size, uint64_t offset, uint32_t chunksize) = 0;
+    virtual bool sendDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) = 0;
 
     /* Server Send */
-    virtual bool    sendData(std::string peerId, QString hash, uint64_t size,
-                             uint64_t offset, uint32_t chunksize, void *data) = 0;
+    virtual bool sendData(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize, void *data) = 0;
 
 };
 
@@ -61,13 +59,10 @@ public:
     }
 
     /* Client Recv */
-    virtual bool    recvData(std::string peerId, QString hash, uint64_t size,
-                             uint64_t offset, uint32_t chunksize, void *data) = 0;
+    virtual bool recvData(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize, void *data) = 0;
 
     /* Server Recv */
-    virtual bool    recvDataRequest(std::string peerId, QString hash,
-                                    uint64_t size, uint64_t offset, uint32_t chunksize) = 0;
-
+    virtual bool recvDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) = 0;
 
 };
 

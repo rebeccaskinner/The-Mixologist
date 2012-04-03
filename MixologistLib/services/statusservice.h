@@ -44,8 +44,9 @@ public:
     /* Requests that a status update be sent out to all friends on the next tick. */
     void sendStatusUpdateToAll();
 
-    /* Sends an OnConnectStatusItem to friend. */
-    void sendOnConnect(unsigned int friend_id);
+    /* Sends an ordinary StatusItem to friend.
+       This is used by the friendsConnectivityManager to send keep alive packets to friends on UDP connections that will close without them. */
+    void sendKeepAlive(unsigned int friend_id);
 
     /**********************************************************************************
      * Implementations for pqiMonitor
@@ -55,9 +56,13 @@ public:
     virtual void statusChange(const std::list<pqipeer> &changedFriends);
 
 private:
-    time_t timeOfLastTry; //The time of the last status update sent out
-
     mutable QMutex statusMutex;
+
+    /* The time all friends were last blasted with a status update. */
+    time_t timeOfLastSendAll;
+
+    /* The friends that have been specially requested to be sent a status update on next tick. */
+    QList<unsigned int> friendsToSendKeepAlive;
 };
 
 #endif

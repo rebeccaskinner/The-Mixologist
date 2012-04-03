@@ -153,7 +153,7 @@ public:
     QString getPartialsDirectory() const;
 
     /* Called from ftDataDemultiplex when we receive new data to pass it to the appropriate transferModule. */
-    bool handleReceiveData(const std::string &peerId, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
+    bool handleReceiveData(unsigned int librarymixer_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
 
     /***************************************************************/
     /********************** pqiMonitor Functions********************/

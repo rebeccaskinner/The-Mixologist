@@ -22,7 +22,6 @@
 
 #include "pqi/pqi.h"
 #include "pqi/connectionToFriend.h"
-#include "pqi/aggregatedConnections.h"
 
 #include "util/debug.h"
 
@@ -36,7 +35,6 @@ ConnectionToFriend::ConnectionToFriend(std::string id, unsigned int librarymixer
 }
 
 ConnectionToFriend::~ConnectionToFriend() {
-    QMap<ConnectionType, connectionMethod *>::iterator it;
     foreach (connectionMethod *method, connectionMethods.values()) {
         delete method;
     }
@@ -77,23 +75,25 @@ int ConnectionToFriend::tick() {
 // callback function for the child - notify of a change.
 // This is only used for out-of-band info....
 // otherwise could get dangerous loops.
-int ConnectionToFriend::notifyEvent(NetInterface *notifyingInterface, NetNotificationEvent newState) {
+int ConnectionToFriend::notifyEvent(NetInterface *notifyingInterface, NetNotificationEvent newState, struct sockaddr_in *remoteAddress) {
     connectionMethod *pqi = NULL;
+    ConnectionType type = TCP_CONNECTION; //Initialized here just to disable spurious compiler warnings about potential uninitialized use
     foreach (ConnectionType currentType, connectionMethods.keys()) {
         if (connectionMethods[currentType]->thisNetInterface(notifyingInterface)) {
+            type = currentType;
             pqi = connectionMethods[currentType];
             break;
         }
     }
 
     if (!pqi) {
-        log(LOG_DEBUG_ALERT, CONNECTION_TO_FRIEND_ZONE, "ConnectionToFriend::notifyEvent() Unknown notifyEvent Source!");
+        log(LOG_ALERT, CONNECTION_TO_FRIEND_ZONE, "ConnectionToFriend::notifyEvent() Unknown notifyEvent source!");
         return -1;
     }
 
     switch (newState) {
     case NET_CONNECT_SUCCESS:
-        aggregatedConnectionsToFriends->notifyConnect(PeerId(), 1);
+        aggregatedConnectionsToFriends->notifyConnect(LibraryMixerId(), 1, type, remoteAddress);
 
         if (active && (activeConnectionMethod != pqi)) {
             log(LOG_DEBUG_ALERT, CONNECTION_TO_FRIEND_ZONE,
@@ -128,9 +128,9 @@ int ConnectionToFriend::notifyEvent(NetInterface *notifyingInterface, NetNotific
         }
 
         if (newState == NET_CONNECT_FAILED)
-            aggregatedConnectionsToFriends->notifyConnect(PeerId(), -1);
+            aggregatedConnectionsToFriends->notifyConnect(LibraryMixerId(), -1, type, remoteAddress);
         else if (newState == NET_CONNECT_FAILED_RETRY)
-            aggregatedConnectionsToFriends->notifyConnect(PeerId(), 0);
+            aggregatedConnectionsToFriends->notifyConnect(LibraryMixerId(), 0, type, remoteAddress);
         return 1;
     }
     return -1;

@@ -202,9 +202,6 @@ int LibraryMixerConnect::uploadXML(const QString &path,
 }
 
 int LibraryMixerConnect::uploadInfo(const int link_to_set, const QString &public_key) {
-    PeerDetails ownDetails;
-    peers->getPeerDetails(peers->getOwnLibraryMixerId(),ownDetails);
-
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
     uploadBuffer = new QBuffer();

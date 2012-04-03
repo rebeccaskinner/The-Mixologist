@@ -121,9 +121,6 @@ void PeersDialog::friendsListContextMenu(QPoint point) {
 
     int id = getFriendLibraryMixerId(selection);
 
-    PeerDetails detail;
-    if (!peers->getPeerDetails(id, detail)) return;
-
     chatAct = new QAction(QIcon(IMAGE_CHAT), tr("Chat"), this);
     connect(chatAct , SIGNAL(triggered()), this, SLOT(chatFriend()));
     contextMenu.addAction(chatAct);
@@ -143,14 +140,9 @@ void PeersDialog::friendsListContextMenu(QPoint point) {
 
 /* get the list of peers from the Interface.  */
 void  PeersDialog::insertPeers() {
-    std::list<int> peersList;
-    std::list<int>::iterator it;
+    if (!peers) return;
 
-    if (!peers) {
-        /* not ready yet! */
-        return;
-    }
-
+    QList<unsigned int> peersList;
     peers->getFriendList(peersList);
 
     /* get a link to the table */
@@ -163,11 +155,9 @@ void  PeersDialog::insertPeers() {
     /* remove old items */
     ui.friendsList->clear();
     QList<QTreeWidgetItem *> items;
-    for (it = peersList.begin(); it != peersList.end(); it++) {
+    foreach (unsigned int librarymixer_id, peersList) {
         PeerDetails detail;
-        if (!peers->getPeerDetails(*it, detail)) {
-            continue; /* BAD */
-        }
+        if (!peers->getPeerDetails(librarymixer_id, detail)) continue;
 
         /* make a widget per friend */
         QTreeWidgetItem *item = new QTreeWidgetItem(ui.friendsList, 0);
@@ -202,6 +192,9 @@ void  PeersDialog::insertPeers() {
                 QSettings settings(*mainSettings, QSettings::IniFormat, this);
                 if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
                     item->setText(FRIEND_STATUS_COLUMN, QString("Connected (UDP)"));
+                    item->setToolTip(FRIEND_STATUS_COLUMN,
+                                     QString("UDP connections are slower, less reliable, and less efficient than regular connections. ") +
+                                     "You should only ever see these if you are behind a firewall.");
                 }
             }
         } else if (detail.state == FCS_IN_CONNECT_ATTEMPT) {
@@ -239,12 +232,6 @@ void  PeersDialog::insertPeers() {
     if (newSelect) {
         ui.friendsList->setCurrentItem(newSelect);
     }
-
-    //Update the status bar friend display and then update view.
-    std::list<int> online_friends;
-    peers->getOnlineList(online_friends);
-    std::list<int> signed_up_friends;
-    peers->getSignedUpList(signed_up_friends);
 
     ui.friendsList->update();
 }
@@ -350,30 +337,19 @@ void PeersDialog::friendDoubleClicked() {
 }
 
 void PeersDialog::insertChat() {
-    if (!msgs->chatAvailable()) {
-        return;
-    }
+    if (!msgs->chatAvailable()) return;
 
-    std::list<ChatInfo> newchat;
-    if (!msgs->getNewChat(newchat)) {
-        return;
-    }
+    QList<ChatInfo> newChats;
+    if (!msgs->getNewChat(newChats)) return;
 
-    std::list<ChatInfo>::iterator it;
-
-    /* add in lines at the bottom */
-    for (it = newchat.begin(); it != newchat.end(); it++) {
-        if (it->chatflags & CHAT_PRIVATE) {
+    foreach (ChatInfo info, newChats) {
+        if (info.chatflags & CHAT_PRIVATE) {
             bool isNewChat;
-            PopupChatDialog *pcd = getOrCreateChat(peers->findLibraryMixerByCertId(it->rsid), false, &isNewChat);
-            if (isNewChat) {
-                pcd->show();
-            }
+            PopupChatDialog *pcd = getOrCreateChat(info.librarymixer_id, false, &isNewChat);
+            if (isNewChat) pcd->show();
             QApplication::alert(pcd, 3000);
-            pcd->addMsgFromFriend(&(*it));
-            continue;
+            pcd->addMsgFromFriend(&info);
         }
-
     }
 }
 

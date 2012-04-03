@@ -247,12 +247,10 @@ public:
      **********************************************************************************/
 
     /* Client Send */
-    virtual bool sendDataRequest(std::string peerId, QString hash, uint64_t size,
-                                 uint64_t offset, uint32_t chunksize);
+    virtual bool sendDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
 
     /* Server Send */
-    virtual bool sendData(std::string peerId, QString hash, uint64_t size,
-                          uint64_t baseOffset, uint32_t chunkSize, void *data);
+    virtual bool sendData(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t baseOffset, uint32_t chunkSize, void *data);
 
     /* This tick is called from the main server */
     virtual int tick();

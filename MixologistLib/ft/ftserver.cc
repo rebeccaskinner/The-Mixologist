@@ -308,22 +308,21 @@ void ftServer::deleteBorrowed(const QString &itemKey) {
 /***************************************************************/
 
 /* Client Send */
-bool    ftServer::sendDataRequest(std::string peerId, QString hash,
-                                  uint64_t size, uint64_t offset, uint32_t chunksize) {
+bool ftServer::sendDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
     /* create a packet */
     /* push to networking part */
     FileRequest *rfi = new FileRequest();
 
     /* id */
-    rfi->PeerId(peerId);
+    rfi->LibraryMixerId(librarymixer_id);
 
     /* file info */
-    rfi->file.filesize   = size;
-    rfi->file.hash       = hash; /* ftr->hash; */
+    rfi->file.filesize = size;
+    rfi->file.hash = hash; /* ftr->hash; */
 
     /* offsets */
     rfi->fileoffset = offset; /* ftr->offset; */
-    rfi->chunksize  = chunksize; /* ftr->chunk; */
+    rfi->chunksize = chunksize; /* ftr->chunk; */
 
     persongrp->SendFileRequest(rfi);
 
@@ -333,8 +332,7 @@ bool    ftServer::sendDataRequest(std::string peerId, QString hash,
 const uint32_t MAX_FT_CHUNK  = 8 * 1024; /* 8K */
 
 /* Server Send */
-bool ftServer::sendData(std::string peerId, QString hash, uint64_t size,
-                           uint64_t baseOffset, uint32_t chunkSize, void *data) {
+bool ftServer::sendData(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t baseOffset, uint32_t chunkSize, void *data) {
     uint32_t remainingToSend = chunkSize;
     uint64_t offset = 0;
     uint32_t chunk;
@@ -355,7 +353,7 @@ bool ftServer::sendData(std::string peerId, QString hash, uint64_t size,
         FileData *rfd = new FileData();
 
         /* set id */
-        rfd->PeerId(peerId);
+        rfd->LibraryMixerId(librarymixer_id);
 
         /* file info */
         rfd->fd.file.filesize = size;
@@ -412,7 +410,7 @@ bool ftServer::handleFileData() {
     i_init = i;
     while ((fr = persongrp->GetFileRequest()) != NULL ) {
         i++; /* count */
-        mFtDataplex->recvDataRequest(fr->PeerId(),
+        mFtDataplex->recvDataRequest(fr->LibraryMixerId(),
                                      fr->file.hash,  fr->file.filesize,
                                      fr->fileoffset, fr->chunksize);
 
@@ -426,7 +424,7 @@ bool ftServer::handleFileData() {
         i++; /* count */
 
         /* incoming data */
-        mFtDataplex->recvData(fd->PeerId(),
+        mFtDataplex->recvData(fd->LibraryMixerId(),
                               fd->fd.file.hash,  fd->fd.file.filesize,
                               fd->fd.file_offset,
                               fd->fd.binData.bin_len,
@@ -451,7 +449,7 @@ bool ftServer::handleFileData() {
 
 /***************************** CONFIG ****************************/
 
-bool    ftServer::ResumeTransfers() {
+bool ftServer::ResumeTransfers() {
     fileDownloadController->activate();
 
     return true;

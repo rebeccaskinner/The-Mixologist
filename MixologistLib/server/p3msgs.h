@@ -40,28 +40,26 @@ public:
         return;
     }
 
-    /****************************************/
-    /* Chat */
     /*Returns true if there is a new chat service item available.*/
-    virtual bool    chatAvailable();
-    /*Sends a message with specified ChatInfo.*/
-    virtual void    ChatSend(const std::string &peer_id,const QString &message);
+    virtual bool chatAvailable();
+
+    /*Sends a message to friend with peer_id.*/
+    virtual void ChatSend(unsigned int librarymixer_id, const QString &message);
+
     /*Processes all items on the incoming chat queue, including avatars and status.
       For each ChatMsgItem in the queue, creates a ChatInfo and adds it to the list to return.*/
-    virtual bool    getNewChat(std::list<ChatInfo> &chats);
+    virtual bool getNewChat(QList<ChatInfo> &chats);
+
     /*Sends the specified status string status_string to friend with id peer_id.*/
-    virtual void    sendStatusString(const std::string &peer_id,const QString &status_string) ;
+    virtual void sendStatusString(unsigned int librarymixer_id, const QString &status_string);
 
-    /****************************************/
-
-    // gets avatar from peer id in jpeg format.
-    virtual void getAvatarData(std::string pid,unsigned char *& data,int &size);
-    virtual void setOwnAvatarData(const unsigned char *data,int size);
-    virtual void getOwnAvatarData(unsigned char *& data,int &size);
-
+#ifdef false
+    virtual void getAvatarData(std::string pid, unsigned char *& data, int &size);
+    virtual void setOwnAvatarData(const unsigned char *data, int size);
+    virtual void getOwnAvatarData(unsigned char *& data, int &size);
+#endif
 
 private:
-
     /*Takes an ChatMsgItem c and uses its information to populate a ChatInfo i.*/
     void initChatInfo(ChatMsgItem *c, ChatInfo &i);
 
