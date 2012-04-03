@@ -7,7 +7,6 @@ MixologistLib/temp/*
 MixologistLib/qtc-gdbmacros/*
 ThirdParty/src/miniupnpc-1.6/*
 ThirdParty/src/openssl-1.0.0a/*
-ThirdParty/src/pjproject-1.12/*
 ThirdParty/lib/*.a
 *.Debug
 *.Release
