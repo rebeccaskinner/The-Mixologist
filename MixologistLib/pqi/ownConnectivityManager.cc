@@ -559,17 +559,15 @@ int OwnConnectivityManager::getLocalPort() {
         int storedPort = settings.value("Network/PortNumber", DEFAULT_PORT).toInt();
         if (storedPort > Peers::MIN_PORT &&
             storedPort < Peers::MAX_PORT) return storedPort;
-        else return getRandomPortNumber();
-    } else {
-        int randomPort = getRandomPortNumber();
-        settings.setValue("Network/PortNumber", randomPort);
-        return randomPort;
     }
+
+    int randomPort = getRandomPortNumber();
+    settings.setValue("Network/PortNumber", randomPort);
+    return randomPort;
 }
 
 #define MIN_RAND_PORT 10000
 #define MAX_RAND_PORT 30000
 int OwnConnectivityManager::getRandomPortNumber() const {
-    qsrand(time(NULL));
-    return (qrand() % (MAX_RAND_PORT - MIN_RAND_PORT) + MIN_RAND_PORT);
+    return ((qrand() % (MAX_RAND_PORT - MIN_RAND_PORT)) + MIN_RAND_PORT);
 }

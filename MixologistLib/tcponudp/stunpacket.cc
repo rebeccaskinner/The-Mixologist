@@ -217,7 +217,6 @@ bool UdpStun_response(void *stun_pkt, int size, QString &transaction_id, struct 
 }
 
 QString UdpStun_generate_transaction_id() {
-    qsrand(time(NULL));
     static qint16 transaction_id_1 = qrand() % 32767;
     static qint16 transaction_id_2 = qrand() % 32767;
     static qint16 transaction_id_3 = qrand() % 32767;
