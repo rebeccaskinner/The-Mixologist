@@ -38,6 +38,8 @@
 #include <fcntl.h>
 #include <inttypes.h>
 
+#include "util/net.h" /* more generic networking header */
+
 #else
 
 /* This defines the platform to be WinXP or later...
@@ -45,11 +47,13 @@
  *
  */
 
-/* This is needed to silence warnings from windef.h in mingw */
+/* This is needed to silence warnings from windef.h in mingw, must be before util/net.h include. */
 //#ifdef _WIN32_WINNT
 //#undef _WIN32_WINNT
 //#endif
 #define _WIN32_WINNT 0x0501
+
+#include "util/net.h" /* more generic networking header */
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -91,8 +95,6 @@ extern int errno; /* Define extern errno, to duplicate unix behaviour */
 
 #endif
 /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
-
-#include "util/net.h" /* more generic networking header */
 
 #include <iostream>
 #include <string>
