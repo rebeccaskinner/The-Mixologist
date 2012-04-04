@@ -38,9 +38,11 @@
 #include <windows.h>
 #endif
 
-/* So that when we compile statically, gif support is enabled. */
+/* So that when we compile statically on Windows and OS X, gif support is enabled. */
+#if defined(STATIC)
 #include <QtPlugin>
 Q_IMPORT_PLUGIN(qgif)
+#endif
 
 //Setting up global extern for MainWindow.h
 MainWindow *mainwindow = NULL;

@@ -7,7 +7,6 @@ CONFIG += qt \
 QT += network \
       xml \
       script
-QTPLUGIN += qgif
 TEMPLATE = app
 TARGET = Mixologist
 RCC_DIR = temp/qrc
@@ -15,7 +14,7 @@ UI_DIR = temp/ui
 MOC_DIR = temp/moc
 
 # ################################ Linux ##########################################
-linux-g++ { 
+linux-g++ {
     OBJECTS_DIR = temp/linux-g++/obj
     LIBS += ../MixologistLib/lib.linux-g++/libMixologist.a
     LIBS += ../ThirdParty/lib/libminiupnpc.a
@@ -24,7 +23,7 @@ linux-g++ {
     LIBS += -lQtUiTools
     LIBS += -lz
 }
-linux-g++-64 { 
+linux-g++-64 {
     OBJECTS_DIR = temp/linux-g++-64/obj
     LIBS += ../MixologistLib/lib.linux-g++-64/libMixologist.a
     LIBS += ../ThirdParty/lib/libminiupnpc.a
@@ -54,7 +53,7 @@ linux-g++-64 {
 #}
 #
 # ################################### Windows #####################################
-win32 { 
+win32 {
     OBJECTS_DIR = temp/obj
     LIBS += ../MixologistLib/lib/libMixologist.a
     LIBS += -L"../ThirdParty/lib" \
@@ -70,12 +69,15 @@ win32 {
         -lgdi32
     LIBS += -lole32 \
         -lwinmm
-    LIBS += -lpjnath-i686-pc-mingw32 -lpjlib-util-i686-pc-mingw32 -lpj-i686-pc-mingw32
     RC_FILE = platformspecific/win.rc
+
+#Remove if not static compile
+    QTPLUGIN += qgif
+    DEFINES += STATIC
 }
 
 # #################################### MacOS ######################################
-macx { 
+macx {
     CONFIG += x86 ppc
     OBJECTS_DIR = temp/obj
     LIBS += -Wl,-search_paths_first
@@ -88,6 +90,10 @@ macx {
     QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.4
     QMAKE_INFO_PLIST = platformspecific/Info.plist
     ICON = platformspecific/mac.icns
+
+#Remove if not static compile
+    QTPLUGIN += qgif
+    DEFINES += STATIC
 }
 
 # ############################# Common stuff ######################################
