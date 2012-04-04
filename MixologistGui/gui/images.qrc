@@ -18,9 +18,6 @@
         <file>Images/ShowFrame.png</file>
         <file>Images/Chat.png</file>
         <file>Images/Message.png</file>
-        <file>Images/ReconnectFriend.png</file>
-        <file>Images/StatusConnected.png</file>
-        <file>Images/StatusOffline.png</file>
         <file>Images/Cancel.png</file>
         <file>Images/ClearCompleted.png</file>
         <file>Images/Up0Down0.png</file>
@@ -34,7 +31,6 @@
         <file>Images/Library.png</file>
         <file>Images/UpdateLibrary.png</file>
         <file>Images/LibrarySmall.png</file>
-        <file>Images/StatusConnecting.png</file>
         <file>Images/OffLibrary.png</file>
         <file>Images/AddFriend.png</file>
         <file>Images/AddLibrary.png</file>
@@ -43,5 +39,7 @@
         <file>Images/find.png</file>
         <file>Images/File.png</file>
         <file>Images/AnimatedLoading.gif</file>
+        <file>Images/StatusConnected.png</file>
+        <file>Images/StatusSearching.gif</file>
     </qresource>
 </RCC>

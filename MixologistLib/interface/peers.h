@@ -109,20 +109,23 @@ public:
     PeerDetails();
 
     /* Identifying details */
-    std::string id;
     unsigned int librarymixer_id;
     QString name;
 
-    /* Network details (only valid if friend) */
-    FriendConnectState state; //Current connection status
+    /* Current connection status. */
+    FriendConnectState state;
 
-    std::string localAddr;
+    /* Whether we are currently waiting and have a connection action scheduled for them. */
+    bool waitingForAnAction;
+
+    /* Address where we believe them to be, as given by LibraryMixer. */
+    QString localAddr;
     uint16_t localPort;
-    std::string extAddr;
+    QString extAddr;
     uint16_t extPort;
 
-    /* basic stats */
-    uint32_t lastConnect; /* how long ago */
+    /* When connected, this will show when connected, when disconnected, show time of last disconnect. */
+    uint32_t lastConnect;
 };
 
 class Peers: public QObject {

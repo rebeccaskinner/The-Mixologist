@@ -120,18 +120,8 @@ void NetworkDialog::insertConnect() {
         }
 
         /* (3) Peer Address */
-        {
-            std::ostringstream out;
-            out << detail.extAddr << ":";
-            out << detail.extPort;
-            item->setText(3, QString::fromStdString(out.str()));
-        }
-        {
-            std::ostringstream out;
-            out << detail.localAddr << ":";
-            out << detail.localPort;
-            item->setText(4, QString::fromStdString(out.str()));
-        }
+        item->setText(3, detail.extAddr + ":" + QString::number(detail.extPort));
+        item->setText(4, detail.localAddr + ":" + QString::number(detail.localPort));
 
         /* (4) LibraryMixer ID */
         item->setText(5, QString::number(detail.librarymixer_id));
@@ -152,16 +142,8 @@ void NetworkDialog::insertConnect() {
         self_item->setText(0, peers->getOwnName());
         self_item->setText(1, "This is you!");
         //skip last connect
-        {
-            std::ostringstream out;
-            out << detail.extAddr << ":" << detail.extPort;
-            self_item->setText(3, QString::fromStdString(out.str()));
-        }
-        {
-            std::ostringstream out;
-            out << detail.localAddr << ":" << detail.localPort;
-            self_item->setText(4, QString::fromStdString(out.str()));
-        }
+        self_item->setText(3, detail.extAddr + ":" + QString::number(detail.extPort));
+        self_item->setText(4, detail.localAddr + ":" + QString::number(detail.localPort));
         self_item->setText(5, QString::number(detail.librarymixer_id));
 
         items.append(self_item);

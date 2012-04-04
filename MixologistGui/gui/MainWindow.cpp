@@ -111,7 +111,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     QMovie *movie = new QMovie(":/Images/AnimatedLoading.gif");
     connectionStatusMovieLabel->setMovie(movie);
     movie->start();
-    movie->setSpeed(100); // 2x speed
+    movie->setSpeed(100); //100%
     connectionStatusHorizontalLayout->addWidget(connectionStatusMovieLabel);
     connectionStatusLabel = new QLabel(connectionStatus);
     connectionStatusLabel->setText("Initializing");
@@ -297,7 +297,7 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         break;
     /* If we get here, we are done with connection set up. */
     case CONNECTION_STATUS_UNFIREWALLED:
-        connectionStatusLabel->setText("Internet: Direct Connection");
+        connectionStatusLabel->setText("Direct Connection");
         infoTextTypeToDisplay = INFO_TEXT_UNFIREWALLED;
         break;
     case CONNECTION_STATUS_PORT_FORWARDED:
@@ -305,11 +305,11 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         infoTextTypeToDisplay = INFO_TEXT_PORT_FORWARDED;
         break;
     case CONNECTION_STATUS_UPNP_IN_USE:
-        connectionStatusLabel->setText("Internet: UPNP-configured Connection");
+        connectionStatusLabel->setText("UPNP-configured Connection");
         infoTextTypeToDisplay = INFO_TEXT_UPNP;
         break;
     case CONNECTION_STATUS_UDP_HOLE_PUNCHING:
-        connectionStatusLabel->setText("Internet: UDP Hole-Punching");
+        connectionStatusLabel->setText("UDP Hole-Punching");
         infoTextTypeToDisplay = INFO_TEXT_UDP_HOLE_PUNCHING;
         if (isNotifyBadInternet()) {
             mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_FULL_CONE_NAT_INFO;
@@ -321,7 +321,7 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         }
         break;
     case CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING:
-        connectionStatusLabel->setText("Internet: UDP Hole-Punching (restricted-cone)");
+        connectionStatusLabel->setText("UDP Hole-Punching (restricted-cone)");
         infoTextTypeToDisplay = INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING;
         if (isNotifyBadInternet()) {
             mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_RESTRICTED_NAT_INFO;
@@ -333,7 +333,7 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         }
         break;
     case CONNECTION_STATUS_SYMMETRIC_NAT:
-        connectionStatusLabel->setText("Internet: Symmetric NAT (outbound connections only)");
+        connectionStatusLabel->setText("Symmetric NAT (outbound connections only)");
         infoTextTypeToDisplay = INFO_TEXT_SYMMETRIC_NAT;
         if (isNotifyBadInternet()) {
             mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_SYMMETRIC_NAT_INFO;
@@ -346,7 +346,7 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         break;
     case CONNECTION_STATUS_UNKNOWN:
     default:
-        connectionStatusLabel->setText("Internet: Unknown");
+        connectionStatusLabel->setText("Unknown");
         infoTextTypeToDisplay = INFO_TEXT_UNKNOWN_CONNECTION;
         if (isNotifyBadInternet())
             mainwindow->trayIcon->showMessage("Connection Warning",
@@ -460,7 +460,7 @@ void MainWindow::displayInfoText(InfoTextType type) {
         QString ownIP;
         QString ownPort;
         if (peers->getPeerDetails(peers->getOwnLibraryMixerId(), detail)) {
-            ownIP = detail.localAddr.c_str();
+            ownIP = detail.localAddr;
             ownPort = QString::number(detail.localPort);
         }
         info += "<p><b>Fixing the Problem</b></p>";

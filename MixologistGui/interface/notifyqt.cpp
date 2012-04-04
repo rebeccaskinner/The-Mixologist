@@ -118,7 +118,7 @@ void NotifyQt::displayPopupMessage(int type, QString name, QString msg) {
                     mainwindow->trayMessageClickedAction = MainWindow::TRAY_MESSAGE_CLICKED_DOWNLOADS_FOLDER;
                     mainwindow->trayIcon->showMessage("Download complete",
                                                       name.append("\nhas finished downloading."),
-                                                      QSystemTrayIcon::Information, INT_MAX );
+                                                      QSystemTrayIcon::Information, INT_MAX);
                 }
             }
             break;

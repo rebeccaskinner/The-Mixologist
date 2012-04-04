@@ -78,7 +78,6 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &detailsT
         detailsToFill.localPort = ntohs(ownConnectivityManager->getOwnLocalAddress()->sin_port);
         detailsToFill.extAddr = inet_ntoa(ownConnectivityManager->getOwnExternalAddress()->sin_addr);
         detailsToFill.extPort = ntohs(ownConnectivityManager->getOwnExternalAddress()->sin_port);
-        detailsToFill.id = getOwnCertId();
         detailsToFill.librarymixer_id = librarymixer_id;
     } else {
         friendListing *requestedListing = friendsConnectivityManager->getFriendListing(librarymixer_id);
@@ -89,10 +88,11 @@ bool p3Peers::getPeerDetails(unsigned int librarymixer_id, PeerDetails &detailsT
         detailsToFill.name = requestedListing->name;
         detailsToFill.localAddr = inet_ntoa(requestedListing->localaddr.sin_addr);
         detailsToFill.localPort = ntohs(requestedListing->localaddr.sin_port);
-        detailsToFill.extAddr   = inet_ntoa(requestedListing->serveraddr.sin_addr);
-        detailsToFill.extPort   = ntohs(requestedListing->serveraddr.sin_port);
-        detailsToFill.lastConnect   = requestedListing->lastcontact;
+        detailsToFill.extAddr = inet_ntoa(requestedListing->serveraddr.sin_addr);
+        detailsToFill.extPort = ntohs(requestedListing->serveraddr.sin_port);
+        detailsToFill.lastConnect = requestedListing->lastcontact;
         detailsToFill.state = requestedListing->state;
+        detailsToFill.waitingForAnAction = (requestedListing->nextTryDelayedUntil != 0);
     }
 
     return true;

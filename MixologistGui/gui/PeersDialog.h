@@ -33,7 +33,6 @@ class PeersDialog : public QWidget {
 	Q_OBJECT
 
 public:
-	/** Default Constructor */
 	PeersDialog(QWidget *parent = 0);
 
         /*Gets an existing chat, or creates a new one if one doesn't exist.
@@ -83,7 +82,7 @@ private slots:
 	void updatedFriends();
 
         /* Create the context popup menu and it's submenus */
-	void friendsListContextMenu( QPoint point );
+        void friendsListContextMenu(QPoint point);
 
         /* Used to start a chat with a friend in response to clicking on the friend */
         void chatFriend();
@@ -121,7 +120,6 @@ private:
         QAction* sendAct;
         QAction* connectfriendAct;
 
-	QTreeWidget *friendsList;
         /* This holds a list of all chats, and is a map on librarymixer ids. */
         std::map<int, PopupChatDialog *> chatDialogs;
 
