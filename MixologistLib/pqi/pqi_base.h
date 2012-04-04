@@ -76,9 +76,7 @@ public:
     virtual unsigned int LibraryMixerId() {return librarymixer_id;}
 
     //Called by NetInterfaces to inform the PQInterface of connection events.
-    virtual int notifyEvent(NetInterface *ni, NetNotificationEvent event, struct sockaddr_in *remoteAddress) {
-        (void)ni;
-        (void)(event);
+    virtual int notifyEvent(NetInterface * /*ni*/, NetNotificationEvent /*event*/, struct sockaddr_in * /*remoteAddress*/) {
         return 0;
     }
 
