@@ -116,7 +116,7 @@ std::list<std::string> getLocalInterfaces() {
         strncpy(ifreq.ifr_name, ifptr->if_name, IF_NAMESIZE);
 
         if (ioctl(sock, SIOCGIFADDR, &ifreq) != 0) {
-            pqioutput(PQL_DEBUG_BASIC, pqinetzone, QString("Cannot Determine Address for Iface: " + ifptr->if_name));
+            pqioutput(PQL_DEBUG_BASIC, pqinetzone, QString("Cannot Determine Address for Iface: ") + ifptr->if_name);
         } else {
             struct sockaddr_in *aptr = (struct sockaddr_in *) &ifreq.ifr_addr;
             const char *astr=inet_ntoa(aptr->sin_addr);

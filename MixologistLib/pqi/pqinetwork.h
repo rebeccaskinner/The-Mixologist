@@ -51,8 +51,6 @@
 //#endif
 #define _WIN32_WINNT 0x0501
 
-#include "util/net.h" /* more generic networking header */
-
 #include <winsock2.h>
 #include <ws2tcpip.h>
 typedef int socklen_t;
@@ -93,6 +91,8 @@ extern int errno; /* Define extern errno, to duplicate unix behaviour */
 
 #endif
 /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
+
+#include "util/net.h" /* more generic networking header */
 
 #include <iostream>
 #include <string>

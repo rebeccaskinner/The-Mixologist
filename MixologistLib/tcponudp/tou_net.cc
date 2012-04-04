@@ -61,16 +61,16 @@ int tounet_fcntl(int sockfd, int cmd, long arg) {
     return fcntl(sockfd, cmd, arg);
 }
 
-int tounet_setsockopt(int s, int level, int optname, const void *optval, socklen_t optlen) {
-    return setsockopt(s, level, optname, optval, optlen);
+int tounet_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen) {
+    return setsockopt(sockfd, level, optname, optval, optlen);
 }
 
 ssize_t tounet_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen) {
-    return recvfrom(s, buf, len, flags, from, fromlen);
+    return recvfrom(sockfd, buf, len, flags, from, fromlen);
 }
 
 ssize_t tounet_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) {
-    return sendto(s, buf, len, flags, to, tolen);
+    return sendto(sockfd, buf, len, flags, to, tolen);
 }
 
 #else /* WINDOWS OS */
