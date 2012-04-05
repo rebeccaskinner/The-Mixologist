@@ -50,6 +50,9 @@ OwnConnectivityManager::OwnConnectivityManager()
      udpTestSocket(NULL), mUpnpMgr(NULL),
      stunServer1(NULL), stunServer2(NULL) {
 
+    sockaddr_clear(&ownLocalAddress);
+    sockaddr_clear(&ownExternalAddress);
+
     connect(librarymixerconnect, SIGNAL(uploadedAddress()), this, SLOT(addressUpdatedOnLibraryMixer()));
 
     /* Load balance between the servers by picking the order at random. */
