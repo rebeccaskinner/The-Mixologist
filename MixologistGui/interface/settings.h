@@ -50,7 +50,8 @@ const bool DEFAULT_NOTIFY_BAD_INTERNET = true;
 const bool DEFAULT_NOTIFY_DOWNLOAD_DONE = true;
 
 const bool DEFAULT_UPNP = true;
-const int DEFAULT_PORT = 13170;
+
+const int DEFAULT_NETWORK_AUTO_OR_PORT = 1;
 
 const bool DEFAULT_TUTORIAL_DONE_INITIAL = false;
 const bool DEFAULT_TUTORIAL_DONE_LIBRARY = false;

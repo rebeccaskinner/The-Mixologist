@@ -38,9 +38,15 @@ public:
     /* Saves the changes on this page */
     bool save();
 
+    /* When called with true, displays advanced elements, when false hides them. */
+    void showAdvanced(bool enabled);
+
 private slots:
     /* If the server is edited to an empty value, set it to default. */
     void editedServer();
+
+    /* If the connection auto-config checkbox is clicked, enable or disable the port field. */
+    void autoConfigClicked(bool autoConfigDisabled);
 
 private:
     /* Qt Designer generated object */

@@ -62,7 +62,7 @@ public slots:
         /* Connected through main, updates the status string of a chat. */
         void updatePeerStatusString(unsigned int friend_librarymixer_id, const QString& status_string);
 
-        /* Used to enable the friendsList when we our connection is ready to go. */
+        /* Used to enable the friendsList when we our connection is ready to go, or potentially show a loading screen on initial load. */
         void connectionReadinessChanged(bool ready);
 
 private slots:

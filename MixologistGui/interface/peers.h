@@ -46,16 +46,18 @@ enum FriendConnectState {
 
 /* The current state of the connection's setup. */
 enum ConnectionStatus {
-    /* The states below here are initial set up states. */
-    /* We attempt to find two STUN servers that we will use.
+    /* The states below here are set up states. */
+    /* Both when auto-config is enabled and disabled we start here.
+       We attempt to find two STUN servers on auto-config, or one for auto-config off, that we will use for testing.
        First we check if we can get two of our friends who are online and available to be our STUN servers
        by sending normal STUN requests from our test port requesting back on the test port. */
     CONNECTION_STATUS_FINDING_STUN_FRIENDS,
-    /* If we failed to get at least two friends as STUN servers, we fall back to public STUN servers in order to fill us out.
-       If we can't get two STUN servers then we can't auto-configure and are CONNECTION_STATUS_UNKNOWN. */
+    /* If we failed to get enough friends as STUN servers, we fall back to public STUN servers in order to fill us out.
+       If we can't get enough STUN servers then we can't proceed with testing and are CONNECTION_STATUS_UNKNOWN. */
     CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS,
     /* Using our primary STUN server, send a STUN request from our test port, requesting to receive the response on our main port.
-       If we receive it, if the local IP matches the external IP, we are CONNECTION_STATUS_UNFIREWALLED, otherwise we are CONNECTION_STATUS_PORT_FORWARDED. */
+       If we receive it, if the local IP matches the external IP, we are CONNECTION_STATUS_UNFIREWALLED, otherwise we are CONNECTION_STATUS_PORT_FORWARDED.
+       If we do not receive it, if auto-config is on, we go on to CONNECTION_STATUS_STUNNING_INITIAL, if off, we stop and end on CONNECTION_STATUS_UNKNOWN. */
     CONNECTION_STATUS_STUNNING_INITIAL,
     /* Out initial STUN did not return, so we attempt to use UPNP to reach out and configure the firewall. */
     CONNECTION_STATUS_TRYING_UPNP,
@@ -83,7 +85,10 @@ enum ConnectionStatus {
        If we receive no response, our STUN servers are again behaving erratically and we are CONNECTION_STATUS_UNKNOWN. */
     CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST,
 
-    /* The states below here are final states. */
+    /* The states below here are final states.
+       When auto-config is off, the only reachable states are CONNECTION_STATUS_UNFIREWALLED, CONNECTION_STATUS_PORT_FORWARDED, and CONNECTION_STATUS_UNKNOWN.
+       Note that with auto-config off, CONNECTION_STATUS_PORT_FORWARDED is unreliable and may generate false positives if the Mixologist is closed when
+       the firewall has active port-mappings, and re-opened before the firewall has cleared those mappings. */
     CONNECTION_STATUS_UNFIREWALLED,
     CONNECTION_STATUS_PORT_FORWARDED,
     CONNECTION_STATUS_UPNP_IN_USE,
@@ -144,6 +149,9 @@ public:
     /* Returns whether our connection is currently ready. */
     virtual bool getConnectionReadiness() = 0;
 
+    /* Returns whether auto-connection config is enabled. */
+    virtual bool getConnectionAutoConfigEnabled() = 0;
+
     /* Returns our current connection status. */
     virtual ConnectionStatus getConnectionStatus() = 0;
 
@@ -184,9 +192,9 @@ public:
     static const int MAX_PORT = 50000;
 
 signals:
-    /* Used to inform the GUI of changes to the current ConnectionStatus.
+    /* Used to inform GUI of changes to the current ConnectionStatus, as well as whether auto-connection config is enabled.
        All values of newStatus should be members of ConnectionStatus. */
-    void connectionStateChanged(int newStatus);
+    void connectionStateChanged(int newStatus, bool autoConfigEnabled);
 
     /* Emitted whenever our connection becomes fully ready, or whenever we go from ready to not ready.
        The difference between this and connectionStateChanged with a final state is that we can be in a final state,

@@ -92,13 +92,16 @@ public:
     /* Returns whether our connection is currently ready - i.e. it's in a final ConnectionStatus and address has been published to LibraryMixer. */
     bool getConnectionReadiness();
 
+    /* Returns whether auto-connection config is enabled. */
+    bool getConnectionAutoConfigEnabled();
+
     /* Returns our current connection status. */
     ConnectionStatus getConnectionStatus();
 
 signals:
-    /* Used to inform the GUI of changes to the current ConnectionStatus.
+    /* Used to inform GUI of changes to the current ConnectionStatus, as well as whether auto-connection config is enabled.
        All values of newStatus should be members of ConnectionStatus. */
-    void connectionStateChanged(int newStatus);
+    void connectionStateChanged(int newStatus, bool autoConfigEnabled);
 
     /* Emitted whenever our connection becomes fully ready, or whenever we go from ready to not ready.
        The difference between this and connectionStateChanged with a final state is that we can be in a final state,
@@ -135,8 +138,8 @@ private:
     int getRandomPortNumber() const;
 
     /* Sets the connectionStatus to newStatus and clears out any state-dependent variables and emits the signal.
-       Returns the set status. */
-    ConnectionStatus setNewConnectionStatus(ConnectionStatus newStatus);
+       Returns true on success. */
+    bool setNewConnectionStatus(ConnectionStatus newStatus);
 
     /* Called outside of the mutex on any operation that may have changed the connection status.
        Emits signals if they are called for based on the newStatus, enabling signal recipients to access ownConnectivityManager's methods that use mutexes.
@@ -148,8 +151,10 @@ private:
        If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
        If we have sent a stun packet, checks if we have hit the timeout.
        If we have hit the timeout, returns -1, if we sent a STUN packet returns 1, otherwise if we're waiting, returns 0.
-       If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
-    int handleStunStep(const QString& stunServerName, const struct sockaddr_in *stunServer, UdpSorter *sendSocket, ushort returnPort = 0);
+       If a return port is provided then the STUN packet will include that as a Response-Port attribute.
+       If extendedTimeout is true, then we will give a much longer timeout period. Used for terminal steps. */
+    int handleStunStep(const QString& stunServerName, const struct sockaddr_in *stunServer, UdpSorter *sendSocket,
+                       ushort returnPort = 0, bool extendedTimeout = false);
 
     /* Sends a STUN packet.
        If a return port is provided then the STUN packet will include that as a Response-Port attribute. */
@@ -168,6 +173,10 @@ private:
 
     std::list<std::string> networkInterfaceList;
 
+    /* Whether auto-connection configuration is enabled.
+       This controls which of the two connection configuration branches we follow. */
+    bool autoConfigEnabled;
+
     /* The current state of the connection's setup.
        The ConnectionStatus enum is defined in the peers interface and shared with the GUI. */
     ConnectionStatus connectionStatus;
@@ -178,14 +187,13 @@ private:
         CONTACT_LIBRARYMIXER_PENDING,
         /* Our own connection state is discovered, so update LibraryMixer with that information. */
         CONTACT_LIBRARYMIXER_UPDATE,
-        /* Our own connection state discovery was a total failure, as a fallback have LibraryMixer set our IP information itself. */
+        /* Either auto-config is disabled, or our own connection state discovery was a total failure,
+           have LibraryMixer set our IP information itself. */
         CONTACT_LIBRARYMIXER_GET_ADDRESS_FROM_LIBRARYMIXER,
         /* We have updated LibraryMixer with our current address info. We are done, until next time our address info changes. */
         CONTACT_LIBRARYMIXER_DONE
     };
     ContactLibraryMixerState contactLibraryMixerState;
-    /* Whether we should emit a connection ready signal after we finish updating LibraryMixer. */
-    bool connectionReadyAfterUpdate;
 
     /* For each step in our connectionStatus that involves sending STUN requests, this contains when we will consider that step to be timed out and failed. */
     time_t connectionSetupStepTimeOutAt;

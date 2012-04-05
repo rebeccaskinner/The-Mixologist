@@ -60,6 +60,8 @@ public:
         TRAY_MESSAGE_CLICKED_RESTRICTED_NAT_INFO,
         /* Popup information about how to fix the symmetric NAT we have. */
         TRAY_MESSAGE_CLICKED_SYMMETRIC_NAT_INFO,
+        /* Popup information about problems with a manual connection. */
+        TRAY_MESSAGE_CLICKED_MANUAL_CONNECTION_FAIL,
         /* Switch to the transfers dialog. */
         TRAY_MESSAGE_CLICKED_TRANSFERS_DIALOG,
         /* Open the downloads folder. */
@@ -99,7 +101,7 @@ private slots:
     void updateHashingInfo(const QString&);
 
     /* Updates the status bar display with the status of our connection set up. */
-    void updateConnectionStatus(int newStatus);
+    void updateConnectionStatus(int newStatus, bool autoConfigEnabled);
 
     /* Updates the status bar display with the status of our connection readiness. */
     void updateConnectionReadiness(bool ready);
@@ -142,7 +144,9 @@ private:
         INFO_TEXT_UDP_HOLE_PUNCHING,
         INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING,
         INFO_TEXT_SYMMETRIC_NAT,
-        INFO_TEXT_UNKNOWN_CONNECTION
+        INFO_TEXT_UNKNOWN_CONNECTION,
+        INFO_TEXT_MANUAL_OKAY,
+        INFO_TEXT_MANUAL_BAD
     };
     void displayInfoText(InfoTextType type);
 

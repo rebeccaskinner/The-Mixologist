@@ -54,6 +54,9 @@ public:
     /* Returns whether our connection is currently ready. */
     virtual bool getConnectionReadiness();
 
+    /* Returns whether auto-connection config is enabled. */
+    virtual bool getConnectionAutoConfigEnabled();
+
     /* Returns our current connection status. */
     virtual ConnectionStatus getConnectionStatus();
 

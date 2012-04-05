@@ -54,11 +54,9 @@ PreferencesWindow::PreferencesWindow(QWidget *parent, Qt::WFlags flags)
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     grp->addAction(ui.actionConnection);
-    if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
-        connectionDialog = new ServerDialog(this);
-        _pages.insert(ui.actionConnection, connectionDialog);
-        ui.stackPages->insertWidget(3, connectionDialog);
-    } else ui.actionConnection->setVisible(false);
+    connectionDialog = new ServerDialog(this);
+    _pages.insert(ui.actionConnection, connectionDialog);
+    ui.stackPages->insertWidget(3, connectionDialog);
 
     connect(grp, SIGNAL(triggered(QAction *)), this, SLOT(showPage(QAction *)));
     ui.stackPages->setCurrentWidget(generalDialog);

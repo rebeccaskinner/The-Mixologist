@@ -36,7 +36,7 @@
 
 p3Peers::p3Peers(QString &ownName)
     :ownName(ownName) {
-    connect(ownConnectivityManager, SIGNAL(connectionStateChanged(int)), this, SIGNAL(connectionStateChanged(int)));
+    connect(ownConnectivityManager, SIGNAL(connectionStateChanged(int, bool)), this, SIGNAL(connectionStateChanged(int, bool)));
     connect(ownConnectivityManager, SIGNAL(ownConnectionReadinessChanged(bool)), this, SIGNAL(ownConnectionReadinessChanged(bool)));
 }
 
@@ -55,6 +55,10 @@ QString p3Peers::getOwnName(){
 
 bool p3Peers::getConnectionReadiness() {
     return ownConnectivityManager->getConnectionReadiness();
+}
+
+bool p3Peers::getConnectionAutoConfigEnabled() {
+    return ownConnectivityManager->getConnectionAutoConfigEnabled();
 }
 
 ConnectionStatus p3Peers::getConnectionStatus() {

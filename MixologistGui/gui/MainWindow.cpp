@@ -41,7 +41,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     /* Invoke the Qt Designer generated QObject setup routine */
     ui.setupUi(this);
 
-    connect(peers, SIGNAL(connectionStateChanged(int)), this, SLOT(updateConnectionStatus(int)));
+    connect(peers, SIGNAL(connectionStateChanged(int,bool)), this, SLOT(updateConnectionStatus(int,bool)));
     connect(peers, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(updateConnectionReadiness(bool)));
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
@@ -115,7 +115,6 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     movie->setSpeed(100); //100%
     connectionStatusHorizontalLayout->addWidget(connectionStatusMovieLabel);
     connectionStatusLabel = new QLabel(connectionStatus);
-    connectionStatusLabel->setText("Initializing");
     connectionStatusLabel->setMargin(5);
     connectionStatusHorizontalLayout->addWidget(connectionStatusLabel);
     ui.statusbar->addWidget(connectionStatus);
@@ -144,6 +143,10 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     ratesstatus = new RatesStatus();
     ui.statusbar->addPermanentWidget(ratesstatus);
 
+    /* Load up starting values. */
+    updateConnectionStatus(peers->getConnectionStatus(), peers->getConnectionAutoConfigEnabled());
+    updateConnectionReadiness(peers->getConnectionReadiness());
+
     /* System tray */
     trayIconMenu = new QMenu(this);
     QObject::connect(trayIconMenu, SIGNAL(aboutToShow()), this, SLOT(updateMenu()));
@@ -163,7 +166,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
 
     trayIcon->show();
 
-    //Load backed up window settings
+    /* Load backed up window settings. */
     GuiSettingsUtil::loadWidgetInformation(this);
 }
 
@@ -278,14 +281,17 @@ void MainWindow::updateHashingInfo(const QString &newText) {
     }
 }
 
-void MainWindow::updateConnectionStatus(int newStatus) {
+void MainWindow::updateConnectionStatus(int newStatus, bool autoConfigEnabled) {
     switch (newStatus) {
     case CONNECTION_STATUS_FINDING_STUN_FRIENDS:
     case CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS:
-        connectionStatusLabel->setText("Auto Connection Config");
+        connectionStatusLabel->setText("Initializing");
         break;
     case CONNECTION_STATUS_STUNNING_INITIAL:
-        connectionStatusLabel->setText("Auto Connection Config: Probing");
+        if (autoConfigEnabled)
+            connectionStatusLabel->setText("Auto Connection Config: Probing");
+        else
+            connectionStatusLabel->setText("Internet: Manual Connection (testing)");
         break;
     case CONNECTION_STATUS_TRYING_UPNP:
     case CONNECTION_STATUS_STUNNING_UPNP_TEST:
@@ -298,12 +304,22 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         break;
     /* If we get here, we are done with connection set up. */
     case CONNECTION_STATUS_UNFIREWALLED:
-        connectionStatusLabel->setText("Direct Connection");
-        infoTextTypeToDisplay = INFO_TEXT_UNFIREWALLED;
+        if (autoConfigEnabled) {
+            connectionStatusLabel->setText("Direct Connection");
+            infoTextTypeToDisplay = INFO_TEXT_UNFIREWALLED;
+        } else {
+            connectionStatusLabel->setText("Manual Connection (direct)");
+            infoTextTypeToDisplay = INFO_TEXT_MANUAL_OKAY;
+        }
         break;
     case CONNECTION_STATUS_PORT_FORWARDED:
-        connectionStatusLabel->setText("Port-forwarded Connection");
-        infoTextTypeToDisplay = INFO_TEXT_PORT_FORWARDED;
+        if (autoConfigEnabled) {
+            connectionStatusLabel->setText("Port-forwarded Connection");
+            infoTextTypeToDisplay = INFO_TEXT_PORT_FORWARDED;
+        } else {
+            connectionStatusLabel->setText("Manual Connection (port-forwarded)");
+            infoTextTypeToDisplay = INFO_TEXT_MANUAL_OKAY;
+        }
         break;
     case CONNECTION_STATUS_UPNP_IN_USE:
         connectionStatusLabel->setText("UPNP-configured Connection");
@@ -347,13 +363,25 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         break;
     case CONNECTION_STATUS_UNKNOWN:
     default:
-        connectionStatusLabel->setText("Unknown");
-        infoTextTypeToDisplay = INFO_TEXT_UNKNOWN_CONNECTION;
-        if (isNotifyBadInternet())
-            mainwindow->trayIcon->showMessage("Connection Warning",
-                                              QString("The Mixologist was not able to automatically configure your connection. ") +
-                                              "You may experience problems connecting to friends.",
-                                              QSystemTrayIcon::Information, 30);
+        if (autoConfigEnabled) {
+            connectionStatusLabel->setText("Unknown");
+            infoTextTypeToDisplay = INFO_TEXT_UNKNOWN_CONNECTION;
+            if (isNotifyBadInternet())
+                mainwindow->trayIcon->showMessage("Connection Warning",
+                                                  QString("The Mixologist was not able to automatically configure your connection. ") +
+                                                  "You may experience problems connecting to friends.",
+                                                  QSystemTrayIcon::Information, 30);
+        } else {
+            connectionStatusLabel->setText("Manual Connection (test failed)");
+            infoTextTypeToDisplay = INFO_TEXT_MANUAL_BAD;
+            if (isNotifyBadInternet()) {
+                mainwindow->trayMessageClickedAction = TRAY_MESSAGE_CLICKED_MANUAL_CONNECTION_FAIL;
+                mainwindow->trayIcon->showMessage("Connection Warning",
+                                                  QString("You have auto-connection config disabled, but the test of your connection failed. ") +
+                                                  "You may experience problems connecting to friends.",
+                                                  QSystemTrayIcon::Information, 30);
+            }
+        }
     }
     if (connectionStatusInFinalState(newStatus)) {
         if (peers->getConnectionReadiness()) {
@@ -363,7 +391,7 @@ void MainWindow::updateConnectionStatus(int newStatus) {
         }
         /* If we are in a final state, but the connection is not yet ready, that must mean that we are currently updating our info to LibraryMixer. */
         else {
-            connectionStatusLabel->setText("Publishing address to friends");
+            connectionStatusLabel->setText("Publishing Address to Friends");
         }
     }
 }
@@ -372,7 +400,7 @@ void MainWindow::updateConnectionReadiness(bool ready) {
     if (ready) {
         /* If we are now ready, make sure we didn't previously defer showing the Internet connection status in favor of displaying that we were
            publishing our address to LibraryMixer. */
-        updateConnectionStatus(peers->getConnectionStatus());
+        updateConnectionStatus(peers->getConnectionStatus(), peers->getConnectionAutoConfigEnabled());
 
         connectionStatusMovieLabel->hide();
         hashingHolder->show();
@@ -426,6 +454,8 @@ void MainWindow::trayMsgClicked() {
         displayInfoText(INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING);
     } else if (TRAY_MESSAGE_CLICKED_SYMMETRIC_NAT_INFO == trayMessageClickedAction) {
         displayInfoText(INFO_TEXT_SYMMETRIC_NAT);
+    } else if (TRAY_MESSAGE_CLICKED_MANUAL_CONNECTION_FAIL == trayMessageClickedAction) {
+        displayInfoText(INFO_TEXT_MANUAL_BAD);
     }
 }
 
@@ -434,13 +464,15 @@ void MainWindow::trayMsgClicked() {
 void MainWindow::displayInfoText(InfoTextType type) {
     QMessageBox helpBox(this);
     QString info;
+    QAbstractButton* disableAutoConfig = NULL;
+    QAbstractButton* reenableAutoConfig = NULL;
     if (INFO_TEXT_UNFIREWALLED == type) {
         info += "<b>Direct Connection</b>";
         info += "<p>You've got a direct, unrestricted connection to the Internet.</p>";
         info += "<p>Everything's doing great!</p>";
     } else if (INFO_TEXT_PORT_FORWARDED == type) {
         info += "<b>Port-forwarded Connection</b>";
-        info += "<p>You're behind a firewall that has been properly configured to enable the Mixologist to connect.</p>";
+        info += "<p>You're behind a firewall that is forwarding traffic to the Mixologist.</p>";
         info += "<p>Everything's doing great!</p>";
     } else if (INFO_TEXT_UPNP == type) {
         info += "<b>UPNP-forwarded Connection</b>";
@@ -464,13 +496,26 @@ void MainWindow::displayInfoText(InfoTextType type) {
         info += "<p>You might be able to connect to your friends still, or you might not.</p>";
         info += "<p>Try restarting to resolve this problem.</p>";
         info += "<p>If you always see this message when you have a working Internet connection, consider filing a bug report with details about your network situation.</p>";
+    } else if (INFO_TEXT_MANUAL_OKAY == type) {
+        info += "<b>Manually Configured</b>";
+        info += "<p>You've disabled auto-connection configuration in Options.</p>";
+        info += "<p>Everything appears to be doing great!</p>";
+        info += "<p>However, if you recently closed and then quickly reopened the Mixologist it is possible this is a false-positive.</p>";
+        info += "<p>If you see this message and from when you opened the Mixologist this time it was more than an hour since the previous time it was open, you can be pretty sure everything is doing great!</p>";
+    } else if (INFO_TEXT_MANUAL_BAD == type) {
+        info += "<b>Manually Configured</b>";
+        info += "<p>You've disabled auto-connection configuration in Options.</p>";
+        info += "<p>However, when the Mixologist tested its connection, it still was being blocked by a firewall.</p>";
+        info += "<p>You may not be able to connect to your friends that have firewalls at all, and your connections to all friends may be slow, taking up to 5 minutes or more after they come online.</p>";
     } else {
         return;
     }
 
+    /* Display the special fix-it message for problematic connections. */
     if (INFO_TEXT_UDP_HOLE_PUNCHING == type ||
         INFO_TEXT_RESTRICTED_CONE_UDP_HOLE_PUNCHING == type ||
-        INFO_TEXT_SYMMETRIC_NAT == type) {
+        INFO_TEXT_SYMMETRIC_NAT == type ||
+        INFO_TEXT_MANUAL_BAD == type) {
         PeerDetails detail;
         QString ownIP;
         QString ownPort;
@@ -479,12 +524,40 @@ void MainWindow::displayInfoText(InfoTextType type) {
             ownPort = QString::number(detail.localPort);
         }
         info += "<p><b>Fixing the Problem</b></p>";
-        info += "<p>Ideally, you should fix this by configuring your firewall to open up a port for your computer.</p>";
-        info += QString("<p>If you don't know how to configure your router, ") +
+        if (INFO_TEXT_MANUAL_BAD != type) {
+            info += "<p>Ideally, you should fix this by configuring your firewall to open up a port for your computer.</p>";
+        } else {
+            info += "<p>This is very likely an indication that something went wrong when you were configuring your firewall. If you want to give it another shot, here's the information again:</p>";
+        }
+        info += QString("<p>For help on configuring your router, ") +
                 "<a href='http://www.pcwintech.com/port-forwarding-guides'>click here for a guide</a> (not affiliated with the Mixologist).</p>";
         info += "<p>To use the guide, first find the brand of your router, and then choose the model number that best matches the model written on your router.</p>";
         info += QString("<p>When following the guide, set the internal IP address to forward to as <b>" + ownIP + "</b> (your computer's internal network IP), and both the external and internal port as <b>") + ownPort +
                 "</b> (the Mixologist's port), with both TCP and UDP traffic forwarded.</p>";
+
+        if (INFO_TEXT_MANUAL_BAD != type) {
+            info += "<p>After you have done everything in the guide to configure your router, click the Turn Off Auto Config button to let the Mixologist know you want to switch to manually configured router mode. (You're totally awesome and savvy).</p>";
+
+            helpBox.addButton(QMessageBox::Cancel);
+            disableAutoConfig = helpBox.addButton("Turn Off Auto Config", QMessageBox::AcceptRole);
+
+            QSettings settings(*mainSettings, QSettings::IniFormat, this);
+            if (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT) {
+                disableAutoConfig->setDisabled(true);
+                disableAutoConfig->setToolTip("Auto-config has already been disabled. Restart for this to take effect.");
+            }
+        } else {
+            info += "<p>Alternatively, if you'd like to give auto-connection configuration another shot, you can do so now.</p>";
+
+            helpBox.addButton(QMessageBox::Cancel);
+            reenableAutoConfig = helpBox.addButton("Re-enable Auto Config", QMessageBox::AcceptRole);
+
+            QSettings settings(*mainSettings, QSettings::IniFormat, this);
+            if (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT) {
+                reenableAutoConfig->setDisabled(true);
+                reenableAutoConfig->setToolTip("Auto-config has already been re-enabled. Restart for this to take effect.");
+            }
+        }
     }
 
     helpBox.setText(info);
@@ -494,6 +567,42 @@ void MainWindow::displayInfoText(InfoTextType type) {
     show();
     raise();
     activateWindow();
+
+    bool askExit = false;
+
+    if (disableAutoConfig != NULL &&
+        (helpBox.clickedButton() == disableAutoConfig)) {
+        int clicked = QMessageBox::information(this,
+                                               "Disabling Connection Auto-Config",
+                                               "If you change your mind in the future, you can turn connection auto-config back on under Options. Proceed?",
+                                               QMessageBox::Yes, QMessageBox::No);
+        if (clicked == QMessageBox::Yes) {
+            PeerDetails ownDetails;
+            peers->getPeerDetails(peers->getOwnLibraryMixerId(), ownDetails);
+            QSettings settings(*mainSettings, QSettings::IniFormat, this);
+            settings.setValue("Network/AutoOrPort", ownDetails.localPort);
+            askExit = true;
+        }
+    }
+
+    if (reenableAutoConfig != NULL &&
+        (helpBox.clickedButton() == reenableAutoConfig)) {
+        PeerDetails ownDetails;
+        peers->getPeerDetails(peers->getOwnLibraryMixerId(), ownDetails);
+        QSettings settings(*mainSettings, QSettings::IniFormat, this);
+        settings.setValue("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT);
+        askExit = true;
+    }
+
+    if (askExit) {
+        if (QMessageBox::Yes ==
+            QMessageBox::information(this,
+                                     "Restart Mixologist",
+                                     "Changes will take place on when you restart the Mixologist, exit now?",
+                                     QMessageBox::Yes, QMessageBox::No)) {
+            doQuit();
+        }
+    }
 }
 
 /*

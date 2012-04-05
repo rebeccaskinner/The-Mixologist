@@ -75,24 +75,8 @@ PeersDialog::PeersDialog(QWidget *parent)
     /* Set up the default sort. */
     ui.friendsList->sortItems(FRIEND_ICON_AND_SORT_COLUMN, Qt::AscendingOrder);
 
-    /* We will fill the main friendsList box with a placeholder letting users know that the connection is initializing. */
-    QList<QTreeWidgetItem *> initialItems;
-    QTreeWidgetItem *placeholderItem = new QTreeWidgetItem(ui.friendsList, 0);
-    placeholderItem->setText(FRIEND_ICON_AND_SORT_COLUMN, "\n\n\nThe Mixologist is initializing your connection, you'll be ready to connect to your friends soon!");
-    placeholderItem->setTextColor(FRIEND_ICON_AND_SORT_COLUMN, Qt::lightGray);
-    placeholderItem->setTextAlignment(FRIEND_ICON_AND_SORT_COLUMN, Qt::AlignHCenter);
-    /* We set the size of the item to be 50,000, an arbitrary number that should be large enough that it completely fills any screen. */
-    placeholderItem->setSizeHint(FRIEND_ICON_AND_SORT_COLUMN, QSize(50000, 50000));
-    initialItems.append(placeholderItem);
-    /* We disallow selections of the big placeholder. */
-    ui.friendsList->setSelectionMode(QAbstractItemView::NoSelection);
-    ui.friendsList->insertTopLevelItems(0, initialItems);
-    /* We don't need to show the header for this. */
-    ui.friendsList->header()->hide();
-    /* We hide the extraneous columns so we can easily resize the column we're using to max width. */
-    ui.friendsList->hideColumn(FRIEND_NAME_COLUMN);
-    ui.friendsList->hideColumn(FRIEND_STATUS_COLUMN);
-    ui.friendsList->header()->setResizeMode(FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Stretch);
+    /* Set the starting readiness level */
+    connectionReadinessChanged(peers->getConnectionReadiness());
 }
 
 void PeersDialog::friendsListContextMenu(QPoint point) {
@@ -280,21 +264,55 @@ void PeersDialog::updatePeerStatusString(unsigned int friend_librarymixer_id, co
 }
 
 void PeersDialog::connectionReadinessChanged(bool ready) {
+    /* We only want to show the loading screen once, on initial load.
+       This is to say that we shouldn't blank out the friends list each time the Internet-connectivity changes. */
+    static bool firstTimeRun = true;
+    QSettings settings(*startupSettings, QSettings::IniFormat);
     if (ready) {
-        /* Now that the connection is ready, we can begin displaying the friends list. */
-        QObject::connect(guiNotify, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
+        /* We can now connect the friendsChanged() signal to update the view.
+           We disconnect just in case. If we weren't already connected, no problem. If we were, prevents duplicates. */
+        disconnect(guiNotify, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
+        connect(guiNotify, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
 
         insertPeers();
-        /* Undo all the tweaks we did to set the placeholder text. */
+        ui.friendsList->setSelectionMode(QAbstractItemView::SingleSelection);
+
+        /* Enable all the headers and sizing. */
         ui.friendsList->showColumn(FRIEND_NAME_COLUMN);
         ui.friendsList->showColumn(FRIEND_STATUS_COLUMN);
         ui.friendsList->header()->setResizeMode(FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Custom);
         /* For some reason, when inserting an icon into the friendsList, a 4 pixel margin in inserted, and I can't find any way to disable it.
            Therefore, in order to avoid the icon being cut off, we make the column 30 pixels. */
         ui.friendsList->header()->resizeSection(FRIEND_ICON_AND_SORT_COLUMN, 30);
-        ui.friendsList->setSelectionMode(QAbstractItemView::SingleSelection);
+
         ui.friendsList->header()->show();
+    } else {
+        if (firstTimeRun) {
+            /* We will fill the main friendsList box with a placeholder letting users know that the connection is initializing. */
+            QList<QTreeWidgetItem *> initialItems;
+            QTreeWidgetItem *placeholderItem = new QTreeWidgetItem(ui.friendsList, 0);
+            placeholderItem->setText(FRIEND_ICON_AND_SORT_COLUMN, "\n\n\nThe Mixologist is initializing your connection, you'll be ready to connect to your friends soon!");
+            placeholderItem->setTextColor(FRIEND_ICON_AND_SORT_COLUMN, Qt::lightGray);
+            placeholderItem->setTextAlignment(FRIEND_ICON_AND_SORT_COLUMN, Qt::AlignHCenter);
+            /* We set the size of the item to be 50,000, an arbitrary number that should be large enough that it completely fills any screen. */
+            placeholderItem->setSizeHint(FRIEND_ICON_AND_SORT_COLUMN, QSize(50000, 50000));
+            initialItems.append(placeholderItem);
+            ui.friendsList->insertTopLevelItems(0, initialItems);
+
+            /* We disallow selections of the big placeholder. */
+            ui.friendsList->setSelectionMode(QAbstractItemView::NoSelection);
+
+            /* We hide the extraneous columns so we can easily resize the column we're using to max width. */
+            ui.friendsList->hideColumn(FRIEND_NAME_COLUMN);
+            ui.friendsList->hideColumn(FRIEND_STATUS_COLUMN);
+            ui.friendsList->header()->setResizeMode(FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Stretch);
+
+            /* We don't need to show the header for this. */
+            ui.friendsList->header()->hide();
+        }
     }
+
+    firstTimeRun = false;
 }
 
 void PeersDialog::addFriendClicked() {

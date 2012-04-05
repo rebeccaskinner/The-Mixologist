@@ -33,6 +33,7 @@ ServerDialog::ServerDialog(QWidget *parent)
     ui.setupUi(this);
 
     connect(ui.mixologyServer, SIGNAL(editingFinished()), this, SLOT(editedServer()));
+    connect(ui.disableAutoConfig, SIGNAL(clicked(bool)), this, SLOT(autoConfigClicked(bool)));
 
     /* Setup display */
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
@@ -45,21 +46,47 @@ ServerDialog::ServerDialog(QWidget *parent)
     ui.portNumber->setMinimum(Peers::MIN_PORT);
     ui.portNumber->setMaximum(Peers::MAX_PORT);
 
+    if (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT) {
+        ui.disableAutoConfig->setChecked(false);
+    } else {
+        ui.disableAutoConfig->setChecked(true);;
+    }
+
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     ui.mixologyServer->setText(serverSettings.value("MixologyServer", DEFAULT_MIXOLOGY_SERVER).toString());
+
+    showAdvanced(settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool());
 }
 
 bool ServerDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
-    settings.setValue("Network/PortNumber", ui.portNumber->value());
+    if (ui.disableAutoConfig->isChecked()) {
+        settings.setValue("Network/AutoOrPort", ui.portNumber->value());
+    } else {
+        settings.setValue("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT);
+    }
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     serverSettings.setValue("MixologyServer", ui.mixologyServer->text());
 
     return true;
 }
 
+void ServerDialog::showAdvanced(bool enabled) {
+    ui.remoteBox->setVisible(enabled);
+    /* Only show the ports if we are both on advanced mode and auto-config is disabled. */
+    ui.portNumber->setVisible(enabled && ui.disableAutoConfig->isChecked());
+    ui.portLabel->setVisible(enabled && ui.disableAutoConfig->isChecked());
+}
+
 void ServerDialog::editedServer(){
     if (ui.mixologyServer->text().isEmpty()){
         ui.mixologyServer->setText(DEFAULT_MIXOLOGY_SERVER);
     }
+}
+
+void ServerDialog::autoConfigClicked(bool autoConfigDisabled) {
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    /* Only show the ports if we are both on advanced mode and auto-config is disabled. */
+    ui.portNumber->setVisible((autoConfigDisabled && settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()));
+    ui.portLabel->setVisible((autoConfigDisabled && settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()));
 }
