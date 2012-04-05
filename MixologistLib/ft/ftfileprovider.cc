@@ -61,7 +61,7 @@ bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
     fileInfo.hash = hash;
     fileInfo.size = fullFileSize;
     fileInfo.path = path;
-    fileInfo.transfered = lastRequestedEnd;
+    fileInfo.transferred = lastRequestedEnd;
     fileInfo.lastTransfer = lastRequestTime;
     fileInfo.status = FT_STATE_TRANSFERRING;
 

@@ -53,7 +53,7 @@
 #define UPLOAD_FILE_COLUMN         0
 #define UPLOAD_FRIEND_COLUMN       1
 #define UPLOAD_SPEED_COLUMN        2
-#define UPLOAD_TOTAL_SIZE_COLUMN   3
+#define UPLOAD_TRANSFERRED_COLUMN   3
 #define UPLOAD_STATUS_COLUMN       4
 #define UPLOAD_LIBRARYMIXER_ID     5
 
@@ -114,7 +114,7 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     ui.uploadsList->resizeColumnToContents(UPLOAD_FILE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_FRIEND_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_SPEED_COLUMN);
-    ui.uploadsList->resizeColumnToContents(UPLOAD_TOTAL_SIZE_COLUMN);
+    ui.uploadsList->resizeColumnToContents(UPLOAD_TRANSFERRED_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_STATUS_COLUMN);
 
     ui.downloadsList->sortItems(0, Qt::AscendingOrder);
@@ -436,7 +436,7 @@ float TransfersDialog::insertUploads() {
         QTreeWidgetItem *item = new QTreeWidgetItem();
         item->setText(UPLOAD_FILE_COLUMN, it->path);
         item->setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(it->peers.front().librarymixer_id));
-        item->setText(UPLOAD_TOTAL_SIZE_COLUMN, QString::number(it->size / 1024, 'f', 0).append(" K"));
+        item->setText(UPLOAD_TRANSFERRED_COLUMN, QString::number(it->transferred / 1024, 'f', 0).append(" K"));
         QString status;
         switch (it->peers.front().status) {
             case FT_STATE_WAITING:
@@ -471,7 +471,7 @@ float TransfersDialog::insertUploads() {
     ui.uploadsList->resizeColumnToContents(UPLOAD_FILE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_FRIEND_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_SPEED_COLUMN);
-    ui.uploadsList->resizeColumnToContents(UPLOAD_TOTAL_SIZE_COLUMN);
+    ui.uploadsList->resizeColumnToContents(UPLOAD_TRANSFERRED_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_STATUS_COLUMN);
     transfers.clear();
 

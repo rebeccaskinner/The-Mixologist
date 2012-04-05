@@ -127,7 +127,7 @@ class peerInfo {
 public:
     peerInfo(unsigned int _librarymixer_id)
         :librarymixer_id(_librarymixer_id), state(PQIPEER_NOT_ONLINE), actualRate(0),
-        offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransfered(0), nResets(0),
+        offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransferred(0), nResets(0),
         rtt(0), rttActive(false), rttStart(0), rttOffset(0),mRateChange(1), fastStart(true) {return;}
 
     unsigned int librarymixer_id;
@@ -143,7 +143,7 @@ public:
 
     time_t lastRequestTime;
     time_t lastReceiveTime;
-    uint32_t pastTickTransfered;
+    uint32_t pastTickTransferred;
     uint32_t nResets; /* count to disable non-existant files */
 
     /* rtt rate control

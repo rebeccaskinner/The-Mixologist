@@ -295,8 +295,8 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
     }
 
     /* update rate, weighing 90% previous number and 10% current number */
-    info.actualRate = info.actualRate * 0.5 + info.pastTickTransfered * 0.5;
-    info.pastTickTransfered = 0;
+    info.actualRate = info.actualRate * 0.5 + info.pastTickTransferred * 0.5;
+    info.pastTickTransferred = 0;
 
     /* If more time has already passed in this rtt period than FT_TM_STD_RTT (our target time)
      * then halt any further rate increases for this period, since we were already too aggressive. */
@@ -366,7 +366,7 @@ void ftTransferModule::locked_recvDataUpdateStats(peerInfo &info, uint64_t offse
     info.lastReceiveTime = ts;
     info.nResets = 0;
     info.state = PQIPEER_DOWNLOADING;
-    info.pastTickTransfered += chunk_size;
+    info.pastTickTransferred += chunk_size;
 
     //If we have completed our rtt measurement cycle
     if ((info.rttActive) && (info.rttOffset == offset + chunk_size)) {

@@ -59,7 +59,7 @@ struct uploadFileInfo {
 
     uint32_t status;
 
-    uint64_t transfered; //Amount uploaded in bytes
+    uint64_t transferred; //Amount uploaded in bytes
     double totalTransferRate; //Transfer rate total of all peers in kb
     time_t lastTransfer; //Time of the last transfer
     QList<TransferInfo> peers;
