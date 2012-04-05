@@ -262,8 +262,8 @@ Control *Init::createControl(QString ownName) {
 
     notify = new pqiNotify();
 
-    friendsConnectivityManager = new FriendsConnectivityManager();
     ownConnectivityManager = new OwnConnectivityManager();
+    friendsConnectivityManager = new FriendsConnectivityManager();
 
     aggregatedConnectionsToFriends = new AggregatedConnectionsToFriends();
     friendsConnectivityManager->addMonitor(aggregatedConnectionsToFriends);

@@ -141,6 +141,12 @@ public:
     /* Returns the logged in user's own name. */
     virtual QString getOwnName() = 0;
 
+    /* Returns whether our connection is currently ready. */
+    virtual bool getConnectionReadiness() = 0;
+
+    /* Returns our current connection status. */
+    virtual ConnectionStatus getConnectionStatus() = 0;
+
     /* List of LibraryMixer ids for all online friends. */
     virtual void getOnlineList(QList<unsigned int> &friend_ids) = 0;
 
@@ -181,6 +187,11 @@ signals:
     /* Used to inform the GUI of changes to the current ConnectionStatus.
        All values of newStatus should be members of ConnectionStatus. */
     void connectionStateChanged(int newStatus);
+
+    /* Emitted whenever our connection becomes fully ready, or whenever we go from ready to not ready.
+       The difference between this and connectionStateChanged with a final state is that we can be in a final state,
+       but still waiting to upload out updated address info to LibraryMixer, and the connection should not be considered ready yet. */
+    void ownConnectionReadinessChanged(bool ready);
 };
 
 #endif

@@ -63,7 +63,7 @@ public slots:
         void updatePeerStatusString(unsigned int friend_librarymixer_id, const QString& status_string);
 
         /* Used to enable the friendsList when we our connection is ready to go. */
-        void connectionStateChanged(int newStatus);
+        void connectionReadinessChanged(bool ready);
 
 private slots:
         /* Opens the Mixology server (generally LibraryMixer) in the browser to manage friends. */

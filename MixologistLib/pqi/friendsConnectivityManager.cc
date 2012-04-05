@@ -68,6 +68,8 @@ FriendsConnectivityManager::FriendsConnectivityManager()
      friendsListUpdateTime(0),
      outboundConnectionTryAllTime(0) {
     connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(friendsListUpdated()));
+    connect(ownConnectivityManager, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(setEnabled(bool)));
+
 }
 
 void FriendsConnectivityManager::tick() {

@@ -45,7 +45,7 @@
 OwnConnectivityManager::OwnConnectivityManager()
     :connectionStatus(CONNECTION_STATUS_FINDING_STUN_FRIENDS),
      contactLibraryMixerState(CONTACT_LIBRARYMIXER_PENDING),
-     enableFriendsConnectAfterUpdate(false),
+     connectionReadyAfterUpdate(false),
      connectionSetupStepTimeOutAt(0),
      udpTestSocket(NULL), mUpnpMgr(NULL),
      stunServer1(NULL), stunServer2(NULL) {
@@ -117,12 +117,15 @@ void OwnConnectivityManager::select_NetInterface_OpenPorts() {
         log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Opened UDP main port on " + QString::number(ntohs(ownLocalAddress.sin_port)));
         connect(udpMainSocket, SIGNAL(receivedStunBindingResponse(QString,QString,ushort,ushort, QString)),
                 this, SLOT(receivedStunBindingResponse(QString,QString,ushort,ushort,QString)));
+
+        /* This is ugly here, but we can't put this in the constructor for friendsConnectivityManager because this doesn't run until much later. */
         connect(udpMainSocket, SIGNAL(receivedUdpTunneler(uint,QString,ushort)),
                 friendsConnectivityManager, SLOT(receivedUdpTunneler(uint,QString,ushort)));
         connect(udpMainSocket, SIGNAL(receivedUdpConnectionNotice(uint,QString,ushort)),
                 friendsConnectivityManager, SLOT(receivedUdpConnectionNotice(uint,QString,ushort)));
         connect(udpMainSocket, SIGNAL(receivedTcpConnectionRequest(uint,QString,ushort)),
                 friendsConnectivityManager, SLOT(receivedTcpConnectionRequest(uint,QString,ushort)));
+
     }
 
     aggregatedConnectionsToFriends->init_listener();
@@ -150,7 +153,7 @@ void OwnConnectivityManager::shutdown() {
 
     connectionStatus = CONNECTION_STATUS_UNKNOWN;
     contactLibraryMixerState = CONTACT_LIBRARYMIXER_PENDING;
-    enableFriendsConnectAfterUpdate = false;
+    connectionReadyAfterUpdate = false;
     connectionSetupStepTimeOutAt = 0;
 
     delete stunServer1;
@@ -160,151 +163,157 @@ void OwnConnectivityManager::shutdown() {
 }
 
 void OwnConnectivityManager::netTick() {
-    QMutexLocker stack(&ownConMtx);
-    if (CONNECTION_STATUS_FINDING_STUN_FRIENDS == connectionStatus) {
-        if (connectionSetupStepTimeOutAt == 0) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Initiating automatic connection configuration");
-
-            QList<struct sockaddr_in> friendsToTry;
-            friendsConnectivityManager->getExternalAddresses(friendsToTry);
-            foreach (struct sockaddr_in address, friendsToTry) {
-                if (stunServer1 && stunServer2) break;
-                sendStunPacket(addressToString(&address), &address, udpTestSocket);
-            }
-
-            connectionSetupStepTimeOutAt = time(NULL) + STUN_TEST_TIMEOUT;
-        } else if (time(NULL) > connectionSetupStepTimeOutAt) {
-            setNewConnectionStatus(CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS);
-        }
-    } else if (CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS == connectionStatus) {
-        if (connectionSetupStepTimeOutAt == 0) {
-            bool dnsFail = false;
-
-            foreach (QString currentServer, fallbackStunServers) {
-                struct sockaddr_in* currentAddress = new sockaddr_in;
-                sockaddr_clear(currentAddress);
-                /* 3478 is the standard STUN protocol port. */
-                currentAddress->sin_port = htons(3478);
-                if (!LookupDNSAddr(currentServer.toStdString(), currentAddress)) {
-                    dnsFail = true;
+    ConnectionStatus oldStatus = getConnectionStatus();
+    ConnectionStatus newStatus = getConnectionStatus();
+    {
+        QMutexLocker stack(&ownConMtx);
+        if (CONNECTION_STATUS_FINDING_STUN_FRIENDS == connectionStatus) {
+            if (connectionSetupStepTimeOutAt == 0) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Initiating automatic connection configuration");
+    
+                QList<struct sockaddr_in> friendsToTry;
+                friendsConnectivityManager->getExternalAddresses(friendsToTry);
+                foreach (struct sockaddr_in address, friendsToTry) {
+                    if (stunServer1 && stunServer2) break;
+                    sendStunPacket(addressToString(&address), &address, udpTestSocket);
                 }
-                sendStunPacket(currentServer, currentAddress, udpTestSocket);
+    
+                connectionSetupStepTimeOutAt = time(NULL) + STUN_TEST_TIMEOUT;
+            } else if (time(NULL) > connectionSetupStepTimeOutAt) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS);
             }
+        } else if (CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS == connectionStatus) {
+            if (connectionSetupStepTimeOutAt == 0) {
+                bool dnsFail = false;
+    
+                foreach (QString currentServer, fallbackStunServers) {
+                    struct sockaddr_in* currentAddress = new sockaddr_in;
+                    sockaddr_clear(currentAddress);
+                    /* 3478 is the standard STUN protocol port. */
+                    currentAddress->sin_port = htons(3478);
+                    if (!LookupDNSAddr(currentServer.toStdString(), currentAddress)) {
+                        dnsFail = true;
+                    }
+                    sendStunPacket(currentServer, currentAddress, udpTestSocket);
+                }
+    
+                if (dnsFail) getPqiNotify()->AddSysMessage(SYS_INFO, "Network failure", "Unable to reach DNS, you may not have Internet access");
+    
+                connectionSetupStepTimeOutAt = time(NULL) + STUN_TEST_TIMEOUT;
+            } else if (time(NULL) > connectionSetupStepTimeOutAt) {
+                /* If we can't get enough STUN servers to configure just give up and assume the connection is already configured. */
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
 
-            if (dnsFail) getPqiNotify()->AddSysMessage(SYS_INFO, "Network failure", "Unable to reach DNS, you may not have Internet access");
-
-            connectionSetupStepTimeOutAt = time(NULL) + STUN_TEST_TIMEOUT;
-        } else if (time(NULL) > connectionSetupStepTimeOutAt) {
-            /* If we can't get enough STUN servers to configure just give up and assume the connection is already configured. */
-            setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
-
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Unable to find two STUN servers with which to test our connection state. Automatic connection set up disabled.");
-        }
-    } else if (CONNECTION_STATUS_STUNNING_INITIAL == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
-
-        if (currentStatus == 1) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting primary STUN server to determine if we are behind a firewall");
-        } else if (currentStatus == -1) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "No response from primary stun server, response likely blocked by firewall");
-            setNewConnectionStatus(CONNECTION_STATUS_TRYING_UPNP);
-        }
-    } else if (CONNECTION_STATUS_TRYING_UPNP == connectionStatus) {
-        if (!mUpnpMgr) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Attempting to configure firewall using Universal Plug and Play");
-            mUpnpMgr = new upnpHandler();
-            mUpnpMgr->setTargetPort(ntohs(ownLocalAddress.sin_port));
-            mUpnpMgr->startup();
-            connectionSetupStepTimeOutAt = time(NULL) + UPNP_INIT_TIMEOUT;
-        }
-
-        upnpHandler::upnpStates currentUpnpState = mUpnpMgr->getUpnpState();
-
-        if (currentUpnpState == upnpHandler::UPNP_STATE_ACTIVE) {
-            setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UPNP_TEST);
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Universal Plug and Play successfully configured router");
-        } else {
-            if (currentUpnpState == upnpHandler::UPNP_STATE_UNAVAILABLE ||
-                time(NULL) > connectionSetupStepTimeOutAt) {
-
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Unable to find two STUN servers with which to test our connection state. Automatic connection set up disabled.");
+            }
+        } else if (CONNECTION_STATUS_STUNNING_INITIAL == connectionStatus) {
+            int currentStatus = handleStunStep("Primary STUN server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
+    
+            if (currentStatus == 1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting primary STUN server to determine if we are behind a firewall");
+            } else if (currentStatus == -1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "No response from primary stun server, response likely blocked by firewall");
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_TRYING_UPNP);
+            }
+        } else if (CONNECTION_STATUS_TRYING_UPNP == connectionStatus) {
+            if (!mUpnpMgr) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Attempting to configure firewall using Universal Plug and Play");
+                mUpnpMgr = new upnpHandler();
+                mUpnpMgr->setTargetPort(ntohs(ownLocalAddress.sin_port));
+                mUpnpMgr->startup();
+                connectionSetupStepTimeOutAt = time(NULL) + UPNP_INIT_TIMEOUT;
+            }
+    
+            upnpHandler::upnpStates currentUpnpState = mUpnpMgr->getUpnpState();
+    
+            if (currentUpnpState == upnpHandler::UPNP_STATE_ACTIVE) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UPNP_TEST);
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Universal Plug and Play successfully configured router");
+            } else {
+                if (currentUpnpState == upnpHandler::UPNP_STATE_UNAVAILABLE ||
+                    time(NULL) > connectionSetupStepTimeOutAt) {
+    
+                    mUpnpMgr->shutdown();
+                    delete mUpnpMgr;
+                    mUpnpMgr = NULL;
+    
+                    newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_MAIN_PORT);
+    
+                    if (currentUpnpState == upnpHandler::UPNP_STATE_UNAVAILABLE) {
+                        log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "No Universal Plug and Play-compatible router detected");
+                    } else {
+                        log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Unable to configure router using Universal Plug and Play");
+                    }
+                }
+            }
+        } else if (CONNECTION_STATUS_STUNNING_UPNP_TEST == connectionStatus) {
+            int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
+    
+            if (currentStatus == 1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting primary STUN server to test Universal Plug and Play configuration");
+            } else if (currentStatus == -1) {
                 mUpnpMgr->shutdown();
                 delete mUpnpMgr;
                 mUpnpMgr = NULL;
-
-                setNewConnectionStatus(CONNECTION_STATUS_STUNNING_MAIN_PORT);
-
-                if (currentUpnpState == upnpHandler::UPNP_STATE_UNAVAILABLE) {
-                    log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "No Universal Plug and Play-compatible router detected");
-                } else {
-                    log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Unable to configure router using Universal Plug and Play");
-                }
+    
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_MAIN_PORT);
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Connection test failed despite successfully configured connection, abandoning Universal Plug and Play approach");
             }
+        } else if (CONNECTION_STATUS_STUNNING_MAIN_PORT == connectionStatus) {
+            int currentStatus = handleStunStep("Secondary STUN Server", stunServer2, udpMainSocket);
+            if (currentStatus == 1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting secondary STUN server to verify whether we have any Internet connection at all");
+            }
+            if (currentStatus == -1) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
+    
+                /* This is a special case of failure, which is total failure to receive on the main port, along with no UPNP.
+                   In this case, we have failed without even knowing our own external address yet.
+                   Therefore, for this type of failure, we'll need to signal to get the external address from LibraryMixer. */
+                contactLibraryMixerState = CONTACT_LIBRARYMIXER_GET_ADDRESS_FROM_LIBRARYMIXER;
+    
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Total failure to access the Internet using Mixologist port " + QString::number(ntohs(ownLocalAddress.sin_port)));
+            }
+        } else if (CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST == connectionStatus) {
+            int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
+            if (currentStatus == 1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Contacting primary STUN server to test whether we can punch a hole through the firewall using UDP");
+            } else if (currentStatus == -1) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST);
+            }
+        } else if (CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST == connectionStatus) {
+            int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpMainSocket);
+            if (currentStatus == 1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Contacting primary STUN server to further probe the nature of the firewall");
+            } else if (currentStatus == -1) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Unexpected inability to contact primary STUN server, automatic connection configuration shutting down");
+            }
+        } else if (CONNECTION_STATUS_UPNP_IN_USE == connectionStatus) {
+            upnpMaintenance();
         }
-    } else if (CONNECTION_STATUS_STUNNING_UPNP_TEST == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
-
-        if (currentStatus == 1) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting primary STUN server to test Universal Plug and Play configuration");
-        } else if (currentStatus == -1) {
-            mUpnpMgr->shutdown();
-            delete mUpnpMgr;
-            mUpnpMgr = NULL;
-
-            setNewConnectionStatus(CONNECTION_STATUS_STUNNING_MAIN_PORT);
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Connection test failed despite successfully configured connection, abandoning Universal Plug and Play approach");
-        }
-    } else if (CONNECTION_STATUS_STUNNING_MAIN_PORT == connectionStatus) {
-        int currentStatus = handleStunStep("Secondary STUN Server", stunServer2, udpMainSocket);
-        if (currentStatus == 1) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting secondary STUN server to verify whether we have any Internet connection at all");
-        }
-        if (currentStatus == -1) {
-            setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
-
-            /* This is a special case of failure, which is total failure to receive on the main port, along with no UPNP.
-               In this case, we have failed without even knowing our own external address yet.
-               Therefore, for this type of failure, we'll need to signal to get the external address from LibraryMixer. */
-            contactLibraryMixerState = CONTACT_LIBRARYMIXER_GET_ADDRESS_FROM_LIBRARYMIXER;
-
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Total failure to access the Internet using Mixologist port " + QString::number(ntohs(ownLocalAddress.sin_port)));
-        }
-    } else if (CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpTestSocket, ntohs(ownLocalAddress.sin_port));
-        if (currentStatus == 1) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Contacting primary STUN server to test whether we can punch a hole through the firewall using UDP");
-        } else if (currentStatus == -1) {
-            setNewConnectionStatus(CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST);
-        }
-    } else if (CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST == connectionStatus) {
-        int currentStatus = handleStunStep("Primary STUN Server", stunServer1, udpMainSocket);
-        if (currentStatus == 1) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Contacting primary STUN server to further probe the nature of the firewall");
-        } else if (currentStatus == -1) {
-            setNewConnectionStatus(CONNECTION_STATUS_UNKNOWN);
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Unexpected inability to contact primary STUN server, automatic connection configuration shutting down");
-        }
-    } else if (CONNECTION_STATUS_UPNP_IN_USE == connectionStatus) {
-        upnpMaintenance();
+        /* UDP hole punching, is both of the nature of personal connectivity maintenance, as well as friend connectivity,
+           becuase each of the UdpTunneler packets that we send to punch a hole in the firewall also serve as connection invitations.
+           Because the FriendConnectivityManager holds our friendsList, it's a little simpler to handle UDP hole punching there.
+           Therefore, the following states don't require any maintenance in the ownConnectivityManager, so we don't handle those here:
+           CONNECTION_STATUS_UDP_HOLE_PUNCHING
+           CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING */
+        /* For all of the following, we don't need to do anything to maintain, so we don't handle those cases:
+           CONNECTION_STATUS_UNFIREWALLED
+           CONNECTION_STATUS_PORT_FORWARDED
+           CONNECTION_STATUS_SYMMETRIC_NAT
+           CONNECTION_STATUS_UNKNOWN */
     }
-    /* UDP hole punching, is both of the nature of personal connectivity maintenance, as well as friend connectivity,
-       becuase each of the UdpTunneler packets that we send to punch a hole in the firewall also serve as connection invitations.
-       Because the FriendConnectivityManager holds our friendsList, it's a little simpler to handle UDP hole punching there.
-       Therefore, the following states don't require any maintenance in the ownConnectivityManager, so we don't handle those here:
-       CONNECTION_STATUS_UDP_HOLE_PUNCHING
-       CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING */
-    /* For all of the following, we don't need to do anything to maintain, so we don't handle those cases:
-       CONNECTION_STATUS_UNFIREWALLED
-       CONNECTION_STATUS_PORT_FORWARDED
-       CONNECTION_STATUS_SYMMETRIC_NAT
-       CONNECTION_STATUS_UNKNOWN */
+
+    if (oldStatus != newStatus) sendSignals(newStatus);
 }
 
 int OwnConnectivityManager::handleStunStep(const QString& stunServerName, const sockaddr_in *stunServer, UdpSorter *sendSocket, ushort returnPort) {
@@ -332,121 +341,127 @@ bool OwnConnectivityManager::sendStunPacket(const QString& stunServerName, const
 
 void OwnConnectivityManager::receivedStunBindingResponse(QString transactionId, QString mappedAddress, ushort mappedPort,
                                                          ushort receivedOnPort, QString receivedFromAddress) {
-    QMutexLocker stack(&ownConMtx);
-    if (!pendingStunTransactions.contains(transactionId)) {
-        log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-            QString("Discarding STUN response not matching any current outstanding request from " + receivedFromAddress));
-        return;
-    }
-    struct in_addr fromIP;
-    inet_aton(receivedFromAddress.toStdString().c_str(), &fromIP);
-    if (isSameSubnet(&(ownLocalAddress.sin_addr), &fromIP)) {
-        log(LOG_DEBUG_ALERT, OWN_CONNECTIVITY_ZONE, "Discarding STUN response received on own subnet");
-        return;
-    }
-
-    /* For the error of receiving on the wrong port, it should be generally a safe assumption the only time this could occur
-       would be if the STUN server ignores the response-port attribute.
-       If the expected port is set to 0, then we can assume that this is on the correct port.
-       Furthermore, we know this will be stunServer1, because stunServer2 is never sent any requests with the response-port attribute. */
-    if (pendingStunTransactions[transactionId].returnPort != receivedOnPort &&
-        pendingStunTransactions[transactionId].returnPort != 0) {
-        log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-            "Error in STUN, STUN server (" + addressToString(stunServer1) + ") ignored the response-port attribute.");
-        return;
-    }
-
-    if (connectionStatus == CONNECTION_STATUS_FINDING_STUN_FRIENDS) {
-        struct sockaddr_in** targetStunServer;
-        if (!stunServer1) targetStunServer = &stunServer1;
-        else if (!stunServer2) targetStunServer = &stunServer2;
-        else return;
-
-        *targetStunServer = new sockaddr_in;
-        **targetStunServer = pendingStunTransactions[transactionId].serverAddress;
-
-        log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-            "Using " + pendingStunTransactions[transactionId].serverName + " as a STUN server");
-
-        if (stunServer2) setNewConnectionStatus(CONNECTION_STATUS_STUNNING_INITIAL);
-    } else if (connectionStatus == CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS) {
-        struct sockaddr_in** targetStunServer;
-        if (!stunServer1) targetStunServer = &stunServer1;
-        else if (!stunServer2) targetStunServer = &stunServer2;
-        else return;
-
-        *targetStunServer = new sockaddr_in;
-        **targetStunServer = pendingStunTransactions[transactionId].serverAddress;
-
-        if (targetStunServer == &stunServer1) {
+    ConnectionStatus oldStatus = getConnectionStatus();
+    ConnectionStatus newStatus = getConnectionStatus();
+    {
+        QMutexLocker stack(&ownConMtx);
+        if (!pendingStunTransactions.contains(transactionId)) {
             log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Using LibraryMixer as a fallback for the primary STUN server");
-        } else {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
-                "Using LibraryMixer as a fallback for the secondary STUN server");
+                QString("Discarding STUN response not matching any current outstanding request from " + receivedFromAddress));
+            return;
+        }
+        struct in_addr fromIP;
+        inet_aton(receivedFromAddress.toStdString().c_str(), &fromIP);
+        if (isSameSubnet(&(ownLocalAddress.sin_addr), &fromIP)) {
+            log(LOG_DEBUG_ALERT, OWN_CONNECTIVITY_ZONE, "Discarding STUN response received on own subnet");
+            return;
         }
 
-        if (stunServer2) setNewConnectionStatus(CONNECTION_STATUS_STUNNING_INITIAL);
-    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_INITIAL) {
-        inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
-        ownExternalAddress.sin_port = ownLocalAddress.sin_port;
-        //We now know our own address definitively, and should update LibraryMixer with it
-        contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
-        if (QString(inet_ntoa(ownLocalAddress.sin_addr)) == mappedAddress) {
-            setNewConnectionStatus(CONNECTION_STATUS_UNFIREWALLED);
-            log(LOG_WARNING,
-                OWN_CONNECTIVITY_ZONE,
-                "No firewall detected, connection ready to go on " + mappedAddress +
-                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
-        } else {
-            setNewConnectionStatus(CONNECTION_STATUS_PORT_FORWARDED);
-            log(LOG_WARNING,
-                OWN_CONNECTIVITY_ZONE,
-                "Detected firewall with port-forwarding already set up, connection ready to go on " + mappedAddress +
-                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
+        /* For the error of receiving on the wrong port, it should be generally a safe assumption the only time this could occur
+           would be if the STUN server ignores the response-port attribute.
+           If the expected port is set to 0, then we can assume that this is on the correct port.
+           Furthermore, we know this will be stunServer1, because stunServer2 is never sent any requests with the response-port attribute. */
+        if (pendingStunTransactions[transactionId].returnPort != receivedOnPort &&
+            pendingStunTransactions[transactionId].returnPort != 0) {
+            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                "Error in STUN, STUN server (" + addressToString(stunServer1) + ") ignored the response-port attribute.");
+            return;
         }
-    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UPNP_TEST) {
-        inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
-        ownExternalAddress.sin_port = ownLocalAddress.sin_port;
-        //We now know our own address definitively, and should update LibraryMixer with it
-        contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
-        setNewConnectionStatus(CONNECTION_STATUS_UPNP_IN_USE);
-        log(LOG_WARNING,
-            OWN_CONNECTIVITY_ZONE,
-            "Connection test successful, Universal Plug and Play configured connection ready to go on " + mappedAddress +
-            ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
-    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_MAIN_PORT) {
-        inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
-        ownExternalAddress.sin_port = htons(mappedPort);
-        //We now know our own address definitively, and should update LibraryMixer with it
-        contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
-        setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST);
-        log(LOG_WARNING,
-            OWN_CONNECTIVITY_ZONE,
-            "Internet connection verified on " + mappedAddress +
-            ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
-    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST) {
-        setNewConnectionStatus(CONNECTION_STATUS_UDP_HOLE_PUNCHING);
-        log(LOG_WARNING,
-            OWN_CONNECTIVITY_ZONE,
-            "Connection test successful, punching a UDP hole in the firewall on " + mappedAddress +
-            ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
-    } else if (connectionStatus == CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST) {
-        if (mappedPort == ntohs(ownExternalAddress.sin_port)) {
-            setNewConnectionStatus(CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING);
+
+        if (connectionStatus == CONNECTION_STATUS_FINDING_STUN_FRIENDS) {
+            struct sockaddr_in** targetStunServer;
+            if (!stunServer1) targetStunServer = &stunServer1;
+            else if (!stunServer2) targetStunServer = &stunServer2;
+            else return;
+
+            *targetStunServer = new sockaddr_in;
+            **targetStunServer = pendingStunTransactions[transactionId].serverAddress;
+
+            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                "Using " + pendingStunTransactions[transactionId].serverName + " as a STUN server");
+
+            if (stunServer2) newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_INITIAL);
+        } else if (connectionStatus == CONNECTION_STATUS_FINDING_STUN_FALLBACK_SERVERS) {
+            struct sockaddr_in** targetStunServer;
+            if (!stunServer1) targetStunServer = &stunServer1;
+            else if (!stunServer2) targetStunServer = &stunServer2;
+            else return;
+
+            *targetStunServer = new sockaddr_in;
+            **targetStunServer = pendingStunTransactions[transactionId].serverAddress;
+
+            if (targetStunServer == &stunServer1) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Using LibraryMixer as a fallback for the primary STUN server");
+            } else {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
+                    "Using LibraryMixer as a fallback for the secondary STUN server");
+            }
+
+            if (stunServer2) newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_INITIAL);
+        } else if (connectionStatus == CONNECTION_STATUS_STUNNING_INITIAL) {
+            inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
+            ownExternalAddress.sin_port = ownLocalAddress.sin_port;
+            //We now know our own address definitively, and should update LibraryMixer with it
+            contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
+            if (QString(inet_ntoa(ownLocalAddress.sin_addr)) == mappedAddress) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_UNFIREWALLED);
+                log(LOG_WARNING,
+                    OWN_CONNECTIVITY_ZONE,
+                    "No firewall detected, connection ready to go on " + mappedAddress +
+                    ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
+            } else {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_PORT_FORWARDED);
+                log(LOG_WARNING,
+                    OWN_CONNECTIVITY_ZONE,
+                    "Detected firewall with port-forwarding already set up, connection ready to go on " + mappedAddress +
+                    ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
+            }
+        } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UPNP_TEST) {
+            inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
+            ownExternalAddress.sin_port = ownLocalAddress.sin_port;
+            //We now know our own address definitively, and should update LibraryMixer with it
+            contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
+            newStatus = setNewConnectionStatus(CONNECTION_STATUS_UPNP_IN_USE);
             log(LOG_WARNING,
                 OWN_CONNECTIVITY_ZONE,
-                "Restricted cone firewall detected, punching a UDP hole (with reduced efficacy) in the firewall on " + mappedAddress +
+                "Connection test successful, Universal Plug and Play configured connection ready to go on " + mappedAddress +
                 ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
-        } else {
-            setNewConnectionStatus(CONNECTION_STATUS_SYMMETRIC_NAT);
+        } else if (connectionStatus == CONNECTION_STATUS_STUNNING_MAIN_PORT) {
+            inet_aton(mappedAddress.toStdString().c_str(), &ownExternalAddress.sin_addr);
+            ownExternalAddress.sin_port = htons(mappedPort);
+            //We now know our own address definitively, and should update LibraryMixer with it
+            contactLibraryMixerState = CONTACT_LIBRARYMIXER_UPDATE;
+            newStatus = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST);
             log(LOG_WARNING,
                 OWN_CONNECTIVITY_ZONE,
-                "Symmetric NAT firewall detected, manual configuration of the firewall will be necessary to connect to friends over the Internet.");
+                "Internet connection verified on " + mappedAddress +
+                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
+        } else if (connectionStatus == CONNECTION_STATUS_STUNNING_UDP_HOLE_PUNCHING_TEST) {
+            newStatus = setNewConnectionStatus(CONNECTION_STATUS_UDP_HOLE_PUNCHING);
+            log(LOG_WARNING,
+                OWN_CONNECTIVITY_ZONE,
+                "Connection test successful, punching a UDP hole in the firewall on " + mappedAddress +
+                ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
+        } else if (connectionStatus == CONNECTION_STATUS_STUNNING_FIREWALL_RESTRICTION_TEST) {
+            if (mappedPort == ntohs(ownExternalAddress.sin_port)) {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING);
+                log(LOG_WARNING,
+                    OWN_CONNECTIVITY_ZONE,
+                    "Restricted cone firewall detected, punching a UDP hole (with reduced efficacy) in the firewall on " + mappedAddress +
+                    ":" + QString::number(ntohs(ownExternalAddress.sin_port)));
+            } else {
+                newStatus = setNewConnectionStatus(CONNECTION_STATUS_SYMMETRIC_NAT);
+                log(LOG_WARNING,
+                    OWN_CONNECTIVITY_ZONE,
+                    "Symmetric NAT firewall detected, manual configuration of the firewall will be necessary to connect to friends over the Internet.");
+            }
         }
+
+        pendingStunTransactions.remove(transactionId);
     }
 
-    pendingStunTransactions.remove(transactionId);
+    if (oldStatus != newStatus) sendSignals(newStatus);
 }
 
 #define UPNP_MAINTENANCE_INTERVAL 300
@@ -466,29 +481,41 @@ void OwnConnectivityManager::upnpMaintenance() {
     }
 }
 
-void OwnConnectivityManager::setNewConnectionStatus(ConnectionStatus newStatus) {
+ConnectionStatus OwnConnectivityManager::setNewConnectionStatus(ConnectionStatus newStatus) {
     connectionStatus = newStatus;
     connectionSetupStepTimeOutAt = 0;
     pendingStunTransactions.clear();
-    emit connectionStateChanged(newStatus);
 
-    /* We don't know whether we will reach the final state first, or we will update LibraryMixer with our address first.
-       We do know that we don't want to start connecting to our friends until both of these have happened.
-       Therefore, we check here if we're done with both, if we are, we enable friendsConnectivityManager.
-       Otherwise, if only our state is final, we set a flag to enable friendsConnectivityManager when we finish updating LibraryMixer with our address. */
-    if (connectionStatusInFinalState(newStatus)) {
-        if (contactLibraryMixerState == CONTACT_LIBRARYMIXER_DONE) friendsConnectivityManager->setEnabled(true);
-        else enableFriendsConnectAfterUpdate = true;
+    return newStatus;
+}
+
+void OwnConnectivityManager::sendSignals(ConnectionStatus newStatus) {
+    bool connectionReady = false;
+    {
+        QMutexLocker stack(&ownConMtx);
+        /* We don't know whether we will reach the final state first, or we will update LibraryMixer with our address first.
+           Our connection is not ready until both of these have happened.
+           Otherwise, if only our state is final, we set a flag to emit readiness changed when we finish updating LibraryMixer with our address. */
+        if (connectionStatusInFinalState(connectionStatus)) {
+            if (contactLibraryMixerState == CONTACT_LIBRARYMIXER_DONE) connectionReady = true;
+            else connectionReadyAfterUpdate = true;
+        }
     }
+    emit connectionStateChanged(newStatus);
+    if (connectionReady) emit ownConnectionReadinessChanged(true);
 }
 
 void OwnConnectivityManager::addressUpdatedOnLibraryMixer() {
-    QMutexLocker stack(&ownConMtx);
-    contactLibraryMixerState = CONTACT_LIBRARYMIXER_DONE;
-    if (enableFriendsConnectAfterUpdate) {
-        enableFriendsConnectAfterUpdate = false;
-        friendsConnectivityManager->setEnabled(true);
+    bool connectionReady = false;
+    {
+        QMutexLocker stack(&ownConMtx);
+        contactLibraryMixerState = CONTACT_LIBRARYMIXER_DONE;
+        if (connectionReadyAfterUpdate) {
+            connectionReadyAfterUpdate = false;
+            connectionReady = true;
+        }
     }
+    if (connectionReady) emit ownConnectionReadinessChanged(true);
 }
 
 #define ADDRESS_UPLOAD_TIMEOUT 15
@@ -544,10 +571,24 @@ void OwnConnectivityManager::checkNetInterfacesTick() {
         log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Reseting network configuration");
         shutdown();
         connectionStatus = CONNECTION_STATUS_FINDING_STUN_FRIENDS;
-        friendsConnectivityManager->setEnabled(false);
+        emit ownConnectionReadinessChanged(false);
         select_NetInterface_OpenPorts();
     }
 }
+
+/**********************************************************************************
+ * Body of public-facing API functions called through p3peers
+ **********************************************************************************/
+bool OwnConnectivityManager::getConnectionReadiness() {
+    QMutexLocker stack(&ownConMtx);
+    return (connectionStatusInFinalState(connectionStatus) && (contactLibraryMixerState == CONTACT_LIBRARYMIXER_DONE));
+}
+
+ConnectionStatus OwnConnectivityManager::getConnectionStatus() {
+    QMutexLocker stack(&ownConMtx);
+    return connectionStatus;
+}
+
 
 /**********************************************************************************
  * Utility methods

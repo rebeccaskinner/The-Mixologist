@@ -51,6 +51,12 @@ public:
     /* Returns the logged in user's own name. */
     virtual QString getOwnName();
 
+    /* Returns whether our connection is currently ready. */
+    virtual bool getConnectionReadiness();
+
+    /* Returns our current connection status. */
+    virtual ConnectionStatus getConnectionStatus();
+
     /* List of LibraryMixer ids for all online friends. */
     virtual void getOnlineList(QList<unsigned int> &friend_ids);
 

@@ -37,6 +37,7 @@
 p3Peers::p3Peers(QString &ownName)
     :ownName(ownName) {
     connect(ownConnectivityManager, SIGNAL(connectionStateChanged(int)), this, SIGNAL(connectionStateChanged(int)));
+    connect(ownConnectivityManager, SIGNAL(ownConnectionReadinessChanged(bool)), this, SIGNAL(ownConnectionReadinessChanged(bool)));
 }
 
 /* Peer Details (Net & Auth) */
@@ -50,6 +51,14 @@ unsigned int p3Peers::getOwnLibraryMixerId() {
 
 QString p3Peers::getOwnName(){
     return ownName;
+}
+
+bool p3Peers::getConnectionReadiness() {
+    return ownConnectivityManager->getConnectionReadiness();
+}
+
+ConnectionStatus p3Peers::getConnectionStatus() {
+    return ownConnectivityManager->getConnectionStatus();
 }
 
 void p3Peers::getOnlineList(QList<unsigned int> &friend_ids) {

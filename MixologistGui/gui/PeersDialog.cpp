@@ -44,7 +44,7 @@ PeersDialog::PeersDialog(QWidget *parent)
     connect(ui.addFriendsButton, SIGNAL(clicked()), this, SLOT(addFriendClicked()));
     connect(ui.updateFriendsButton, SIGNAL(clicked()), this, SLOT(updateFriends()));
     connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(updatedFriends()), Qt::QueuedConnection);
-    connect(peers, SIGNAL(connectionStateChanged(int)), this, SLOT(connectionStateChanged(int)), Qt::QueuedConnection);
+    connect(peers, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(connectionReadinessChanged(bool)), Qt::QueuedConnection);
 
     /* To display chat status in chat windows. */
     connect(guiNotify, SIGNAL(chatStatusChanged(unsigned int, QString)), this, SLOT(updatePeerStatusString(unsigned int, QString)));
@@ -279,8 +279,8 @@ void PeersDialog::updatePeerStatusString(unsigned int friend_librarymixer_id, co
     if (pcd != NULL) pcd->updateStatusString(status_string);
 }
 
-void PeersDialog::connectionStateChanged(int newStatus) {
-    if (connectionStatusInFinalState(newStatus)) {
+void PeersDialog::connectionReadinessChanged(bool ready) {
+    if (ready) {
         /* Now that the connection is ready, we can begin displaying the friends list. */
         QObject::connect(guiNotify, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
 

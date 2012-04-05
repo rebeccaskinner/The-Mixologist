@@ -105,7 +105,7 @@ class FriendsConnectivityManager: public QObject {
     Q_OBJECT
 
 public:
-    /* users_name is the display name of the logged in user. */
+    /* OwnConnectivityManager must be created before creating FriendsConnectivityManager. */
     FriendsConnectivityManager();
 
     /* Ticked from the main server thread. */
@@ -118,10 +118,6 @@ public:
     /* Adds a monitor who will be informed of friend connectivity changes.
        Must be called only while initializing from a single-thread, as the monitors are not protected by a mutex. */
     void addMonitor(pqiMonitor *mon);
-
-    /* Set whether the Mixologist should be attempting to connect to friends.
-       If enabled is true, calls for an immediate connect attempt to all friends. */
-    void setEnabled(bool enabled);
 
     /**********************************************************************************
      * MixologistLib functions, not shared via interface with GUI
@@ -186,6 +182,10 @@ public:
     void tryConnectToAll();
 
 private slots:
+    /* Set whether the Mixologist should be attempting to connect to friends.
+       If enabled is true, calls for an immediate connect attempt to all friends. */
+    void setEnabled(bool enabled);
+
     /* Connected to the UDP Sorter for when we receive a UDP Tunneler packet. */
     void receivedUdpTunneler(unsigned int librarymixer_id, QString address, ushort port);
 

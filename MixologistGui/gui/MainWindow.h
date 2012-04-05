@@ -94,14 +94,17 @@ public:
        dialog is any of the dialog page pointers from above. */
     void switchToDialog(QWidget* dialog);
 
-public slots:
+private slots:
     /* Sets the status bar to display that a file with title equal to the supplied string is being hashed. */
     void updateHashingInfo(const QString&);
 
     /* Updates the status bar display with the status of our connection set up. */
     void updateConnectionStatus(int newStatus);
 
-private slots:
+    /* Updates the status bar display with the status of our connection readiness. */
+    void updateConnectionReadiness(bool ready);
+
+    /* Changes the text of the tray icon menu to reflect whether clicking will hide or show. */
     void updateMenu();
 
     void toggleVisibility(QSystemTrayIcon::ActivationReason e);

@@ -86,13 +86,24 @@ public:
     /* Returns our own local address. */
     struct sockaddr_in* getOwnExternalAddress() {return &ownExternalAddress;}
 
-    /* Returns the state of our connection set up. */
-    ConnectionStatus getConnectionStatus() {return connectionStatus;}
+    /**********************************************************************************
+     * Body of public-facing API functions called through p3peers
+     **********************************************************************************/
+    /* Returns whether our connection is currently ready - i.e. it's in a final ConnectionStatus and address has been published to LibraryMixer. */
+    bool getConnectionReadiness();
+
+    /* Returns our current connection status. */
+    ConnectionStatus getConnectionStatus();
 
 signals:
     /* Used to inform the GUI of changes to the current ConnectionStatus.
        All values of newStatus should be members of ConnectionStatus. */
     void connectionStateChanged(int newStatus);
+
+    /* Emitted whenever our connection becomes fully ready, or whenever we go from ready to not ready.
+       The difference between this and connectionStateChanged with a final state is that we can be in a final state,
+       but still waiting to upload out updated address info to LibraryMixer, and the connection should not be considered ready yet. */
+    void ownConnectionReadinessChanged(bool ready);
 
 private slots:
     /* Connected to the UDP Sorter for when we receive a STUN packet. */
@@ -123,8 +134,15 @@ private:
     /* Returns a random number that is suitable for use as a port. */
     int getRandomPortNumber() const;
 
-    /* Sets the connectionStatus to newStatus and clears out any state-dependent variables and emits the signal. */
-    void setNewConnectionStatus(ConnectionStatus newStatus);
+    /* Sets the connectionStatus to newStatus and clears out any state-dependent variables and emits the signal.
+       Returns the set status. */
+    ConnectionStatus setNewConnectionStatus(ConnectionStatus newStatus);
+
+    /* Called outside of the mutex on any operation that may have changed the connection status.
+       Emits signals if they are called for based on the newStatus, enabling signal recipients to access ownConnectivityManager's methods that use mutexes.
+       Because it is called outside of mutexes, it is possible that the signals emitted may be outdated or out of order,
+       but this shouldn't be problematic for the ways that this information is used. */
+    void sendSignals(ConnectionStatus newStatus);
 
     /* Integrated method that handles basically an entire connection set up step that is based around a STUN request.
        If we haven't sent a stun packet to this stunServer yet, sends one using sendSocket and marks it sent.
@@ -166,8 +184,8 @@ private:
         CONTACT_LIBRARYMIXER_DONE
     };
     ContactLibraryMixerState contactLibraryMixerState;
-    /* Whether we should enable FriendsConnectivityManager to begin attempting connections to friends after we finish updating LibraryMixer. */
-    bool enableFriendsConnectAfterUpdate;
+    /* Whether we should emit a connection ready signal after we finish updating LibraryMixer. */
+    bool connectionReadyAfterUpdate;
 
     /* For each step in our connectionStatus that involves sending STUN requests, this contains when we will consider that step to be timed out and failed. */
     time_t connectionSetupStepTimeOutAt;

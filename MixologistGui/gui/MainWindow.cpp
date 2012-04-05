@@ -42,6 +42,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     ui.setupUi(this);
 
     connect(peers, SIGNAL(connectionStateChanged(int)), this, SLOT(updateConnectionStatus(int)));
+    connect(peers, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(updateConnectionReadiness(bool)));
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
@@ -354,11 +355,25 @@ void MainWindow::updateConnectionStatus(int newStatus) {
                                               "You may experience problems connecting to friends.",
                                               QSystemTrayIcon::Information, 30);
     }
-
     if (connectionStatusInFinalState(newStatus)) {
-        connectionStatusLabel->setText("<span style='color:grey'>Internet: <a href='filler' style='color:grey'>" +
-                                       connectionStatusLabel->text() +
-                                       "</a></span>");
+        if (peers->getConnectionReadiness()) {
+            connectionStatusLabel->setText("<span style='color:grey'>Internet: <a href='filler' style='color:grey'>" +
+                                           connectionStatusLabel->text() +
+                                           "</a></span>");
+        }
+        /* If we are in a final state, but the connection is not yet ready, that must mean that we are currently updating our info to LibraryMixer. */
+        else {
+            connectionStatusLabel->setText("Publishing address to friends");
+        }
+    }
+}
+
+void MainWindow::updateConnectionReadiness(bool ready) {
+    if (ready) {
+        /* If we are now ready, make sure we didn't previously defer showing the Internet connection status in favor of displaying that we were
+           publishing our address to LibraryMixer. */
+        updateConnectionStatus(peers->getConnectionStatus());
+
         connectionStatusMovieLabel->hide();
         hashingHolder->show();
     } else {
