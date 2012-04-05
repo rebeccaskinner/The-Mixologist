@@ -176,6 +176,10 @@ void  PeersDialog::insertPeers() {
             item->setText(FRIEND_STATUS_COLUMN, QString("Searching for friend...      "));
         }
 
+        /* Sets the height fixed to 30.
+           Note that we set the width here to 30 as well for the same reasons surrounding QIcon as noted elsewhere. */
+        item->setSizeHint(FRIEND_ICON_AND_SORT_COLUMN, QSize(30, 30));
+
         /* add to the list */
         items.append(item);
 
