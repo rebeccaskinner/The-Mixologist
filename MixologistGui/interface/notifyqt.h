@@ -72,8 +72,6 @@ signals:
     void hashingInfoChanged(QString fileinfo);
     //When transfers updated
     void transfersChanged();
-    //When friends updated
-    void friendsChanged();
     //When there are status updates for chat buddies
     void chatStatusChanged(unsigned int librarymixer_id, QString status_string);
     //When there is something to stick in the log of the Network dialog

@@ -75,6 +75,9 @@ private slots:
         /* Connected to double click event. */
         void friendDoubleClicked();
 
+        /* Connected to when the selection changes, so that we can make sure the selected is visible. */
+        void itemSelectionChanged();
+
         /* Connected to a timer in constructor to update chat status. */
         void insertChat();
 

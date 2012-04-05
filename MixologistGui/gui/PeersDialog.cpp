@@ -41,6 +41,7 @@ PeersDialog::PeersDialog(QWidget *parent)
 
     connect(ui.friendsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(friendsListContextMenu(QPoint)));
     connect(ui.friendsList, SIGNAL(itemDoubleClicked(QTreeWidgetItem *, int)), this, SLOT(friendDoubleClicked()));
+    connect(ui.friendsList, SIGNAL(itemSelectionChanged()), this, SLOT(itemSelectionChanged()));
     connect(ui.addFriendsButton, SIGNAL(clicked()), this, SLOT(addFriendClicked()));
     connect(ui.updateFriendsButton, SIGNAL(clicked()), this, SLOT(updateFriends()));
     connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(updatedFriends()), Qt::QueuedConnection);
@@ -272,8 +273,8 @@ void PeersDialog::connectionReadinessChanged(bool ready) {
     if (ready) {
         /* We can now connect the friendsChanged() signal to update the view.
            We disconnect just in case. If we weren't already connected, no problem. If we were, prevents duplicates. */
-        disconnect(guiNotify, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
-        connect(guiNotify, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
+        disconnect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
+        connect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
 
         insertPeers();
         ui.friendsList->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -346,6 +347,14 @@ void PeersDialog::friendDoubleClicked() {
         detail.state == FCS_CONNECTED_UDP) chatFriend();
     else return;
 }
+
+void PeersDialog::itemSelectionChanged() {
+    QList<QTreeWidgetItem *> selectedItems = ui.friendsList->selectedItems();
+    if (!selectedItems.isEmpty()) {
+        ui.friendsList->scrollToItem(selectedItems.first());
+    }
+}
+
 
 void PeersDialog::insertChat() {
     if (!msgs->chatAvailable()) return;

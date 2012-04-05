@@ -181,6 +181,10 @@ public:
     /* Immediate retry to connect to all offline friends. */
     void tryConnectToAll();
 
+signals:
+    /* Emitted whenever we add a new friend, or a friend is connected to or disconnected from. */
+    void friendsChanged();
+
 private slots:
     /* Set whether the Mixologist should be attempting to connect to friends.
        If enabled is true, calls for an immediate connect attempt to all friends. */

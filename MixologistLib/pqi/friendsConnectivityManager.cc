@@ -438,69 +438,77 @@ bool FriendsConnectivityManager::getQueuedConnectAttempt(unsigned int librarymix
 /* A note about why we request type and remoteAddress as arguments:
    It may be tempting to think we can just pull that information from currentlyTrying, but that is only the outbound connection try, and fails for inbound. */
 bool FriendsConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, int result, ConnectionType type, struct sockaddr_in *remoteAddress) {
-    QMutexLocker stack(&connMtx);
+    bool signalFriendsChanged = false;
 
-    if (!mFriendList.contains(librarymixer_id)) return false;
+    {
+        QMutexLocker stack(&connMtx);
 
-    friendListing* currentFriend = mFriendList[librarymixer_id];
+        if (!mFriendList.contains(librarymixer_id)) return false;
 
-    if (result == 1) {
-        /* No longer need any of the queued connection attempts, reset them all. */
-        currentFriend->tryTcpLocal = false;
-        currentFriend->tryTcpExternal = false;
-        currentFriend->tryTcpConnectBackRequest = false;
-        currentFriend->tryUdp = false;
-        currentFriend->nextTryDelayedUntil = 0;
+        friendListing* currentFriend = mFriendList[librarymixer_id];
 
-        /* Mark this socket as used so no other connection attempt can try to use it. */
-        usedSockets[addressToString(remoteAddress)] = USED_IP_CONNECTED;
+        if (result == 1) {
+            /* No longer need any of the queued connection attempts, reset them all. */
+            currentFriend->tryTcpLocal = false;
+            currentFriend->tryTcpExternal = false;
+            currentFriend->tryTcpConnectBackRequest = false;
+            currentFriend->tryUdp = false;
+            currentFriend->nextTryDelayedUntil = 0;
 
-        log(LOG_DEBUG_BASIC, FRIEND_CONNECTIVITY_ZONE, QString("Successfully connected to: ") + currentFriend->name);
+            /* Mark this socket as used so no other connection attempt can try to use it. */
+            usedSockets[addressToString(remoteAddress)] = USED_IP_CONNECTED;
 
-        /* Change state.
-           We can't simply have done without the type argument and used currentlyTrying because currentlyTrying isn't set for incoming. */
-        if (type == TCP_CONNECTION) currentFriend->state = FCS_CONNECTED_TCP;
-        else if (type == UDP_CONNECTION) currentFriend->state = FCS_CONNECTED_UDP;
+            log(LOG_DEBUG_BASIC, FRIEND_CONNECTIVITY_ZONE, QString("Successfully connected to: ") + currentFriend->name);
 
-        currentFriend->actions |= PEER_CONNECTED;
-        mStatusChanged = true;
-        currentFriend->lastcontact = time(NULL);
-        currentFriend->lastheard = time(NULL);
-    } else {
-        log(LOG_DEBUG_BASIC,
-            FRIEND_CONNECTIVITY_ZONE,
-            QString("Connection failure with friend: ") + currentFriend->name + ", over transport layer type: " + QString::number(type));
+            /* Change state.
+               We can't simply have done without the type argument and used currentlyTrying because currentlyTrying isn't set for incoming. */
+            if (type == TCP_CONNECTION) currentFriend->state = FCS_CONNECTED_TCP;
+            else if (type == UDP_CONNECTION) currentFriend->state = FCS_CONNECTED_UDP;
 
-        /* We can receive failure reports from either connected friends, or connection attempt friends. */
-        if (currentFriend->state == FCS_CONNECTED_TCP ||
-            currentFriend->state == FCS_CONNECTED_UDP) {
+            currentFriend->actions |= PEER_CONNECTED;
+            mStatusChanged = true;
             currentFriend->lastcontact = time(NULL);
-            usedSockets.remove(addressToString(remoteAddress));
+            currentFriend->lastheard = time(NULL);
+            signalFriendsChanged = true;
         } else {
-            /* The idea here is that we want to remove the hold we have on the socket from usedSockets.
-               However, an inbound connection could have snuck in and taken this over as a connected address, so we only remove if it looks like ours. */
-            if (usedSockets[addressToString(remoteAddress)] == USED_IP_CONNECTING) usedSockets.remove(addressToString(remoteAddress));
+            log(LOG_DEBUG_BASIC,
+                FRIEND_CONNECTIVITY_ZONE,
+                QString("Connection failure with friend: ") + currentFriend->name + ", over transport layer type: " + QString::number(type));
 
-            /* If we just sent a TCP connect back request, give it some time to work before doing anything else. */
-            if (currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_BACK)
-                currentFriend->nextTryDelayedUntil = time(NULL) + SENT_TCP_CONNECT_BACK_WAIT_TIME;
+            /* We can receive failure reports from either connected friends, or connection attempt friends. */
+            if (currentFriend->state == FCS_CONNECTED_TCP ||
+                currentFriend->state == FCS_CONNECTED_UDP) {
+                currentFriend->lastcontact = time(NULL);
+                usedSockets.remove(addressToString(remoteAddress));
+                signalFriendsChanged = true;
+            } else {
+                /* The idea here is that we want to remove the hold we have on the socket from usedSockets.
+                   However, an inbound connection could have snuck in and taken this over as a connected address, so we only remove if it looks like ours. */
+                if (usedSockets[addressToString(remoteAddress)] == USED_IP_CONNECTING) usedSockets.remove(addressToString(remoteAddress));
 
-            /* If we have been requested to schedule another TCP connection attempt. */
-            if (result == 0) {
-                currentFriend->nextTryDelayedUntil = time(NULL) + REQUESTED_RETRY_WAIT_TIME;
-                if (currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_LOCAL)
-                    currentFriend->tryTcpLocal = true;
-                else if (currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_EXTERNAL ||
-                         currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_BACK)
-                    currentFriend->tryTcpExternal = true;
+                /* If we just sent a TCP connect back request, give it some time to work before doing anything else. */
+                if (currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_BACK)
+                    currentFriend->nextTryDelayedUntil = time(NULL) + SENT_TCP_CONNECT_BACK_WAIT_TIME;
+
+                /* If we have been requested to schedule another TCP connection attempt. */
+                if (result == 0) {
+                    currentFriend->nextTryDelayedUntil = time(NULL) + REQUESTED_RETRY_WAIT_TIME;
+                    if (currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_LOCAL)
+                        currentFriend->tryTcpLocal = true;
+                    else if (currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_EXTERNAL ||
+                             currentFriend->currentlyTrying == CONNECTION_TYPE_TCP_BACK)
+                        currentFriend->tryTcpExternal = true;
+                }
             }
+
+            currentFriend->state = FCS_NOT_CONNECTED;
+
+            /* See if there are any pending connection attempts that need to be triggered now. */
+            informMonitorsTryConnect(librarymixer_id);
         }
-
-        currentFriend->state = FCS_NOT_CONNECTED;
-
-        /* See if there are any pending connection attempts that need to be triggered now. */
-        informMonitorsTryConnect(librarymixer_id);
     }
+
+    if (signalFriendsChanged) emit friendsChanged();
 
     return true;
 }
@@ -673,50 +681,56 @@ bool FriendsConnectivityManager::addUpdateFriend(unsigned int librarymixer_id, c
     externalAddress.sin_port = htons(externalPort);
     inet_aton(externalIP.toStdString().c_str(), &externalAddress.sin_addr);
 
-    QMutexLocker stack(&connMtx);
+    bool signalFriendsChanged = false;
+    {
+        QMutexLocker stack(&connMtx);
 
-    /* First try to insert the certificate. */
-    int authResult = authMgr->addUpdateCertificate(cert, librarymixer_id);
+        /* First try to insert the certificate. */
+        int authResult = authMgr->addUpdateCertificate(cert, librarymixer_id);
 
-    /* Existing friend */
-    if (mFriendList.contains(librarymixer_id)) {
-        //Update the name
-        mFriendList[librarymixer_id]->name = name;
-        mFriendList[librarymixer_id]->id = authMgr->findCertByLibraryMixerId(librarymixer_id);
-        mFriendList[librarymixer_id]->localaddr = localAddress;
-        mFriendList[librarymixer_id]->serveraddr = externalAddress;
-        //If the cert has been updated
-        if (authResult >= 1) {
-            if (mFriendList[librarymixer_id]->state == FCS_NOT_MIXOLOGIST_ENABLED) {
-                mFriendList[librarymixer_id]->state = FCS_NOT_CONNECTED;
+        /* Existing friend */
+        if (mFriendList.contains(librarymixer_id)) {
+            //Update the name
+            mFriendList[librarymixer_id]->name = name;
+            mFriendList[librarymixer_id]->id = authMgr->findCertByLibraryMixerId(librarymixer_id);
+            mFriendList[librarymixer_id]->localaddr = localAddress;
+            mFriendList[librarymixer_id]->serveraddr = externalAddress;
+            //If the cert has been updated
+            if (authResult >= 1) {
+                if (mFriendList[librarymixer_id]->state == FCS_NOT_MIXOLOGIST_ENABLED) {
+                    mFriendList[librarymixer_id]->state = FCS_NOT_CONNECTED;
+                }
+                mFriendList[librarymixer_id]->actions = PEER_CERT_AND_ADDRESS_UPDATED;
+                mStatusChanged = true;
             }
-            mFriendList[librarymixer_id]->actions = PEER_CERT_AND_ADDRESS_UPDATED;
-            mStatusChanged = true;
         }
-        return true;
-    }
-    /* New friend */
-    else {
-        friendListing *newFriend = new friendListing();
+        /* New friend */
+        else {
+            friendListing *newFriend = new friendListing();
 
-        newFriend->librarymixer_id = librarymixer_id;
-        newFriend->name = name;
-        newFriend->localaddr = localAddress;
-        newFriend->serveraddr = externalAddress;
+            newFriend->librarymixer_id = librarymixer_id;
+            newFriend->name = name;
+            newFriend->localaddr = localAddress;
+            newFriend->serveraddr = externalAddress;
 
-        /* If this is a new friend, but no cert was added. */
-        if (authResult > 0) {
-            /* Should not be able to reach here with a null Cert. */
-            if ((newFriend->id = authMgr->findCertByLibraryMixerId(librarymixer_id)).empty()) return false;
-            newFriend->state = FCS_NOT_CONNECTED;
-            newFriend->actions = PEER_NEW;
-            mStatusChanged = true;
+            /* If this is a new friend, but no cert was added. */
+            if (authResult > 0) {
+                /* Should not be able to reach here with a null Cert. */
+                if ((newFriend->id = authMgr->findCertByLibraryMixerId(librarymixer_id)).empty()) return false;
+                newFriend->state = FCS_NOT_CONNECTED;
+                newFriend->actions = PEER_NEW;
+                mStatusChanged = true;
+            }
+
+            mFriendList[librarymixer_id] = newFriend;
+
+            signalFriendsChanged = true;
         }
-
-        mFriendList[librarymixer_id] = newFriend;
-
-        return true;
     }
+
+    if (signalFriendsChanged) emit friendsChanged();
+
+    return true;
 }
 
 void FriendsConnectivityManager::tryConnectToAll() {

@@ -77,7 +77,6 @@ void NotifyQt::UpdateGUI() {
 
     if (time(NULL) > lastTs) {              // always update, every 1 sec.
         emit transfersChanged(); //This is the timer that keeps TransfersDialog up to date
-        emit friendsChanged(); //This is the time that keeps PeersDialog up to date
     }
 
     lastTs = time(NULL) ;

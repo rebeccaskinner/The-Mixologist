@@ -200,6 +200,9 @@ signals:
        The difference between this and connectionStateChanged with a final state is that we can be in a final state,
        but still waiting to upload out updated address info to LibraryMixer, and the connection should not be considered ready yet. */
     void ownConnectionReadinessChanged(bool ready);
+
+    /* Emitted whenever we add a new friend, or a friend is connected to or disconnected from. */
+    void friendsChanged();
 };
 
 #endif
