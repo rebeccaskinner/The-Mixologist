@@ -54,6 +54,8 @@ NetworkDialog::NetworkDialog(QWidget *parent)
     ui.connecttreeWidget->resizeColumnToContents(4);
     ui.connecttreeWidget->resizeColumnToContents(5);
 
+    ui.connecttreeWidget->sortItems(0, Qt::AscendingOrder);
+
     // Set Log infos
     setLogInfo(tr("Mixologist ready to mix it up!"));
 
