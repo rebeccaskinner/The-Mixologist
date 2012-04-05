@@ -68,12 +68,8 @@ PeersDialog::PeersDialog(QWidget *parent)
 
     ui.friendsList->header()->hideSection(FRIEND_LIBRARYMIXER_ID_COLUMN);
 
-    /* Can't figure out why, but when actually running the program (not visible in QT Creator preview) a number appears in the header of this column as the text.
-       This gets rid of it. */
-    ui.friendsList->headerItem()->setText(FRIEND_ICON_AND_SORT_COLUMN, "");
-
-    /* Set up the default sort. */
-    ui.friendsList->sortItems(FRIEND_ICON_AND_SORT_COLUMN, Qt::AscendingOrder);
+    /* Showing the header doesn't add much to this page. */
+    ui.friendsList->header()->hide();
 
     /* Set the starting readiness level */
     connectionReadinessChanged(peers->getConnectionReadiness());
@@ -199,6 +195,11 @@ void  PeersDialog::insertPeers() {
 
     ui.friendsList->update();
 
+    /* Disabling sorting before inserting the movies seems to fix the movies being rendered in the wrong positions. */
+    ui.friendsList->setSortingEnabled(true);
+    ui.friendsList->sortItems(FRIEND_ICON_AND_SORT_COLUMN, Qt::AscendingOrder);
+    ui.friendsList->setSortingEnabled(false);
+
     static QMovie movie(":/Images/StatusSearching.gif");
     movie.start();
     movie.setSpeed(100);
@@ -284,8 +285,6 @@ void PeersDialog::connectionReadinessChanged(bool ready) {
         /* For some reason, when inserting an icon into the friendsList, a 4 pixel margin in inserted, and I can't find any way to disable it.
            Therefore, in order to avoid the icon being cut off, we make the column 30 pixels. */
         ui.friendsList->header()->resizeSection(FRIEND_ICON_AND_SORT_COLUMN, 30);
-
-        ui.friendsList->header()->show();
     } else {
         if (firstTimeRun) {
             /* We will fill the main friendsList box with a placeholder letting users know that the connection is initializing. */
@@ -306,9 +305,6 @@ void PeersDialog::connectionReadinessChanged(bool ready) {
             ui.friendsList->hideColumn(FRIEND_NAME_COLUMN);
             ui.friendsList->hideColumn(FRIEND_STATUS_COLUMN);
             ui.friendsList->header()->setResizeMode(FRIEND_ICON_AND_SORT_COLUMN, QHeaderView::Stretch);
-
-            /* We don't need to show the header for this. */
-            ui.friendsList->header()->hide();
         }
     }
 
