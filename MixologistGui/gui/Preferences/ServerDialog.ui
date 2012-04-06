@@ -560,7 +560,7 @@
       </sizepolicy>
      </property>
      <property name="title">
-      <string>Remote Server Configuration (takes effect after restart) (experimental)</string>
+      <string>Experimental (takes effect after restart)</string>
      </property>
      <layout class="QHBoxLayout" name="_2">
       <item>

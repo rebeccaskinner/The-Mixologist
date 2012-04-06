@@ -78,9 +78,18 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 
 bool GeneralDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
+
+    if (settings.value("Transfers/EnableOffLibraryMixer").toBool() != ui.offLM->checkState()) {
+        QMessageBox infoBox(this);
+        infoBox.setIcon(QMessageBox::Information);
+        infoBox.setText(QString("You have ") +
+                        (ui.offLM->checkState() ? "enabled" : "disabled") +
+                        " adding and browsing files not listed on LibraryMixer, this will take effect when you restart the Mixologist");
+        infoBox.exec();
+    }
+
     settings.setValue("Gui/StartMinimized", ui.startMinimized->checkState());
     settings.setValue("Transfers/EnableOffLibraryMixer", ui.offLM->checkState());
-
 
     if (canHandleRunOnBoot()) setRunOnBoot(ui.runOnBoot->isChecked());
     return true;

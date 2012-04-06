@@ -534,7 +534,7 @@
       <item>
        <widget class="QCheckBox" name="offLM">
         <property name="text">
-         <string>Enable additional off-LibraryMixer sharing method (requires restart)</string>
+         <string>Able to list files and see friends' files not on LibraryMixer</string>
         </property>
        </widget>
       </item>
