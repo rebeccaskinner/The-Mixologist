@@ -219,23 +219,10 @@ Control *Init::createControl(QString ownName) {
 
     control = server;
 
-    /**************************************************************************/
-    /* STARTUP procedure */
-    /**************************************************************************/
-    /**************************************************************************/
-    /* (1) Init variables */
-    /**************************************************************************/
-
-    /******************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #ifndef WINDOWS_SYS
-    /* SWITCH off the SIGPIPE - kills process on Linux. */
-    struct sigaction sigact;
-    sigact.sa_handler = SIG_IGN;
-    sigact.sa_flags = 0;
+    /* Switch off process termination on a broken network connection for Linux and OS X. */
+    signal(SIGPIPE, SIG_IGN);
 #endif
-    /**************************** END WINDOWS/UNIX SPECIFIC PART ******************/
-
-    /**************************************************************************/
 
     QString saveDir;
     QString partialsDir;
