@@ -64,17 +64,6 @@ struct TransferInfo {
 
 struct uploadFileInfo {
     QString path;
-    QString hash;
-    /* Total file size in bytes of the file. */
-    uint64_t size;
-
-    /* Either FT_STATE_WAITING or FT_STATE_TRANSFERRING */
-    uint32_t status;
-
-    /* Total amount that has been uploaded to all friends in bytes. */
-    uint64_t totalTransferred;
-    /* Total transfer rate total of all friends in kilobytes / second. */
-    double totalTransferRate;
 
     /* Details information for each of the friends that have requested this. */
     QList<TransferInfo> peers;
@@ -122,8 +111,6 @@ struct pendingRequest {
 
     uint32_t timeOfLastTry;
 };
-
-std::ostream &operator<<(std::ostream &out, const uploadFileInfo &info);
 
 /**********************************************************************************
  * LibraryMixerItem: Collectively, the LibraryMixerItems are a wrapper to an underlying XML document that is the master database.

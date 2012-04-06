@@ -50,12 +50,7 @@ bool ftFileProvider::checkFileValid() {
 
 bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
     QMutexLocker stack(&ftcMutex);
-    fileInfo.hash = hash;
-    fileInfo.size = fullFileSize;
     fileInfo.path = path;
-    fileInfo.status = FT_STATE_WAITING;
-    fileInfo.totalTransferred = 0;
-    fileInfo.totalTransferRate = 0;
 
     fileInfo.peers.clear();
 
@@ -64,16 +59,12 @@ bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
 
         transferInfo.librarymixer_id = librarymixer_id;
         transferInfo.transferred = requestingFriends[librarymixer_id].transferred;
-        fileInfo.totalTransferred += transferInfo.transferred;
         transferInfo.transferRate = requestingFriends[librarymixer_id].transferRate/1024.0;
-        fileInfo.totalTransferRate += transferInfo.transferRate;
 
         if (time(NULL) - requestingFriends[librarymixer_id].lastRequestTime > 5)
             transferInfo.status = FT_STATE_WAITING;
-        else {
-            fileInfo.status = FT_STATE_TRANSFERRING;
+        else
             transferInfo.status = FT_STATE_TRANSFERRING;
-        }
         fileInfo.peers.push_back(transferInfo);
     }
 
