@@ -117,7 +117,7 @@ int tounet_checkTTL(int sockfd) {
 }
 
 int tounet_close(int sockfd) {
-    log(LOG_WARNING, tounetzone, QString("Closing TCP over UDP socket ").append(QString::number(sockfd)));
+    log(LOG_DEBUG_ALERT, tounetzone, QString("Closing TCP over UDP socket ").append(QString::number(sockfd)));
     return closesocket(sockfd);
 }
 
