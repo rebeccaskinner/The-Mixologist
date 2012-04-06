@@ -32,7 +32,6 @@ class NetworkDialog : public QWidget {
 	Q_OBJECT
 
 public:
-	/** Default Constructor */
 	NetworkDialog(QWidget *parent = 0);
 
 public slots:
@@ -40,16 +39,14 @@ public slots:
         void setLogInfo(QString info);
 
 private slots:
-
-	void displayInfoLogMenu(const QPoint& point);
+        void restartConnection();
+        void displayInfoLogMenu(const QPoint& point);
 	void on_actionSelect_All_triggered();
 	void on_actionCopy_triggered();
 	void on_actionClear_Log_triggered();
 
 private:
-
-
-	QTreeWidgetItem *getCurrentNeighbour();
+        QTreeWidgetItem *getCurrentSelected();
 
 	QTreeWidget *connecttreeWidget;
 

@@ -56,9 +56,10 @@ NetworkDialog::NetworkDialog(QWidget *parent)
 
     ui.connecttreeWidget->sortItems(0, Qt::AscendingOrder);
 
-    // Set Log infos
+    /* Set default log line. */
     setLogInfo(tr("Mixologist ready to mix it up!"));
 
+    connect(ui.restartButton, SIGNAL(clicked()), this, SLOT(restartConnection()));
     connect(ui.refreshButton, SIGNAL(clicked()), this, SLOT(insertConnect()));
 }
 
@@ -70,7 +71,7 @@ void NetworkDialog::insertConnect() {
 
     /* get a link to the table */
     QTreeWidget *connectWidget = ui.connecttreeWidget;
-    QTreeWidgetItem *oldSelect = getCurrentNeighbour();
+    QTreeWidgetItem *oldSelect = getCurrentSelected();
     QTreeWidgetItem *newSelect = NULL;
     unsigned int oldId = 0;
     if (oldSelect) {
@@ -170,7 +171,7 @@ void NetworkDialog::insertConnect() {
     ui.connecttreeWidget->resizeColumnToContents(5);
 }
 
-QTreeWidgetItem *NetworkDialog::getCurrentNeighbour() {
+QTreeWidgetItem *NetworkDialog::getCurrentSelected() {
     /* get the current, and extract the Id */
 
     /* get a link to the table */
@@ -193,6 +194,10 @@ void NetworkDialog::setLogInfo(QString info) {
                        QTime::currentTime().toString(QString::fromUtf8("hh:mm:ss")) +
                        QString::fromUtf8("</font> - <font color='") + color.name() +
                        QString::fromUtf8("'><i>") + info + QString::fromUtf8("</i></font>"));
+}
+
+void NetworkDialog::restartConnection() {
+    peers->restartOwnConnection();
 }
 
 /* Utility Fns */

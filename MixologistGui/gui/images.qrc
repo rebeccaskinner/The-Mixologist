@@ -41,5 +41,6 @@
         <file>Images/AnimatedLoading.gif</file>
         <file>Images/StatusConnected.png</file>
         <file>Images/StatusSearching.gif</file>
+        <file>Images/RestartConnection.png</file>
     </qresource>
 </RCC>
