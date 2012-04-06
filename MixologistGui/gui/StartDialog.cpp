@@ -68,14 +68,15 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     connect(ui.autoBox, SIGNAL(stateChanged(int)), this, SLOT(autoLogonChecked(int)));
 
     librarymixerconnect = new LibraryMixerConnect();
-    connect(librarymixerconnect, SIGNAL(downloadedVersion(qulonglong,QString, QString)), this, SLOT(downloadedVersion(qulonglong,QString,QString)));
+    connect(librarymixerconnect, SIGNAL(downloadedVersion(qulonglong,QString, QString)), this, SLOT(downloadedVersion(qulonglong,QString,QString)), Qt::QueuedConnection);
+    /* This connection must by direct and not queued, as we must handle set up before passing control back to librarymixerconnect here. */
     connect(librarymixerconnect, SIGNAL(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)),
             this, SLOT(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)));
-    connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(uploadedInfo()));
-    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(downloadedFriends()));
-    connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(finishLoading()));
-    connect(librarymixerconnect, SIGNAL(dataReadProgress(int,int)), this, SLOT(updateDataReadProgress(int,int)));
-    connect(librarymixerconnect, SIGNAL(errorReceived(int)), this, SLOT(errorReceived(int)));
+    connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(uploadedInfo()), Qt::QueuedConnection);
+    connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(downloadedFriends()), Qt::QueuedConnection);
+    connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(finishLoading()), Qt::QueuedConnection);
+    connect(librarymixerconnect, SIGNAL(dataReadProgress(int,int)), this, SLOT(updateDataReadProgress(int,int)), Qt::QueuedConnection);
+    connect(librarymixerconnect, SIGNAL(errorReceived(int)), this, SLOT(errorReceived(int)), Qt::QueuedConnection);
 
     ui.progressBar->setVisible(false);
     ui.loadButton->setEnabled(false);

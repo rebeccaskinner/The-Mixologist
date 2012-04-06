@@ -80,9 +80,6 @@ signals:
     void userOptionalInfo(unsigned int librarymixer_id, int code, QString message);
 
 public slots:
-    /* Called by a timer to keep the GUI updated on methods not yet updated to use signals and slots. */
-    void UpdateGUI();
-
     /* Displays a system message. */
     virtual void displaySysMessage(int type, QString title, QString msg);
 

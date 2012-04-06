@@ -65,24 +65,6 @@ void NotifyQt::notifyUserOptional(unsigned int librarymixer_id, userOptionalCode
     emit userOptionalInfo(librarymixer_id, code, message);
 }
 
-/* New Timer Based Update scheme ...
- * means correct thread seperation
- *
- * uses Flags, to detect changes
- */
-
-void NotifyQt::UpdateGUI() {
-    /* hack to force updates until we've fixed that part */
-    static  time_t lastTs = 0;
-
-    if (time(NULL) > lastTs) {              // always update, every 1 sec.
-        emit transfersChanged(); //This is the timer that keeps TransfersDialog up to date
-    }
-
-    lastTs = time(NULL) ;
-}
-
-
 void NotifyQt::displaySysMessage(int type, QString title, QString msg) {
     switch (type) {
         case SYS_ERROR:

@@ -48,12 +48,12 @@ PeersDialog::PeersDialog(QWidget *parent)
     connect(peers, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(connectionReadinessChanged(bool)), Qt::QueuedConnection);
 
     /* To display chat status in chat windows. */
-    connect(guiNotify, SIGNAL(chatStatusChanged(unsigned int, QString)), this, SLOT(updatePeerStatusString(unsigned int, QString)));
+    connect(guiNotify, SIGNAL(chatStatusChanged(unsigned int, QString)), this, SLOT(updatePeerStatusString(unsigned int, QString)), Qt::QueuedConnection);
     /* To popup a chat box on incoming requests where a chat window is needed. */
-    connect(guiNotify, SIGNAL(requestEventOccurred(int,unsigned int,unsigned int)), this, SLOT(insertRequestEvent(int,unsigned int,unsigned int)));
+    connect(guiNotify, SIGNAL(requestEventOccurred(int,unsigned int,unsigned int)), this, SLOT(insertRequestEvent(int,unsigned int,unsigned int)), Qt::QueuedConnection);
     /* To popup a chat box on transfer events where the friend's response requests chatting or indicates an error. */
-    connect(guiNotify, SIGNAL(transferChatEventOccurred(int,unsigned int,QString,QString)), this, SLOT(insertTransferEvent(int,unsigned int,QString,QString)));
-    connect(guiNotify, SIGNAL(userOptionalInfo(unsigned int,int,QString)), this, SLOT(insertUserOptional(unsigned int,int,QString)));
+    connect(guiNotify, SIGNAL(transferChatEventOccurred(int,unsigned int,QString,QString)), this, SLOT(insertTransferEvent(int,unsigned int,QString,QString)), Qt::QueuedConnection);
+    connect(guiNotify, SIGNAL(userOptionalInfo(unsigned int,int,QString)), this, SLOT(insertUserOptional(unsigned int,int,QString)), Qt::QueuedConnection);
 
     /* Check for new chats every half a second. */
     QTimer *timer = new QTimer(this);
@@ -85,10 +85,10 @@ void PeersDialog::friendsListContextMenu(QPoint point) {
     int id = getFriendLibraryMixerId(selection);
 
     chatAct = new QAction(QIcon(":/Images/Chat.png"), tr("Chat"), this);
-    connect(chatAct , SIGNAL(triggered()), this, SLOT(chatFriend()));
+    connect(chatAct, SIGNAL(triggered()), this, SLOT(chatFriend()));
     contextMenu.addAction(chatAct);
     sendAct = new QAction(QIcon(":/Images/Send.png"), tr("Send File"), this);
-    connect(sendAct , SIGNAL(triggered()), this, SLOT(sendFileFriend()));
+    connect(sendAct, SIGNAL(triggered()), this, SLOT(sendFileFriend()));
     contextMenu.addAction(sendAct);
 
     if (!peers->isOnline(id)){
@@ -278,7 +278,7 @@ void PeersDialog::connectionReadinessChanged(bool ready) {
         /* We can now connect the friendsChanged() signal to update the view.
            We disconnect just in case. If we weren't already connected, no problem. If we were, prevents duplicates. */
         disconnect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
-        connect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
+        connect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()), Qt::QueuedConnection);
 
         insertPeers();
         ui.friendsList->setSelectionMode(QAbstractItemView::SingleSelection);

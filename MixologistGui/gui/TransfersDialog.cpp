@@ -86,13 +86,11 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     connect(ui.downloadsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(downloadsListContextMenu(QPoint)));
     connect(ui.uploadsList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(uploadsListContextMenu(QPoint)));
 
-    //To display transfers on the TransfersDialog, as well as the total rate info in the corner.
-    QObject::connect(guiNotify, SIGNAL(transfersChanged()), this, SLOT(insertTransfers()));
     //To popup a box informing that a friend is attempting to send a file.
     //QList<qlonglong> is not a default registerd type for QT's meta-object system, so we must first manually register it.
     qRegisterMetaType<QList<qlonglong> >("QList<qlonglong>");
     QObject::connect(guiNotify, SIGNAL(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)),
-                     this, SLOT(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)));
+                     this, SLOT(suggestionReceived(unsigned int, QString, QStringList, QStringList, QList<qlonglong>)), Qt::QueuedConnection);
 
     QHeaderView *header = ui.downloadsList->header() ;
     header->hideSection(DOWNLOAD_FRIEND_ID);
@@ -121,7 +119,12 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     ui.uploadsList->sortItems(0, Qt::AscendingOrder);
 
     connect(files, SIGNAL(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)),
-            this, SLOT(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)));
+            this, SLOT(responseLendOfferReceived(uint,uint,QString,QStringList,QStringList,QList<qlonglong>)), Qt::QueuedConnection);
+
+    /* This needs to change in the future, but for now, we simply refresh the entire view (including total transfer rates in corner) once every second. */
+    QTimer *timer = new QTimer(this);
+    timer->connect(timer, SIGNAL(timeout()), this, SLOT(insertTransfers()));
+    timer->start(1000);
 }
 
 void TransfersDialog::download(const QString &link) {

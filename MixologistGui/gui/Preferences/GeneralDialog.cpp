@@ -138,8 +138,7 @@ void GeneralDialog::showAdvanced(bool show) {
         mainwindow->actionPages.insert(mainwindow->ui.actionNetwork, mainwindow->networkDialog);
         mainwindow->ui.stackPages->insertWidget(mainwindow->ui.stackPages->count(), mainwindow->networkDialog);
         mainwindow->ui.actionNetwork->setVisible(true);
-        QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)),
-                         mainwindow->networkDialog, SLOT(setLogInfo(QString)));
+        QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)), mainwindow->networkDialog, SLOT(setLogInfo(QString)), Qt::QueuedConnection);
     } else {
         ui.showAdvanced->setText("Show Advanced View");
         mainwindow->ui.actionNetwork->setVisible(false);

@@ -110,12 +110,7 @@ int main(int argc, char *argv[]) {
         mainwindow->transfersDialog->download(args.last());
     }
 
-    /* Startup a Timer to keep the gui's updated */
-    QTimer *timer = new QTimer(mainwindow);
-    timer->connect(timer, SIGNAL(timeout()), guiNotify, SLOT(UpdateGUI()));
-    timer->start(1000);
-
-    /* the main loop */
+    /* The main program GUI event loop. */
     int execResult = instance.exec();
 
     delete mainwindow;

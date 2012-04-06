@@ -44,7 +44,7 @@ LibraryDialog::LibraryDialog(QWidget *parent)
 
     connect(ui.addLibraryButton, SIGNAL(clicked()), this, SLOT(addLibraryClicked()));
     connect(ui.updateLibraryButton, SIGNAL(clicked()), this, SLOT(updateLibrary()));
-    connect(librarymixerconnect, SIGNAL(downloadedLibrary()), this, SLOT(updatedLibrary()));
+    connect(librarymixerconnect, SIGNAL(downloadedLibrary()), this, SLOT(updatedLibrary()), Qt::QueuedConnection);
 
     /* Setup Off-LM Model. */
     QSettings settings(*mainSettings, QSettings::IniFormat);

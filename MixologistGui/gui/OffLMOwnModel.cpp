@@ -40,7 +40,7 @@
 OffLMOwnModel::OffLMOwnModel(QTreeView* view, QWidget *parent) :QAbstractItemModel(parent), ownItemView(view) {
     connect(ownItemView, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(ownListContextMenu(QPoint)));
     /* This can't be done in the constructor because ownItemView isn't setup yet because LibraryDialog hasn't finished constructing yet.
-       However, geometriesChanged seems to work, thouhg it ends up being called not only after construction, but also when moving between pages and destruction. */
+       However, geometriesChanged seems to work, though it ends up being called not only after construction, but also when moving between pages and destruction. */
     connect(ownItemView->header(), SIGNAL(geometriesChanged()), this, SLOT(resizeHeader()));
     connect(files, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), this, SLOT(itemAboutToBeInserted(OffLMShareItem*)), Qt::DirectConnection);
     connect(files, SIGNAL(offLMOwnItemAdded()), this, SLOT(itemInserted()));

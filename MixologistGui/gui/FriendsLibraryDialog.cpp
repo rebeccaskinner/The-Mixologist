@@ -34,7 +34,7 @@ FriendsLibraryDialog::FriendsLibraryDialog(QWidget *parent)
     ui.setupUi(this);
 
     connect(ui.updateLibraryButton, SIGNAL(clicked()), this, SLOT(updateLibrary()));
-    connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(updatedLibrary()));
+    connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(updatedLibrary()), Qt::QueuedConnection);
 
     /* Setup LibraryFriendModel */
     LibraryFriendModel* libraryFriendModel = new LibraryFriendModel(ui.libraryList, this);

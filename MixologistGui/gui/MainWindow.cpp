@@ -41,8 +41,8 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     /* Invoke the Qt Designer generated QObject setup routine */
     ui.setupUi(this);
 
-    connect(peers, SIGNAL(connectionStateChanged(int,bool)), this, SLOT(updateConnectionStatus(int,bool)));
-    connect(peers, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(updateConnectionReadiness(bool)));
+    connect(peers, SIGNAL(connectionStateChanged(int,bool)), this, SLOT(updateConnectionStatus(int,bool)), Qt::QueuedConnection);
+    connect(peers, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(updateConnectionReadiness(bool)), Qt::QueuedConnection);
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
@@ -82,7 +82,7 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
         actionPages.insert(ui.actionNetwork, networkDialog);
         ui.stackPages->insertWidget(ui.stackPages->count(), networkDialog);
         QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)),
-                         networkDialog, SLOT(setLogInfo(QString)));
+                         networkDialog, SLOT(setLogInfo(QString)), Qt::QueuedConnection);
 
     } else ui.actionNetwork->setVisible(false);
 
