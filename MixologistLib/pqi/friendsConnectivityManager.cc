@@ -176,7 +176,7 @@ void FriendsConnectivityManager::connectivityTick() {
                         tryConnectTCP(currentFriend->librarymixer_id);
                         tryConnectBackTCP(currentFriend->librarymixer_id);
                     }
-                    currentFriend->actions |= PEER_TIMEOUT;
+                    currentFriend->actions |= PEER_DISCONNECT;
                     currentFriend->lastcontact = time(NULL);
                     mStatusChanged = true;
 
@@ -539,6 +539,15 @@ void FriendsConnectivityManager::getExternalAddresses(QList<struct sockaddr_in> 
     foreach (friendListing* currentFriend, mFriendList.values()) {
         toFill.append(currentFriend->serveraddr);
     }
+}
+
+void FriendsConnectivityManager::disconnectAllFriends() {
+    QMutexLocker stack(&connMtx);
+    foreach (friendListing* currentFriend, mFriendList.values()) {
+        currentFriend->actions |= PEER_DISCONNECT;
+        currentFriend->lastcontact = time(NULL);
+    }
+    mStatusChanged = true;
 }
 
 /**********************************************************************************

@@ -129,7 +129,12 @@ public:
     /* Called by pqistreamer whenever we received a packet from a friend, updates their friendListing so we know not to time them out. */
     void heardFrom(unsigned int librarymixer_id);
 
+    /* Returns all friends' external addresses in a list.
+       Used by ownConnectivityManager in using them as STUN servers. */
     void getExternalAddresses(QList<struct sockaddr_in> &toFill);
+
+    /* Disconnects from all friends. */
+    void disconnectAllFriends();
 
     /**********************************************************************************
      * The interface to AggregatedConnectionsToFriends

@@ -130,7 +130,7 @@ void AggregatedConnectionsToFriends::statusChange(const std::list<pqipeer> &chan
     foreach(pqipeer currentPeer, changedFriends) {
         if (currentPeer.actions & PEER_NEW) addPeer(currentPeer.cert_id, currentPeer.librarymixer_id);
         if (currentPeer.actions & PEER_CONNECT_REQ) connectPeer(currentPeer.librarymixer_id);
-        if (currentPeer.actions & PEER_TIMEOUT) timeoutPeer(currentPeer.librarymixer_id);
+        if (currentPeer.actions & PEER_DISCONNECT) resetPeer(currentPeer.librarymixer_id);
         if (currentPeer.actions & PEER_CERT_AND_ADDRESS_UPDATED) {
             removePeer(currentPeer.librarymixer_id);
             addPeer(currentPeer.cert_id, currentPeer.librarymixer_id);
@@ -216,7 +216,7 @@ int AggregatedConnectionsToFriends::connectPeer(unsigned int librarymixer_id) {
     return 1;
 }
 
-void AggregatedConnectionsToFriends::timeoutPeer(unsigned int librarymixer_id) {
+void AggregatedConnectionsToFriends::resetPeer(unsigned int librarymixer_id) {
     QMutexLocker stack(&coreMtx);
     if (!connectionsToFriends.contains(librarymixer_id)) return;
 

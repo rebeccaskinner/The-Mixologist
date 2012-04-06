@@ -38,8 +38,8 @@ const uint32_t PEER_NEW = 0x0001;
 const uint32_t PEER_CONNECTED = 0x0002;
 //Signal to AggregatedConnectionsToFriends that it should try the connection again
 const uint32_t PEER_CONNECT_REQ = 0x0004;
-//Signal to AggregatedConnectionsToFriends that an existing peer has been timed out, and their connection must be reset
-const uint32_t PEER_TIMEOUT = 0x0008;
+//Signal to AggregatedConnectionsToFriends that an existing peer should be disconnected (such as on time out), and their connection must be reset
+const uint32_t PEER_DISCONNECT = 0x0008;
 //Signal to AggregatedConnectionsToFriends that we have updated info from LibraryMixer on this friend
 const uint32_t PEER_CERT_AND_ADDRESS_UPDATED = 0x0010;
 

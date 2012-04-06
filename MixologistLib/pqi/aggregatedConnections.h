@@ -69,7 +69,7 @@ public:
     virtual int tick();
 
     /* Called by the FriendsConnectivityManager's tick function with a list of pqipeers whose statuses have changed.
-       For each friend in the list, handles if their action is PEER_NEW, PEER_CONNECT_REQ, or PEER_TIMEOUT. */
+       For each friend in the list, handles if their action is PEER_NEW, PEER_CONNECT_REQ, or PEER_DISCONNECT. */
     virtual void statusChange(const std::list<pqipeer> &changedFriends);
 
     /* Called by the contained ConnectionToFriends to inform when a connection has been made.
@@ -91,7 +91,7 @@ private:
     int connectPeer(unsigned int librarymixer_id);
 
     /* Resets the connection with a connected friend. */
-    void timeoutPeer(unsigned int librarymixer_id);
+    void resetPeer(unsigned int librarymixer_id);
 
     /* Handles the ticking for the p3ServiceServer. */
     int tickServiceRecv();

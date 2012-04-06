@@ -622,6 +622,7 @@ ConnectionStatus OwnConnectivityManager::getConnectionStatus() {
 
 void OwnConnectivityManager::restartOwnConnection() {
     log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Reseting network configuration");
+    friendsConnectivityManager->disconnectAllFriends();
     shutdown();
     {
         QMutexLocker stack(&ownConMtx);
