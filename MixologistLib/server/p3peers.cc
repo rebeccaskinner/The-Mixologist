@@ -66,6 +66,10 @@ ConnectionStatus p3Peers::getConnectionStatus() {
     return ownConnectivityManager->getConnectionStatus();
 }
 
+void p3Peers::restartOwnConnection() {
+    return ownConnectivityManager->restartOwnConnection();
+}
+
 void p3Peers::getOnlineList(QList<unsigned int> &friend_ids) {
     friendsConnectivityManager->getOnlineList(friend_ids);
 }

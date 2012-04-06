@@ -599,17 +599,7 @@ void OwnConnectivityManager::checkNetInterfacesTick() {
         }
     }
 
-    if (resetNeeded) {
-        log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Reseting network configuration");
-        shutdown();
-        {
-            QMutexLocker stack(&ownConMtx);
-            setNewConnectionStatus(CONNECTION_STATUS_FINDING_STUN_FRIENDS);
-        }
-        emit connectionStateChanged(CONNECTION_STATUS_FINDING_STUN_FRIENDS, autoConfigEnabled);
-        emit ownConnectionReadinessChanged(false);
-        select_NetInterface_OpenPorts();
-    }
+    if (resetNeeded) restartOwnConnection();
 }
 
 /**********************************************************************************
@@ -628,6 +618,18 @@ bool OwnConnectivityManager::getConnectionAutoConfigEnabled() {
 ConnectionStatus OwnConnectivityManager::getConnectionStatus() {
     QMutexLocker stack(&ownConMtx);
     return connectionStatus;
+}
+
+void OwnConnectivityManager::restartOwnConnection() {
+    log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Reseting network configuration");
+    shutdown();
+    {
+        QMutexLocker stack(&ownConMtx);
+        setNewConnectionStatus(CONNECTION_STATUS_FINDING_STUN_FRIENDS);
+    }
+    emit connectionStateChanged(CONNECTION_STATUS_FINDING_STUN_FRIENDS, autoConfigEnabled);
+    emit ownConnectionReadinessChanged(false);
+    select_NetInterface_OpenPorts();
 }
 
 

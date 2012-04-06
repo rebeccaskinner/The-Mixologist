@@ -60,6 +60,12 @@ ServerDialog::ServerDialog(QWidget *parent)
 
 bool ServerDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
+
+    /* We'll need to restart the connection if auto-config has been disabled or enabled, or if it has remained disabled but the port number has changed. */
+    bool autoConfigEnabled = (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT);
+    bool needConnectionRestart = ((ui.disableAutoConfig->isChecked() == autoConfigEnabled) ||
+                                  (!autoConfigEnabled && (ui.portNumber->value() != settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT).toInt())));
+
     if (ui.disableAutoConfig->isChecked()) {
         settings.setValue("Network/AutoOrPort", ui.portNumber->value());
     } else {
@@ -67,6 +73,8 @@ bool ServerDialog::save() {
     }
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
     serverSettings.setValue("MixologyServer", ui.mixologyServer->text());
+
+    if (needConnectionRestart) peers->restartOwnConnection();
 
     return true;
 }

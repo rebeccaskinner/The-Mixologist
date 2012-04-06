@@ -155,6 +155,9 @@ public:
     /* Returns our current connection status. */
     virtual ConnectionStatus getConnectionStatus() = 0;
 
+    /* Shuts down our current connection and starts it up again. */
+    virtual void restartOwnConnection() = 0;
+
     /* List of LibraryMixer ids for all online friends. */
     virtual void getOnlineList(QList<unsigned int> &friend_ids) = 0;
 

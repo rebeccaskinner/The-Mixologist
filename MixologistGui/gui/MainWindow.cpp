@@ -500,7 +500,7 @@ void MainWindow::displayInfoText(InfoTextType type) {
         info += "<b>Manually Configured</b>";
         info += "<p>You've disabled auto-connection configuration in Options.</p>";
         info += "<p>Everything appears to be doing great!</p>";
-        info += "<p>However, if you recently closed and then quickly reopened the Mixologist it is possible this is a false-positive.</p>";
+        info += "<p>However, if you recently closed and then quickly reopened the Mixologist, or if you just switched to a manual connection in Options without restarting, it is possible this is a false-positive.</p>";
         info += "<p>If you see this message and from when you opened the Mixologist this time it was more than an hour since the previous time it was open, you can be pretty sure everything is doing great!</p>";
     } else if (INFO_TEXT_MANUAL_BAD == type) {
         info += "<b>Manually Configured</b>";

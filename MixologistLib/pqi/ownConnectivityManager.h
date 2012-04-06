@@ -98,6 +98,9 @@ public:
     /* Returns our current connection status. */
     ConnectionStatus getConnectionStatus();
 
+    /* Shuts down our current connection and starts it up again. */
+    void restartOwnConnection();
+
 signals:
     /* Used to inform GUI of changes to the current ConnectionStatus, as well as whether auto-connection config is enabled.
        All values of newStatus should be members of ConnectionStatus. */

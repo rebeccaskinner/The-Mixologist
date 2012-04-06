@@ -498,7 +498,7 @@
       </sizepolicy>
      </property>
      <property name="title">
-      <string>Connection (takes effect after restart)</string>
+      <string>Connection (will restart connection)</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
