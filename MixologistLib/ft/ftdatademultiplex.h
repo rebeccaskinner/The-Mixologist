@@ -48,7 +48,7 @@ class ftFileMethod;
 
 #include <QThread>
 #include <QMutex>
-#include <QMap>
+#include <QHash>
 
 class ftRequest {
 public:
@@ -125,8 +125,8 @@ private:
 
     mutable QMutex dataMtx;
 
-    /* List of current files being uploaded by file hash. */
-    QMap<QString, ftFileProvider *> activeFileServes;
+    /* List of current files being uploaded, keyed by file hash. */
+    QHash<QString, ftFileProvider *> activeFileServes;
     /* List of files that had previously been uploaded. Kept around so GUI can display information on them until user clears it. */
     QList<ftFileProvider *> deadFileServes;
 

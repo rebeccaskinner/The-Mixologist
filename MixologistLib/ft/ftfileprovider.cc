@@ -32,10 +32,7 @@
 #include <QFile>
 
 ftFileProvider::ftFileProvider(QString _path, uint64_t size, QString hash)
-    : fullFileSize(size), hash(hash), path(_path), file(NULL), internalMixologistFile(false), transferRate(0), transferredSinceLastCalc(0) {
-    lastRequestTime = time(NULL);
-    lastTransferRateCalc = lastRequestTime;
-}
+    :fullFileSize(size), hash(hash), path(_path), file(NULL), internalMixologistFile(false) {}
 
 ftFileProvider::~ftFileProvider() {
     if (file != NULL) {
@@ -51,29 +48,34 @@ bool ftFileProvider::checkFileValid() {
     return true;
 }
 
-void ftFileProvider::setLastRequestor(unsigned int librarymixer_id) {
-    QMutexLocker stack(&ftcMutex);
-    lastRequestor = librarymixer_id;
-}
-
 bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
     QMutexLocker stack(&ftcMutex);
     fileInfo.hash = hash;
     fileInfo.size = fullFileSize;
     fileInfo.path = path;
-    fileInfo.transferred = lastRequestedEnd;
-    fileInfo.lastTransfer = lastRequestTime;
-    fileInfo.status = FT_STATE_TRANSFERRING;
+    fileInfo.status = FT_STATE_WAITING;
+    fileInfo.totalTransferred = 0;
+    fileInfo.totalTransferRate = 0;
 
     fileInfo.peers.clear();
 
-    TransferInfo tInfo;
-    tInfo.librarymixer_id = lastRequestor;
-    tInfo.status = FT_STATE_TRANSFERRING;
-    tInfo.transferRate = transferRate/1024.0;
+    foreach (unsigned int librarymixer_id, requestingFriends.keys()) {
+        TransferInfo transferInfo;
 
-    fileInfo.totalTransferRate = transferRate/1024.0;
-    fileInfo.peers.push_back(tInfo);
+        transferInfo.librarymixer_id = librarymixer_id;
+        transferInfo.transferred = requestingFriends[librarymixer_id].transferred;
+        fileInfo.totalTransferred += transferInfo.transferred;
+        transferInfo.transferRate = requestingFriends[librarymixer_id].transferRate/1024.0;
+        fileInfo.totalTransferRate += transferInfo.transferRate;
+
+        if (time(NULL) - requestingFriends[librarymixer_id].lastRequestTime > 5)
+            transferInfo.status = FT_STATE_WAITING;
+        else {
+            fileInfo.status = FT_STATE_TRANSFERRING;
+            transferInfo.status = FT_STATE_TRANSFERRING;
+        }
+        fileInfo.peers.push_back(transferInfo);
+    }
 
     return true;
 }
@@ -95,7 +97,7 @@ uint64_t ftFileProvider::getFileSize() const {
     return fullFileSize;
 }
 
-bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *data) {
+bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *data, unsigned int librarymixer_id) {
 
     QMutexLocker stack(&ftcMutex);
 
@@ -122,24 +124,28 @@ bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *da
 
     if (file.read((char *)data, requestSize) == -1) return false;
 
-    //Update stats
+    /* Update stats. */
     time_t currentTime = time(NULL);
 
-    long int timeSinceLastCalc = (long int)currentTime - (long int)lastTransferRateCalc;
-
-    if (timeSinceLastCalc > 3) {
-        transferRate = transferredSinceLastCalc / (float)timeSinceLastCalc ;
-        log(LOG_DEBUG_BASIC, FTFILEPROVIDERZONE,
-            "ftFileProvider::getFileData() transfer rate: " + QString::number(transferRate) +
-            " transferredSinceLastCalc: " + QString::number(transferredSinceLastCalc));
-        lastTransferRateCalc = currentTime;
-        transferredSinceLastCalc = 0;
+    /* Create a new friend entry if necessary. */
+    if (!requestingFriends.contains(librarymixer_id)) {
+        requestingFriends[librarymixer_id].transferRate = 0;
+        requestingFriends[librarymixer_id].lastTransferRateCalc = currentTime;
+        requestingFriends[librarymixer_id].transferredSinceLastCalc = 0;
+    } else {
+        long int timeSinceLastCalc = (long int)currentTime - (long int)requestingFriends[librarymixer_id].lastTransferRateCalc;
+        if (timeSinceLastCalc > 3) {
+            requestingFriends[librarymixer_id].transferRate = requestingFriends[librarymixer_id].transferredSinceLastCalc /
+                                                              (float) timeSinceLastCalc;
+            requestingFriends[librarymixer_id].lastTransferRateCalc = currentTime;
+            requestingFriends[librarymixer_id].transferredSinceLastCalc = 0;
+        }
     }
 
-    lastRequestedEnd = baseFileOffset + requestSize;
-    lastRequestTime = currentTime;
-    lastRequestSize = requestSize;
-    transferredSinceLastCalc += lastRequestSize;
+    requestingFriends[librarymixer_id].lastRequestedEnd = baseFileOffset + requestSize;
+    requestingFriends[librarymixer_id].lastRequestTime = currentTime;
+    requestingFriends[librarymixer_id].transferredSinceLastCalc += requestSize;
+    requestingFriends[librarymixer_id].transferred += requestSize;
 
     return true;
 }
@@ -159,4 +165,20 @@ bool ftFileProvider::moveFile(QString newPath) {
         log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() failed");
         return false;
     }
+}
+
+void ftFileProvider::addPermittedRequestor(unsigned int librarymixer_id) {
+    QMutexLocker stack(&ftcMutex);
+    if (!permittedRequestors.contains(librarymixer_id)) permittedRequestors.append(librarymixer_id);
+}
+
+void ftFileProvider::allowAllRequestors() {
+    QMutexLocker stack(&ftcMutex);
+    permittedRequestors.clear();
+}
+
+bool ftFileProvider::isPermittedRequestor(unsigned int librarymixer_id) {
+    QMutexLocker stack(&ftcMutex);
+    if (permittedRequestors.isEmpty()) return true;
+    return permittedRequestors.contains(librarymixer_id);
 }

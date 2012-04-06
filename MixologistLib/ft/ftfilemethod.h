@@ -35,17 +35,25 @@ class ftFileMethod: public QObject {
 public:
     enum searchResult {
         SEARCH_RESULT_NOT_FOUND,
-        SEARCH_RESULT_FOUND_SHARED_FILE, //Used for files shared for transfer with friends
-        SEARCH_RESULT_FOUND_INTERNAL_FILE //Used for internal Mixologist files that are not user shares
+        /* Used for files shared for transfer with all friends. */
+        SEARCH_RESULT_FOUND_SHARED_FILE,
+        /* Used for files that are not to be shared with all friends, but sharing with this particular friend is permitted. */
+        SEARCH_RESULT_FOUND_SHARED_FILE_LIMITED,
+        /* Used for internal Mixologist files that are not user shares. */
+        SEARCH_RESULT_FOUND_INTERNAL_FILE
     };
 
     virtual ~ftFileMethod() {}
 
     /* Returns true if it is able to find a file with matching hash and size.
-       If a file is found, populates path. */
-    virtual ftFileMethod::searchResult search(const QString &hash, qlonglong size, uint32_t hintflags, QString &path) = 0;
+       hintflags is a combination of the flags from files.h to indicate where to search.
+       librarymixer_id is the friend that is asking for it, in case it is relevant for limited shares.
+       If a file is found, populates path.
+       In practice, called by ftDataDemultiplex when it is looking for a file to send. */
+    virtual ftFileMethod::searchResult search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int librarymixer_id, QString &path) = 0;
 
 signals:
+    /* Emitted when a shared file becomes no longer available on disk. */
     void fileNoLongerAvailable(QString hash, qulonglong size);
 };
 

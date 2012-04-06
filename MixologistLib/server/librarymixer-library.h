@@ -125,7 +125,7 @@ public:
 
     /* Returns true if it is able to find a file with matching hash and size.
        If a file is found, populates path. */
-    virtual ftFileMethod::searchResult search(const QString &hash, qlonglong size, uint32_t hintflags, QString &path);
+    virtual ftFileMethod::searchResult search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int librarymixer_id, QString &path);
 
 signals:
     void libraryItemAboutToBeInserted(int row);

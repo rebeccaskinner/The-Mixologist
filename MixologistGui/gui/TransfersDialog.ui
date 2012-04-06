@@ -596,9 +596,6 @@
          <property name="verticalScrollMode">
           <enum>QAbstractItemView::ScrollPerPixel</enum>
          </property>
-         <property name="itemsExpandable">
-          <bool>false</bool>
-         </property>
          <property name="sortingEnabled">
           <bool>true</bool>
          </property>
@@ -706,9 +703,6 @@
          </property>
          <property name="verticalScrollMode">
           <enum>QAbstractItemView::ScrollPerPixel</enum>
-         </property>
-         <property name="indentation">
-          <number>0</number>
          </property>
          <property name="sortingEnabled">
           <bool>true</bool>

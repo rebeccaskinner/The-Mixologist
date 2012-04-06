@@ -73,7 +73,7 @@ void ftTempList::addTempItem(const QString &title, const QStringList &paths, uns
         if (item->label() == title && DirUtil::allPathsMatch(item->paths(), paths) && item->friend_id() == friend_id && item->borrowKey() == itemKey) {
             sendTempItemIfReady(item);
             return;
-        } else if (item->borrowKey() == itemKey) {
+        } else if (!item->borrowKey().isEmpty() && item->borrowKey() == itemKey) {
             removeTempItem(item);
         }
     }
@@ -92,7 +92,7 @@ void ftTempList::addTempItem(const QString &title, const QStringList &paths, uns
 void ftTempList::removeReturnBorrowedTempItem(const QString &itemKey) {
     QMutexLocker stack(&tempItemMutex);
     foreach (TempShareItem* item, tempList) {
-        if (item->borrowKey() == itemKey) {
+        if (!item->borrowKey().isEmpty() && item->borrowKey() == itemKey) {
             /* Cache the paths as removeTempItem will destroy the item.
                However, we don't want to try to remove the files before calling removeTempItem as it ensures any file handles are closed. */
             QStringList paths = item->paths();
@@ -106,12 +106,14 @@ void ftTempList::removeReturnBorrowedTempItem(const QString &itemKey) {
     }
 }
 
-ftFileMethod::searchResult ftTempList::search(const QString &hash, qlonglong size, uint32_t hintflags, QString &path) {
+ftFileMethod::searchResult ftTempList::search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int librarymixer_id, QString &path) {
     if (hintflags | FILE_HINTS_TEMP){
         QMutexLocker stack(&tempItemMutex);
         foreach(TempShareItem* item, tempList) {
             for (int i = 0; i < item->fileCount(); i++) {
-                if (hash == item->hashes()[i] && size == item->filesizes()[i]) {
+                if (hash == item->hashes()[i] &&
+                    size == item->filesizes()[i] &&
+                    librarymixer_id == item->friend_id()) {
                     path = item->paths()[i];
 
                     /* Everytime a file in this tempShareItem is accessed, we will renew the expiration of the tempShareItem to 2 weeks
@@ -122,7 +124,7 @@ ftFileMethod::searchResult ftTempList::search(const QString &hash, qlonglong siz
                        In the future we might want a better method, in case users keep their Mixologist open for weeks without restarting. */
                     item->expirationSetToTwoWeeks();
 
-                    return ftFileMethod::SEARCH_RESULT_FOUND_SHARED_FILE;
+                    return ftFileMethod::SEARCH_RESULT_FOUND_SHARED_FILE_LIMITED;
                 }
             }
         }

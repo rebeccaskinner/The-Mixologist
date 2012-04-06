@@ -76,7 +76,7 @@ void ftDataDemultiplex::run() {
 
 void ftDataDemultiplex::FileUploads(QList<uploadFileInfo> &uploads) {
     QMutexLocker stack(&dataMtx);
-    QMap<QString, ftFileProvider *>::const_iterator it;
+
     foreach (ftFileProvider* fileServe, activeFileServes.values()) {
         if (!fileServe->isInternalMixologistFile()) {
             uploadFileInfo info;
@@ -134,12 +134,12 @@ bool ftDataDemultiplex::workQueued() {
 bool ftDataDemultiplex::doWork() {
     bool doRequests = true;
 
-    /* Handle All the current Requests */
+    /* Handle all the current requests. */
     while (doRequests) {
         ftRequest req;
-
         {
             QMutexLocker stack(&dataMtx);
+
             if (mRequestQueue.size() == 0) {
                 doRequests = false;
                 continue;
@@ -147,10 +147,7 @@ bool ftDataDemultiplex::doWork() {
 
             req = mRequestQueue.front();
             mRequestQueue.pop_front();
-
         }
-
-        /* MUTEX FREE */
 
         switch (req.mType) {
             case FT_DATA:
@@ -166,13 +163,11 @@ bool ftDataDemultiplex::doWork() {
         }
     }
 
-    /* Only Handle One Search Per Period....
-     * Lower Priority
-     */
+    /* Only handle one search per period, we treat these as lower priority. */
     ftRequest req;
-
     {
         QMutexLocker stack(&dataMtx);
+
         if (mSearchQueue.size() == 0) {
             return true;
         }
@@ -192,22 +187,20 @@ bool ftDataDemultiplex::handleIncomingData(unsigned int librarymixer_id, QString
 }
 
 void ftDataDemultiplex::handleOutgoingDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize) {
-    /**** Find Files *****/
-
     QMutexLocker stack(&dataMtx);
 
     /* Once multi-source is implemented, we should scan the files we're downloading here to see if
        we're downloading the thing that is being requested and can respond with what we have. */
 
-    //If the data being requested is something we're currently uploading
-    if (activeFileServes.contains(hash) && activeFileServes[hash]->getFileSize() == size) {
+    /* If the data being requested is something we've already got a file provider for, and this friend is allowed to request it. */
+    if (activeFileServes.contains(hash) &&
+        activeFileServes[hash]->getFileSize() == size &&
+        activeFileServes[hash]->isPermittedRequestor(librarymixer_id)) {
         sendRequestedData(activeFileServes[hash], librarymixer_id, hash, size, offset, chunksize);
         return;
     }
 
-    /* Not present in our available files. We'll do a search for it in our file list when we have a chance.
-       The results won't be available immediately, at best it will be added to activeFileServes, and become
-       available for the next time the requestor sends a request for this. */
+    /* Not present in our available files. We'll do a search for it in our file list when we have a chance. */
     mSearchQueue.push_back(ftRequest(FT_DATA_REQ, librarymixer_id, hash, size, offset, chunksize, NULL));
 
     return;
@@ -217,18 +210,16 @@ bool ftDataDemultiplex::sendRequestedData(ftFileProvider *provider, unsigned int
     void *data = malloc(chunksize);
 
     if (data == NULL) {
-        log(LOG_DEBUG_ALERT, FTDATADEMULTIPLEXZONE,
-            "ftDataDemultiplex::sendRequestedData malloc failed for a chunksize of " + QString::number(chunksize));
+        log(LOG_DEBUG_ALERT, FTDATADEMULTIPLEXZONE, "ftDataDemultiplex::sendRequestedData malloc failed for a chunksize of " + QString::number(chunksize));
         return false;
     }
 
-    if (provider->getFileData(offset, chunksize, data)) {
+    if (provider->getFileData(offset, chunksize, data, librarymixer_id)) {
         log(LOG_DEBUG_ALL, FTDATADEMULTIPLEXZONE,
             QString("ftDataDemultiplex::sendRequestedData") +
             " hash: " + hash +
             " offset: " + QString::number(offset) +
             " chunksize: " + QString::number(chunksize));
-        provider->setLastRequestor(librarymixer_id);
         ftserver->sendData(librarymixer_id, hash, size, offset, chunksize, data);
         return true;
     } else {
@@ -260,26 +251,43 @@ bool ftDataDemultiplex::handleSearchRequest(unsigned int librarymixer_id, QStrin
     {
         QMutexLocker stack(&dataMtx);
         foreach (ftFileMethod* fileMethod, mFileMethods) {
-            result = fileMethod->search(hash, size, hintflags, path);
+            result = fileMethod->search(hash, size, hintflags, librarymixer_id, path);
             if (result != ftFileMethod::SEARCH_RESULT_NOT_FOUND) break;
         }
     }
 
     if (result != ftFileMethod::SEARCH_RESULT_NOT_FOUND) {
-
-        /* setup a new provider */
         QMutexLocker stack(&dataMtx);
 
-        ftFileProvider *provider = new ftFileProvider(path, size, hash);
-        if (provider->checkFileValid()) {
-            if (result == ftFileMethod::SEARCH_RESULT_FOUND_INTERNAL_FILE) provider->setInternalMixologistFile(true);
-            activeFileServes[hash] = provider;
-
-            /* handle request finally */
-            sendRequestedData(provider, librarymixer_id, hash, size, offset, chunksize);
+        /* If we already have a file serve that previously rejected this friend for security failure.
+           We now know that this friend is authorized by a search provider to access this file. */
+        if (activeFileServes.contains(hash)) {
+            if (ftFileMethod::SEARCH_RESULT_FOUND_SHARED_FILE_LIMITED == result) {
+                activeFileServes[hash]->addPermittedRequestor(librarymixer_id);
+            } else {
+                activeFileServes[hash]->allowAllRequestors();
+            }
             return true;
-        } else delete provider;
+        }
+
+        /* Otherwise, we are creating a new file serve. */
+        else {
+            ftFileProvider *provider = new ftFileProvider(path, size, hash);
+            if (provider->checkFileValid()) {
+                if (ftFileMethod::SEARCH_RESULT_FOUND_INTERNAL_FILE == result)
+                    provider->setInternalMixologistFile(true);
+                else if (ftFileMethod::SEARCH_RESULT_FOUND_SHARED_FILE_LIMITED == result)
+                    provider->addPermittedRequestor(librarymixer_id);
+
+                activeFileServes[hash] = provider;
+
+                /* Now that we have created a file serve, we also handle their data request. */
+                sendRequestedData(provider, librarymixer_id, hash, size, offset, chunksize);
+                return true;
+            } else delete provider;
+        }
     }
+
     return false;
 }
 

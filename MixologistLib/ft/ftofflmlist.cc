@@ -239,7 +239,7 @@ int ftOffLMList::getOffLMShareFriendCount() const {
     return friends.size();
 }
 
-ftFileMethod::searchResult ftOffLMList::search(const QString &hash, qlonglong size, uint32_t hintflags, QString &path) {
+ftFileMethod::searchResult ftOffLMList::search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int /*librarymixer_id*/, QString &path) {
     if (hintflags | FILE_HINTS_OFF_LM) {
         QMutexLocker stack(&offLmMutex);
         if (hash == sanitizedXmlHash && size == sanitizedXmlSize) {

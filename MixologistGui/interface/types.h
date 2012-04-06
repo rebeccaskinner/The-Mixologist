@@ -40,28 +40,43 @@
  **********************************************************************************/
 
 /* Possible statuses */
-const uint32_t FT_STATE_WAITING         = 0x0001; //Generally friend is offline
-const uint32_t FT_STATE_TRANSFERRING    = 0x0002; //Downloading
-const uint32_t FT_STATE_COMPLETE        = 0x0003; //Successfully completed
-const uint32_t FT_STATE_ONLINE_IDLE     = 0x0004; //Friend is online, but no transfer is occurring
+/* For downloads, this is when the friend is offline.
+   For uploads, this is whenever the transfer is not moving. */
+const uint32_t FT_STATE_WAITING = 0x0001;
+/* While the download or upload is transferring. */
+const uint32_t FT_STATE_TRANSFERRING = 0x0002;
+/* When the download is complete. */
+const uint32_t FT_STATE_COMPLETE = 0x0003;
+/* When the friend is online, but no download is occuring. */
+const uint32_t FT_STATE_ONLINE_IDLE = 0x0004;
 
 /* Information about a transfer with a single friend, to be aggregated in FileInfo */
 struct TransferInfo {
+    /* The friend this is referring to. */
     unsigned int librarymixer_id;
-    double transferRate; //kb/s
+    /* Amount that has been transferred with this friend. */
+    uint64_t transferred;
+    /* Transfer rate in kilobytes / second. */
+    double transferRate;
+    /* One of the statuses from above. */
     uint32_t status;
 };
 
 struct uploadFileInfo {
     QString path;
     QString hash;
-    uint64_t size; //In bytes
+    /* Total file size in bytes of the file. */
+    uint64_t size;
 
+    /* Either FT_STATE_WAITING or FT_STATE_TRANSFERRING */
     uint32_t status;
 
-    uint64_t transferred; //Amount uploaded in bytes
-    double totalTransferRate; //Transfer rate total of all peers in kb
-    time_t lastTransfer; //Time of the last transfer
+    /* Total amount that has been uploaded to all friends in bytes. */
+    uint64_t totalTransferred;
+    /* Total transfer rate total of all friends in kilobytes / second. */
+    double totalTransferRate;
+
+    /* Details information for each of the friends that have requested this. */
     QList<TransferInfo> peers;
 };
 

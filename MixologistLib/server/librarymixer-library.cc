@@ -271,7 +271,7 @@ void LibraryMixerLibraryManager::MixologySuggest(unsigned int friend_id, int ite
     }
 }
 
-ftFileMethod::searchResult LibraryMixerLibraryManager::search(const QString &hash, qlonglong size, uint32_t hintflags, QString &path) {
+ftFileMethod::searchResult LibraryMixerLibraryManager::search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int /*librarymixer_id*/, QString &path) {
     if (hintflags | FILE_HINTS_ITEM) {
         QMutexLocker stack(&libMutex);
         foreach(LibraryMixerItem* item, libraryList.values()){

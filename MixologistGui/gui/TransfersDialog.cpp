@@ -431,42 +431,40 @@ float TransfersDialog::insertUploads() {
     //Put uploads into uploadsList box
     QList<uploadFileInfo> uploads;
     files->FileUploads(uploads);
-    QList<uploadFileInfo>::const_iterator it;
-    for (it = uploads.begin(); it != uploads.end(); it++) {
-        QTreeWidgetItem *item = new QTreeWidgetItem();
-        item->setText(UPLOAD_FILE_COLUMN, it->path);
-        item->setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(it->peers.front().librarymixer_id));
-        item->setText(UPLOAD_TRANSFERRED_COLUMN, QString::number(it->transferred / 1024, 'f', 0).append(" K"));
-        QString status;
-        switch (it->peers.front().status) {
-            case FT_STATE_WAITING:
-                status = tr("Waiting");
-                break;
-            case FT_STATE_TRANSFERRING:
-                if (time(NULL) - it->lastTransfer > 5) status = "";
-                else status = tr("Uploading");
-                break;
-            case FT_STATE_ONLINE_IDLE:
-                status = tr("Idled");
-                break;
-            case FT_STATE_COMPLETE:
-                status = tr("Complete");
-                break;
-            default:
-                status = QString::number(it->peers.front().status);
-                break;
+
+    foreach (uploadFileInfo currentFileInfo, uploads) {
+        QTreeWidgetItem *uploadedFile = new QTreeWidgetItem();
+        uploadedFile->setText(UPLOAD_FILE_COLUMN, currentFileInfo.path);
+        uploadedFile->setText(UPLOAD_TRANSFERRED_COLUMN, QString::number(currentFileInfo.totalTransferred / 1024, 'f', 0).append(" K"));
+
+        if (currentFileInfo.status == FT_STATE_TRANSFERRING) {
+            uploadedFile->setText(UPLOAD_STATUS_COLUMN, tr("Uploading"));
+            uploadedFile->setText(UPLOAD_SPEED_COLUMN, QString::number(currentFileInfo.totalTransferRate, 'f', 2).append(" K/s"));
+            /* Also update the running total for the status bar. */
+            upTotalRate += currentFileInfo.totalTransferRate;
         }
-        item->setText(UPLOAD_STATUS_COLUMN, status);
-        item->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(it->peers.front().librarymixer_id));
-        if (status == "Uploading") {
-            item->setText(UPLOAD_SPEED_COLUMN, QString::number(it->totalTransferRate, 'f', 2).append(" K/s"));
-            //Also update the running total for the status bar
-            upTotalRate += it->totalTransferRate;
+
+        if (currentFileInfo.peers.count() == 1) {
+            uploadedFile->setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(currentFileInfo.peers.front().librarymixer_id));
+            uploadedFile->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(currentFileInfo.peers.front().librarymixer_id));
+        } else {
+            uploadedFile->setText(UPLOAD_FRIEND_COLUMN, QString::number(currentFileInfo.peers.count()) + " Friends");
+            foreach (TransferInfo currentFriendInfo, currentFileInfo.peers) {
+                QTreeWidgetItem *friendItem = new QTreeWidgetItem(uploadedFile);
+                friendItem->setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(currentFriendInfo.librarymixer_id));
+                friendItem->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(currentFriendInfo.librarymixer_id));
+                friendItem->setText(UPLOAD_TRANSFERRED_COLUMN, QString::number(currentFriendInfo.transferred / 1024, 'f', 0).append(" K"));
+                if (currentFriendInfo.status == FT_STATE_TRANSFERRING) {
+                    friendItem->setText(UPLOAD_SPEED_COLUMN, QString::number(currentFriendInfo.transferRate, 'f', 2).append(" K/s"));
+                }
+            }
         }
-        transfers.append(item);
+
+        transfers.append(uploadedFile);
     }
 
     ui.uploadsList->insertTopLevelItems(0, transfers);
+    ui.uploadsList->expandAll();
     ui.uploadsList->update();
     ui.uploadsList->resizeColumnToContents(UPLOAD_FILE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_FRIEND_COLUMN);
