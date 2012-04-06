@@ -197,7 +197,11 @@ void NetworkDialog::setLogInfo(QString info) {
 }
 
 void NetworkDialog::restartConnection() {
-    peers->restartOwnConnection();
+    if (QMessageBox::Yes == QMessageBox::warning(this, "Restart Connection",
+                                                 "This will disconnect all currently connected friends and restart the Mixologist's connection, continue?",
+                                                 QMessageBox::Yes, QMessageBox::No)) {
+        peers->restartOwnConnection();
+    }
 }
 
 /* Utility Fns */
