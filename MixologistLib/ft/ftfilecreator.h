@@ -51,11 +51,16 @@ public:
     uint64_t amountReceived() const;
 
     /* Called from ftTransferModule to find out the next chunk of the file to request.
+       chunk_size is the requested size of the chunk, but it may be altered if a different sized chunk is allocated.
        Checks to see if there are any old requests that need to be re-requested, and if so returns one of those.
        Otherwise, returns the next section of the file that is needed, and adds it to mChunks.
        Returns false only if the file is already complete.
        If there are no chunks left to request, will return a chunk_size of 0, but still be true. */
-    bool allocateRemainingChunk(uint64_t &offset, uint32_t &chunk_size);
+    bool allocateRemainingChunk(unsigned int friend_id, uint64_t &offset, uint32_t &chunk_size);
+
+    /* Makes all chunks that we are currently waiting for from that friend available for allocation again.
+       Useful when we get disconnected from a friend, and hence know they won't be responding. */
+    void invalidateChunksRequestedFrom(unsigned int friend_id);
 
     /* Called from ftTransferModule to write newly received file data */
     bool addFileData(uint64_t offset, uint32_t chunk_size, void *data);
@@ -81,26 +86,32 @@ private:
     bool locked_updateChunkMap(uint64_t offset, uint32_t chunk_size);
 
     /* Amount of the file received so far. */
-    uint64_t firstUnreadByte;
+    uint64_t bytesReceived;
 
     /* Amount of the file chunks have been requested for so far. */
     uint64_t lastRequestedByte;
 
     /* This map tracks all of the parts of the file that have been requested so far.
-       When there are no outstanding requests, it will be empty. */
-    QMap<uint64_t, ftChunk> mChunks; //offsets, ftChunk
+       When there are no outstanding requests, it will be empty.
+       Keyed by offsets in the file, and since this is a map, it will be in order. */
+    QMap<uint64_t, ftChunk> mChunks;
 };
 
 /* These are stored in mChunks to represent the chunks that have been requested. */
 class ftChunk {
 public:
-    ftChunk(uint64_t ioffset,uint64_t size,time_t now): offset(ioffset), chunk_size(size), requestTime(now) {}
+    ftChunk(uint64_t ioffset, uint64_t size, time_t now, unsigned int friend_id)
+        :offset(ioffset), chunk_size(size), requestTime(now), friend_requested_from(friend_id) {}
     ftChunk():offset(0), chunk_size(0), requestTime(0) {}
     ~ftChunk() {}
 
     uint64_t offset;
     uint64_t chunk_size;
-    time_t   requestTime;
+    time_t requestTime;
+
+    /* The friend that we requested send us this chunk.
+       Useful for invalidating chunks when we get disconnected. */
+    unsigned int friend_requested_from;
 };
 
 #endif // FT_FILE_CREATOR_HEADER

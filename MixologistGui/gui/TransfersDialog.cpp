@@ -324,7 +324,7 @@ float TransfersDialog::insertDownloads() {
 
             bool complete = false;
             QString status;
-            //We can only do this because multisource isn't implemented yet
+            //We can only do this with first() because multisource isn't implemented yet
             if (!peers->isOnline(group.filesInGroup[fileNumber].peers.first().librarymixer_id) &&
                 group.filesInGroup[fileNumber].downloadStatus != FT_STATE_COMPLETE)
                 status = "Friend offline";

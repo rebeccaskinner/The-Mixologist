@@ -280,7 +280,6 @@ Control *Init::createControl(QString ownName) {
     /* create Services */
     statusService = new StatusService();
     aggregatedConnectionsToFriends->addService(statusService);
-    friendsConnectivityManager->addMonitor(statusService);
 
     p3ChatService *chatservice = new p3ChatService();
     aggregatedConnectionsToFriends->addService(chatservice);

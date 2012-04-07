@@ -28,7 +28,6 @@
 
 #include <interface/types.h>
 #include <services/p3service.h>
-#include <pqi/pqimonitor.h>
 #include <QString>
 #include <QStringList>
 #include <serialiser/mixologyitems.h>

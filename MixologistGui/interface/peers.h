@@ -204,8 +204,11 @@ signals:
        but still waiting to upload out updated address info to LibraryMixer, and the connection should not be considered ready yet. */
     void ownConnectionReadinessChanged(bool ready);
 
-    /* Emitted whenever we add a new friend, or a friend is connected to or disconnected from. */
-    void friendsChanged();
+    void friendAdded(unsigned int librarymixer_id);
+
+    void friendConnected(unsigned int librarymixer_id);
+
+    void friendDisconnected(unsigned int librarymixer_id);
 };
 
 #endif

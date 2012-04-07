@@ -23,7 +23,6 @@
 #ifndef FT_CONTROLLER_HEADER
 #define FT_CONTROLLER_HEADER
 
-#include "pqi/pqimonitor.h"
 #include "interface/files.h"
 
 #include <QThread>
@@ -85,7 +84,8 @@ On receiving requested ata ftDataDemultiplex calls ftController's handleReceiveD
 Downloads belong to downloadGroups, which contain information about a batch of file(s) being downloaded.
 Each file additionally is represented by an ftTransferModule.
 */
-class ftController: public QThread, public pqiMonitor {
+class ftController: public QThread {
+    Q_OBJECT
 
 public:
     ftController();
@@ -155,12 +155,14 @@ public:
     /* Called from ftDataDemultiplex when we receive new data to pass it to the appropriate transferModule. */
     bool handleReceiveData(unsigned int librarymixer_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
 
-    /***************************************************************/
-    /********************** pqiMonitor Functions********************/
-    /***************************************************************/
+private slots:
+    /* Informs the transfer modules that the given friend is now online.
+       Connected to the friendConnected signal from friendsConnectivityManager. */
+    void friendConnected(unsigned int friend_id);
 
-    //Called by the FriendsConnectivityManager to inform about changes in friends' online statuses
-    virtual void statusChange(const std::list<pqipeer> &changeList);
+    /* Informs the transfer modules that the given friend is now offline.
+       Connected to the friendDisconnected signal from friendsConnectivityManager. */
+    void friendDisconnected(unsigned int friend_id);
 
 private:
     /* Called from tick() to handle moving files to the appropriate places, notifying the GUI, etc. when an entire downloadGroup completes.
@@ -200,10 +202,6 @@ private:
 
     /* Returns true if it is any non-completed downloadGroup. */
     bool inActiveDownloadGroup(ftTransferModule* file) const;
-
-    /** Called by statusChange monitor */
-    /* Update each ftTransferModule as to changes in friend connectivity. */
-    bool setPeerState(ftTransferModule *tm, unsigned int librarymixer_id,  bool online);
 
     /* Called by FileDownloads() to fill in info on information from file.
        Not mutex protected, as FileDownloads() is protected. */

@@ -187,8 +187,11 @@ public:
     void tryConnectToAll();
 
 signals:
-    /* Emitted whenever we add a new friend, or a friend is connected to or disconnected from. */
-    void friendsChanged();
+    void friendAdded(unsigned int librarymixer_id);
+
+    void friendConnected(unsigned int librarymixer_id);
+
+    void friendDisconnected(unsigned int librarymixer_id);
 
 private slots:
     /* Set whether the Mixologist should be attempting to connect to friends.

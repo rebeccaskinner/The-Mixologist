@@ -275,10 +275,16 @@ void PeersDialog::connectionReadinessChanged(bool ready) {
     static bool firstTimeRun = true;
     QSettings settings(*startupSettings, QSettings::IniFormat);
     if (ready) {
-        /* We can now connect the friendsChanged() signal to update the view.
-           We disconnect just in case. If we weren't already connected, no problem. If we were, prevents duplicates. */
-        disconnect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()));
-        connect(peers, SIGNAL(friendsChanged()), this, SLOT(insertPeers()), Qt::QueuedConnection);
+        /* We can now connect the signals to update the view.
+           We disconnect just in case. If we weren't already connected, no problem.
+           If we were, prevents duplicates.
+           Note that our current strategy of reloading the entire view on any change is rather inefficient, but it works for now. */
+        disconnect(peers, SIGNAL(friendAdded(uint)), this, SLOT(insertPeers()));
+        disconnect(peers, SIGNAL(friendConnected(uint)), this, SLOT(insertPeers()));
+        disconnect(peers, SIGNAL(friendDisconnected(uint)), this, SLOT(insertPeers()));
+        connect(peers, SIGNAL(friendAdded(uint)), this, SLOT(insertPeers()), Qt::QueuedConnection);
+        connect(peers, SIGNAL(friendConnected(uint)), this, SLOT(insertPeers()), Qt::QueuedConnection);
+        connect(peers, SIGNAL(friendDisconnected(uint)), this, SLOT(insertPeers()), Qt::QueuedConnection);
 
         insertPeers();
         ui.friendsList->setSelectionMode(QAbstractItemView::SingleSelection);

@@ -71,14 +71,17 @@ bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
 void ftFileProvider::closeFile() {}
 
 QString ftFileProvider::getPath() const {
+    QMutexLocker stack(&ftcMutex);
     return path;
 }
 
 QString ftFileProvider::getHash() const {
+    QMutexLocker stack(&ftcMutex);
     return hash;
 }
 
 uint64_t ftFileProvider::getFileSize() const {
+    QMutexLocker stack(&ftcMutex);
     return fullFileSize;
 }
 

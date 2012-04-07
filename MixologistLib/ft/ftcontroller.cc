@@ -48,10 +48,30 @@
  * #define CONTROL_DEBUG 1
  *****/
 
-ftController::ftController() :mFtActive(false), mInitialLoadDone(false) {}
+ftController::ftController() :mFtActive(false), mInitialLoadDone(false) {
+    connect(friendsConnectivityManager, SIGNAL(friendConnected(uint)), this, SLOT(friendConnected(uint)));
+    connect(friendsConnectivityManager, SIGNAL(friendDisconnected(uint)), this, SLOT(friendDisconnected(uint)));
+}
+
+void ftController::friendConnected(unsigned int friend_id) {
+    QMutexLocker stack(&ctrlMutex);
+
+    /* add online to all downloads */
+    foreach (ftTransferModule* currentFile, mDownloads.values()) {
+        currentFile->friendConnected(friend_id);
+    }
+}
+
+void ftController::friendDisconnected(unsigned int friend_id) {
+    QMutexLocker stack(&ctrlMutex);
+
+    /* add online to all downloads */
+    foreach (ftTransferModule* currentFile, mDownloads.values()) {
+        currentFile->friendDisconnected(friend_id);
+    }
+}
 
 #define MAX_CONCURRENT_DOWNLOADS_IN_GROUP 2
-
 void ftController::run() {
     while (true) {
         sleep(1);
@@ -150,7 +170,12 @@ void ftController::finishGroup(int groupKey) {
     }
 
     getPqiNotify()->AddPopupMessage(POPUP_DOWNDONE, mDownloadGroups[groupKey].title, "has finished downloading");
-    log(LOG_WARNING, FTCONTROLLERZONE, "Finished downloading " + mDownloadGroups[groupKey].title);
+    if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_NORMAL)
+        log(LOG_WARNING, FTCONTROLLERZONE, "Finished downloading a complete item");
+    else if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_BORROW)
+        log(LOG_WARNING, FTCONTROLLERZONE, "Finished downloading a borrowed item");
+    else if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_RETURN)
+        log(LOG_WARNING, FTCONTROLLERZONE, "Finished downloading a return of a borrowed item");
 }
 
 bool ftController::moveFilesToDownloadPath(int groupKey) {
@@ -398,7 +423,6 @@ ftTransferModule* ftController::internalRequestFile(unsigned int friend_id, cons
     log(LOG_DEBUG_ALERT, FTCONTROLLERZONE, "Beginning download for " + hash);
 
     ftTransferModule* file = new ftTransferModule(friend_id, size, hash);
-    setPeerState(file, friend_id, friendsConnectivityManager->isOnline(friend_id));
 
     mDownloads[hash] = file;
 
@@ -504,18 +528,18 @@ void ftController::fileDetails(ftTransferModule* file, downloadFileInfo &info) {
         if (file->getPeerState(sourceIds[i], indivState, indivTransferRate)) {
             TransferInfo ti;
             switch (indivState) {
-                case PQIPEER_NOT_ONLINE:
-                    ti.status = FT_STATE_WAITING;
-                    break;
-                case PQIPEER_DOWNLOADING:
-                    ti.status = FT_STATE_TRANSFERRING;
-                    break;
-                case PQIPEER_ONLINE_IDLE:
-                    ti.status = FT_STATE_ONLINE_IDLE;
-                    break;
-                default:
-                    ti.status = FT_STATE_WAITING;
-                    break;
+            case peerInfo::PQIPEER_NOT_ONLINE:
+                ti.status = FT_STATE_WAITING;
+                break;
+            case peerInfo::PQIPEER_DOWNLOADING:
+                ti.status = FT_STATE_TRANSFERRING;
+                break;
+            case peerInfo::PQIPEER_ONLINE_IDLE:
+                ti.status = FT_STATE_ONLINE_IDLE;
+                break;
+            default:
+                ti.status = FT_STATE_WAITING;
+                break;
             }
 
             ti.transferRate = indivTransferRate / 1024.0;
@@ -631,45 +655,6 @@ bool ftController::handleReceiveData(unsigned int librarymixer_id, const QString
         return offLMList->handleReceiveData(librarymixer_id, hash, offset, chunksize, data);
     }
     return false;
-}
-
-/***************************************************************/
-/********************** Controller Access **********************/
-/***************************************************************/
-
-void ftController::statusChange(const std::list<pqipeer> &changeList) {
-    log(LOG_DEBUG_BASIC, FTCONTROLLERZONE, "ftController.statusChange");
-    QMutexLocker stack(&ctrlMutex);
-
-    /* add online to all downloads */
-    QMap<QString, ftTransferModule*>::const_iterator it;
-    std::list<pqipeer>::const_iterator changeListIt;
-
-    for (it = mDownloads.begin(); it != mDownloads.end(); it++) {
-        for (changeListIt = changeList.begin(); changeListIt != changeList.end(); changeListIt++) {
-            if (changeListIt->actions & PEER_CONNECTED) {
-                setPeerState(it.value(), changeListIt->librarymixer_id, true);
-            } else {
-                setPeerState(it.value(), changeListIt->librarymixer_id, false);
-            }
-        }
-    }
-
-    /* Also pass through information to the ftOffLMList for its XML transfer modules. */
-    if (offLMList) offLMList->statusChange(changeList);
-}
-
-bool ftController::setPeerState(ftTransferModule *tm, unsigned int librarymixer_id, bool online) {
-    if (tm != NULL){
-        if (librarymixer_id == peers->getOwnLibraryMixerId()) {
-            tm->setPeerState(librarymixer_id, PQIPEER_ONLINE_IDLE);
-        } else if (online) {
-            tm->setPeerState(librarymixer_id, PQIPEER_ONLINE_IDLE);
-        } else {
-            tm->setPeerState(librarymixer_id, PQIPEER_NOT_ONLINE);
-        }
-    }
-    return true;
 }
 
 /***************************************************************/

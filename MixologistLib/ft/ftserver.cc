@@ -97,8 +97,6 @@ void ftServer::SetupFtServer() {
         connect(offLMList, SIGNAL(offLMOwnItemRemoved()), this, SIGNAL(offLMOwnItemRemoved()));
     }
 
-    friendsConnectivityManager->addMonitor(fileDownloadController);
-
     return;
 }
 

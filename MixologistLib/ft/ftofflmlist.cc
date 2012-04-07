@@ -24,6 +24,7 @@
 #include <ft/ftfilewatcher.h>
 #include <ft/ftofflmlist.h>
 #include <ft/fttransfermodule.h>
+#include <pqi/friendsConnectivityManager.h>
 #include <services/statusservice.h>
 #include <util/xml.h>
 #include <util/dir.h>
@@ -46,6 +47,10 @@ ftOffLMList::ftOffLMList() {
        If they are, we handle them directly in ftOffLMList, otherwise we pass shared file hashing information through to OffLMHelper.
        Other signals from fileWatcher aren't relevant to the XML, so we have OffLMHelper handle those directly. */
     connect(fileWatcher, SIGNAL(newFileHash(QString,qlonglong,uint,QString)), this, SLOT(newFileHash(QString,qlonglong,uint,QString)), Qt::QueuedConnection);
+
+    /* The transfer modules for the XMLs need to know friend status. */
+    connect(friendsConnectivityManager, SIGNAL(friendConnected(uint)), this, SLOT(friendConnected(uint)));
+    connect(friendsConnectivityManager, SIGNAL(friendConnected(uint)), this, SLOT(friendDisconnected(uint)));
 
     /* Load the XML files that store the shares for both self and friends. */
     if (DirUtil::checkCreateDirectory(Init::getUserDirectory(true) + OFF_LM_DIR)) {
@@ -186,7 +191,6 @@ void ftOffLMList::receiveFriendOffLMXmlInfo(unsigned int friend_id, const QStrin
 
     ftTransferModule* newXmlDownload = new ftTransferModule(friend_id, size, hash);
     newXmlDownload->transferStatus(ftTransferModule::FILE_DOWNLOADING);
-    newXmlDownload->setPeerState(friend_id, PQIPEER_ONLINE_IDLE);
     friendsXmlDownloads[friend_id] = newXmlDownload;
 }
 
@@ -273,21 +277,19 @@ ftFileMethod::searchResult ftOffLMList::recursiveSearch(const QString &hash, qlo
     return ftFileMethod::SEARCH_RESULT_NOT_FOUND;
 }
 
-
-void ftOffLMList::statusChange(const std::list<pqipeer> &changeList) {
+void ftOffLMList::friendConnected(unsigned int friend_id) {
     QMutexLocker stack(&offLmMutex);
 
-    QMap<QString, ftTransferModule*>::const_iterator it;
-    std::list<pqipeer>::const_iterator changeListIt;
+    if (friendsXmlDownloads.contains(friend_id)) {
+        friendsXmlDownloads[friend_id]->friendConnected(friend_id);
+    }
+}
 
-    foreach (pqipeer peer, changeList) {
-        if (friendsXmlDownloads.contains(peer.librarymixer_id)) {
-            if (peer.actions & PEER_CONNECTED) {
-                friendsXmlDownloads[peer.librarymixer_id]->setPeerState(peer.librarymixer_id, PQIPEER_ONLINE_IDLE);
-            } else {
-                friendsXmlDownloads[peer.librarymixer_id]->setPeerState(peer.librarymixer_id, PQIPEER_NOT_ONLINE);
-            }
-        }
+void ftOffLMList::friendDisconnected(unsigned int friend_id) {
+    QMutexLocker stack(&offLmMutex);
+
+    if (friendsXmlDownloads.contains(friend_id)) {
+        friendsXmlDownloads[friend_id]->friendDisconnected(friend_id);
     }
 }
 

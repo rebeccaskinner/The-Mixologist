@@ -28,14 +28,14 @@
  */
 
 #include <services/p3service.h>
-#include <pqi/pqimonitor.h>
 
 class StatusService;
 
 /* This extern is to provide access to sendStatusUpdateToAll. */
 extern StatusService *statusService;
 
-class StatusService: public p3Service, public pqiMonitor {
+class StatusService: public QObject, public p3Service {
+    Q_OBJECT
 
 public:
     StatusService();
@@ -48,12 +48,10 @@ public:
        This is used by the friendsConnectivityManager to send keep alive packets to friends on UDP connections that will close without them. */
     void sendKeepAlive(unsigned int friend_id);
 
-    /**********************************************************************************
-     * Implementations for pqiMonitor
-     **********************************************************************************/
-    /* Called by the FriendsConnectivityManager's tick function with a list of pqipeers whose statuses have changed.
-       If action is PEER_CONNECTED, sends an OnConnectStatusItem. */
-    virtual void statusChange(const std::list<pqipeer> &changedFriends);
+private slots:
+    /* Sends an OnConnectItem to that friend.
+       Connected to the friendConnected signal from friendsConnectivityManager. */
+    void sendOnConnectItem(unsigned int friend_id);
 
 private:
     mutable QMutex statusMutex;

@@ -38,7 +38,9 @@ p3Peers::p3Peers(QString &ownName)
     :ownName(ownName) {
     connect(ownConnectivityManager, SIGNAL(connectionStateChanged(int, bool)), this, SIGNAL(connectionStateChanged(int, bool)));
     connect(ownConnectivityManager, SIGNAL(ownConnectionReadinessChanged(bool)), this, SIGNAL(ownConnectionReadinessChanged(bool)));
-    connect(friendsConnectivityManager, SIGNAL(friendsChanged()), this, SIGNAL(friendsChanged()));
+    connect(friendsConnectivityManager, SIGNAL(friendAdded(uint)), this, SIGNAL(friendAdded(uint)));
+    connect(friendsConnectivityManager, SIGNAL(friendConnected(uint)), this, SIGNAL(friendConnected(uint)));
+    connect(friendsConnectivityManager, SIGNAL(friendDisconnected(uint)), this, SIGNAL(friendDisconnected(uint)));
 }
 
 /* Peer Details (Net & Auth) */

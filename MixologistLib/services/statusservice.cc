@@ -22,6 +22,7 @@
 #include <time.h>
 #include <services/statusservice.h>
 #include <pqi/pqinotify.h>
+#include <pqi/friendsConnectivityManager.h>
 #include <serialiser/statusitems.h>
 #include <ft/ftofflmlist.h>
 #include <interface/iface.h>
@@ -39,6 +40,7 @@ StatusService::StatusService()
     :p3Service(SERVICE_TYPE_STATUS) {
     addSerialType(new StatusSerialiser());
     timeOfLastSendAll = time(NULL);
+    connect(friendsConnectivityManager, SIGNAL(friendConnected(uint)), this, SLOT(sendOnConnectItem(uint)));
 }
 
 int StatusService::tick() {
@@ -111,19 +113,14 @@ void StatusService::sendKeepAlive(unsigned int friend_id) {
     friendsToSendKeepAlive.append(friend_id);
 }
 
-void StatusService::statusChange(const std::list<pqipeer> &changedFriends) {
-    QMutexLocker stack(&statusMutex);
+void StatusService::sendOnConnectItem(unsigned int friend_id) {
     QString offLMXmlHash = "";
     qlonglong offLMXmlSize = 0;
     if (offLMList) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
 
-    foreach(pqipeer currentPeer, changedFriends) {
-        if (currentPeer.actions & PEER_CONNECTED) {
-            OnConnectStatusItem *item = new OnConnectStatusItem(control->clientName(), control->clientVersion());
-            item->offLMXmlHash = offLMXmlHash;
-            item->offLMXmlSize = offLMXmlSize;
-            item->LibraryMixerId(currentPeer.librarymixer_id);
-            sendItem(item);
-        }
-    }
+    OnConnectStatusItem *item = new OnConnectStatusItem(control->clientName(), control->clientVersion());
+    item->offLMXmlHash = offLMXmlHash;
+    item->offLMXmlSize = offLMXmlSize;
+    item->LibraryMixerId(friend_id);
+    sendItem(item);
 }

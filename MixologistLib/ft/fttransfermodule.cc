@@ -22,11 +22,12 @@
 
 #include <cstdlib>
 #include <time.h>
-#include "fttransfermodule.h"
-#include "ftserver.h"
-#include "interface/peers.h"
+#include <ft/fttransfermodule.h>
+#include <ft/ftserver.h>
+#include <pqi/friendsConnectivityManager.h>
+#include <interface/peers.h>
 #include <interface/files.h>
-#include "util/debug.h"
+#include <util/debug.h>
 
 //The amount of time we're targeting to be able to complete one rtt measurement cycle in
 const int32_t FT_TM_STD_RTT  = 9; //9 seconds
@@ -40,8 +41,14 @@ ftTransferModule::ftTransferModule(unsigned int initial_friend_id, uint64_t size
     QString temporaryLocation =  files->getPartialsDirectory() + QDir::separator() + hash;
     mFileCreator = new ftFileCreator(temporaryLocation, size, hash);
 
-    peerInfo pInfo(initial_friend_id);
-    mFileSources.insert(pInfo.librarymixer_id, pInfo);
+    peerInfo initialPeer(initial_friend_id);
+    if (friendsConnectivityManager->isOnline(initial_friend_id)) {
+        initialPeer.state = peerInfo::PQIPEER_ONLINE_IDLE;
+    } else {
+        initialPeer.state = peerInfo::PQIPEER_NOT_ONLINE;
+    }
+
+    mFileSources.insert(initialPeer.librarymixer_id, initialPeer);
 
     /* If we're already done on completion (i.e. resuming a multifile transfer where some files are done)
        then flag this as completed.
@@ -94,6 +101,28 @@ int ftTransferModule::tick() {
     return 0;
 }
 
+void ftTransferModule::friendConnected(unsigned int friend_id) {
+    QMutexLocker stack(&tfMtx);
+
+    if (!mFileSources.contains(friend_id)) return;
+
+    mFileSources[friend_id].state = peerInfo::PQIPEER_ONLINE_IDLE;
+}
+
+void ftTransferModule::friendDisconnected(unsigned int friend_id) {
+    QMutexLocker stack(&tfMtx);
+
+    if (!mFileSources.contains(friend_id)) return;
+
+    mFileSources[friend_id].state = peerInfo::PQIPEER_NOT_ONLINE;
+
+    /* Now that we're disconnected, don't expect to hear back on any of our pending requests. */
+    mFileCreator->invalidateChunksRequestedFrom(friend_id);
+
+    /* If we've been disconnected, set the module to restart the transfer rate next time. */
+    mFileSources[friend_id].fastStart = true;
+}
+
 ftTransferModule::fileTransferStatus ftTransferModule::transferStatus() const {
     QMutexLocker stack(&tfMtx);
     return mTransferStatus;
@@ -104,61 +133,12 @@ void ftTransferModule::transferStatus(fileTransferStatus newStatus) {
     mTransferStatus = newStatus;
 }
 
-bool ftTransferModule::setFileSources(QList<unsigned int> sourceIds) {
-    QMutexLocker stack(&tfMtx);
-
-    mFileSources.clear();
-
-    log(LOG_DEBUG_BASIC, FTTRANSFERMODULEZONE, "Resetting sources list for file " + QString(mFileCreator->getHash()));
-
-    for (int i = 0; i < sourceIds.size(); i++) {
-        peerInfo pInfo(sourceIds[i]);
-        mFileSources.insert(pInfo.librarymixer_id, pInfo);
-    }
-
-    return true;
-}
-
 bool ftTransferModule::getFileSources(QList<unsigned int> &sourceIds) {
     QMutexLocker stack(&tfMtx);
     QMap<unsigned int, peerInfo>::iterator it;
     for (it = mFileSources.begin(); it != mFileSources.end(); it++) {
         sourceIds.push_back(it.value().librarymixer_id);
     }
-    return true;
-}
-
-bool ftTransferModule::addFileSource(unsigned int librarymixer_id) {
-    QMutexLocker stack(&tfMtx);
-    QMap<unsigned int, peerInfo>::iterator mit;
-    for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
-        if (mit.value().librarymixer_id == librarymixer_id) break;
-    }
-
-    if (mit == mFileSources.end()) {
-        /* add in new source */
-        peerInfo pInfo(librarymixer_id);
-        mFileSources.insert(pInfo.librarymixer_id, pInfo);
-    }
-    return true;
-}
-
-bool ftTransferModule::setPeerState(unsigned int librarymixer_id, uint32_t state) {
-    QMutexLocker stack(&tfMtx);
-
-    QMap<unsigned int, peerInfo>::iterator mit;
-
-    //Try and find by librarymixer_id. If not present, return false.
-    for (mit = mFileSources.begin(); mit != mFileSources.end(); mit++) {
-        if (mit.value().librarymixer_id == librarymixer_id) break;
-    }
-    if (mit == mFileSources.end()) return false;
-
-    mit.value().state = state;
-
-    //If we've been disconnected, set the module to restart the transfer rate next time
-    if (state == PQIPEER_NOT_ONLINE) mit.value().fastStart = true;
-
     return true;
 }
 
@@ -258,13 +238,16 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
     int ageRequestTime = currentTime - info.lastRequestTime;
 
     /* if offline - ignore */
-    if (info.state == PQIPEER_NOT_ONLINE) return false;
+    if (info.state == peerInfo::PQIPEER_NOT_ONLINE) return false;
 
     /* If we haven't made a new request in a long time.
        This can be either because of connection failure or because we were too aggressive in the amount we requested
        and it couldn't be completed in FT_TM_REQUEST_TIMEOUT */
     if (ageRequestTime > (int) (FT_TM_REQUEST_TIMEOUT * (info.nResets + 1))) {
         log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() request timeout");
+
+#ifdef false
+        //Multi-source stuff
         if (info.nResets > 1) { /* 3rd timeout */
             /* 90% chance of return false...
              * will mean variations in which peer
@@ -272,25 +255,30 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
              */
             if (qrand() % 10 != 0) return false;
         }
-
+#endif
         /* reset, treat as if we received the last request so we can send a new request */
         info.nResets++;
-        info.state = PQIPEER_DOWNLOADING;
+        info.state = peerInfo::PQIPEER_DOWNLOADING;
         info.lastReceiveTime = currentTime;
         ageReceiveTime = 0;
 
+#ifdef false
+        /* We could potentially reach here because our friend doesn't have the requested file anymore.
+           This will disable the file.
+           For now, this has been turned off, we need transfer reliability more than bandwidth efficiency.
+           We should have a no such file packet response to bad requests instead of this. */
         if (info.nResets >= FT_TM_MAX_RESETS) {
-            /* for this file anyway */
             log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() max resets reached");
             info.state = PQIPEER_NOT_ONLINE;
             return false;
         }
+#endif
     }
 
     /* if we haven't received any data in a long time */
     if (ageReceiveTime > (int) FT_TM_DOWNLOAD_TIMEOUT) {
         log(LOG_DEBUG_ALERT, FTTRANSFERMODULEZONE, "ftTransferModule::locked_tickPeerTransfer() receive timeout");
-        info.state = PQIPEER_ONLINE_IDLE;
+        info.state = peerInfo::PQIPEER_ONLINE_IDLE;
         return false;
     }
 
@@ -330,17 +318,18 @@ bool ftTransferModule::locked_tickPeerTransfer(peerInfo &info) {
     /* do request */
     info.lastRequestTime = currentTime;
     uint64_t requestOffset = 0;
-    if (mFileCreator->allocateRemainingChunk(requestOffset, requestSize) == false) {
+    if (mFileCreator->allocateRemainingChunk(info.librarymixer_id, requestOffset, requestSize) == false) {
         mTransferStatus = FILE_COMPLETE;
     } else {
         if (requestSize > 0) {
-            info.state = PQIPEER_DOWNLOADING;
+            info.state = peerInfo::PQIPEER_DOWNLOADING;
             {
                 QString toLog = "ftTransferModule::locked_tickPeerTransfer() requesting data";
                 toLog += (" hash: " + mFileCreator->getHash());
                 toLog.append(" requestOffset: " + QString::number(requestOffset));
                 toLog.append(" requestSize: " + QString::number(requestSize));
-                log(LOG_DEBUG_ALL, FTTRANSFERMODULEZONE, toLog);
+                //TODO
+                log(LOG_WARNING, FTTRANSFERMODULEZONE, toLog);
             }
             ftserver->sendDataRequest(info.librarymixer_id, mFileCreator->getHash(), mFileCreator->getFileSize(), requestOffset, requestSize);
 
@@ -365,7 +354,7 @@ void ftTransferModule::locked_recvDataUpdateStats(peerInfo &info, uint64_t offse
     time_t ts = time(NULL);
     info.lastReceiveTime = ts;
     info.nResets = 0;
-    info.state = PQIPEER_DOWNLOADING;
+    info.state = peerInfo::PQIPEER_DOWNLOADING;
     info.pastTickTransferred += chunk_size;
 
     //If we have completed our rtt measurement cycle

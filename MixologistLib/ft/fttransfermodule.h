@@ -48,13 +48,11 @@
  * Conversely if we took more time to complete our request we decrease the rate.
  */
 
-const uint32_t  PQIPEER_NOT_ONLINE           = 0x0001;
-const uint32_t  PQIPEER_DOWNLOADING          = 0x0002;
-const uint32_t  PQIPEER_ONLINE_IDLE          = 0x0004;
-
 class peerInfo;
 
-class ftTransferModule {
+class ftTransferModule : public QObject {
+    Q_OBJECT
+
 public:
     enum fileTransferStatus {
         FILE_WAITING = 0,       //Not done, and not downloading at this moment, but could already be partially downloaded
@@ -74,32 +72,24 @@ public:
     //Sets the current status
     void transferStatus(fileTransferStatus newStatus);
 
-    //Called from ftController, batch sets a list of friends by librarymixer_ids as file sources
-    bool setFileSources(QList<unsigned int> sourceIds);
-
-    //Called from ftController, adds the friend as a file source
-    bool addFileSource(unsigned int librarymixer_id);
-
-    //Called from ftController, sets the online state of a friend
-    bool setPeerState(unsigned int librarymixer_id, uint32_t state);  //state = ONLINE/OFFLINE
-
     //Called from ftController, returns a list of librarymixer ids of file sources that are known
     bool getFileSources(QList<unsigned int> &sourceIds);
 
     //Called from ftController, gets the online state and target transfer rate for a friend
     bool getPeerState(unsigned int librarmixer_id, uint32_t &state, uint32_t &tfRate);
 
-    /*
-    TEMPORARILY REMOVED
-    bool pauseTransfer();
-    bool resumeTransfer();
-    */
-
     //Called from ftDataDemultiplex when data is received, frees the data whether successful or not
     bool recvFileData(unsigned int librarymixer_id, uint64_t offset, uint32_t chunk_size, void *data);
 
     /* Has an independent Mutex, can be accessed directly */
     ftFileCreator* mFileCreator;
+
+    /* Originally I wanted to make these slots and make them directly connect to the friendConnected signal from friendsConnectivityManager.
+       However, they never received the signals even though I checked everything a thousand times.
+       Therefore, I have put the actual signal reception in ftcontroller and ftofflmlist, where they signals are received fine.
+       If anyone can figure out a way to make these directly receive the signals, that'd be a lot cleaner. */
+    void friendConnected(unsigned int friend_id);
+    void friendDisconnected(unsigned int friend_id);
 
 private:
     //Updates actualRate with the total from all sources
@@ -125,14 +115,23 @@ private:
 /* Used internally to hold information about each friend we have as a file source. */
 class peerInfo {
 public:
+    /* Unused default constructor just so we can use QMap. */
+    peerInfo(){}
+
     peerInfo(unsigned int _librarymixer_id)
-        :librarymixer_id(_librarymixer_id), state(PQIPEER_NOT_ONLINE), actualRate(0),
+        :librarymixer_id(_librarymixer_id), actualRate(0), state(PQIPEER_NOT_ONLINE),
         offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransferred(0), nResets(0),
         rtt(0), rttActive(false), rttStart(0), rttOffset(0),mRateChange(1), fastStart(true) {return;}
 
     unsigned int librarymixer_id;
-    uint32_t state;
     double actualRate;
+
+    enum PeerInfoState {
+        PQIPEER_NOT_ONLINE = 1,
+        PQIPEER_DOWNLOADING = 2,
+        PQIPEER_ONLINE_IDLE = 3
+    };
+    PeerInfoState state;
 
     //current file data request
     uint64_t offset;
@@ -144,7 +143,9 @@ public:
     time_t lastRequestTime;
     time_t lastReceiveTime;
     uint32_t pastTickTransferred;
-    uint32_t nResets; /* count to disable non-existant files */
+
+    /* Count to disable non-existant files */
+    uint32_t nResets;
 
     /* rtt rate control
      * Rate control is based on the amount of time it takes for a complete chunk to be received.

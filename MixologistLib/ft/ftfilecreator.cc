@@ -40,8 +40,11 @@ ftFileCreator::ftFileCreator(QString path, uint64_t size, QString hash)
         log(LOG_DEBUG_BASIC, FTFILECREATORZONE, toLog);
     }
 
-    firstUnreadByte = QFileInfo(path).size();
-    lastRequestedByte = firstUnreadByte;
+    /* The amount of the file on disk when initializing is the amount that has been received. */
+    bytesReceived = QFileInfo(path).size();
+
+    /* We haven't requested anything beyond the amount received yet during initialization. */
+    lastRequestedByte = bytesReceived;
 
     /* Handle the specical case of a 0 byte file, where addFileData will never be called. */
     if (size == 0) {
@@ -61,13 +64,13 @@ void ftFileCreator::closeFile() {
 }
 
 bool ftFileCreator::finished() const {
-    int received = amountReceived();
-    int total = getFileSize();
-    return received == total;
+    QMutexLocker stack(&ftcMutex);
+    return bytesReceived == fullFileSize;
 }
 
 uint64_t ftFileCreator::amountReceived() const {
-    return firstUnreadByte;
+    QMutexLocker stack(&ftcMutex);
+    return bytesReceived;
 }
 
 bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data) {
@@ -81,7 +84,7 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
     QMutexLocker stack(&ftcMutex);
 
     if (fileWriteAccessor == NULL){
-        log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::addFileData() creating " + path);
+        log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::addFileData() preparing to write to " + path);
         fileWriteAccessor= new QFile(path);
         if (!fileWriteAccessor->open(QIODevice::ReadWrite)) return false;
     }
@@ -103,7 +106,7 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
     /* Normally it's fine that the QFile is buffered, as it presumably improves performance.
        However, on the final finish of the file, it is important that it is written to disk,
        otherwise when the file is moved in ftController, it may be truncated. */
-    if (finished()) {
+    if (bytesReceived == fullFileSize) {
         if (!fileWriteAccessor->flush()) {
             log(LOG_ERROR, FTFILECREATORZONE, "Error while attempting to write to file " + path);
             return false;
@@ -148,8 +151,9 @@ bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) 
     /* Find the chunk */
     QMap<uint64_t, ftChunk>::iterator it;
     it = mChunks.find(offset);
+
     if (it == mChunks.end()) {
-        log(LOG_WARNING, FTFILECREATORZONE, "Received an unrequested file chunk for " + path);
+        log(LOG_WARNING, FTFILECREATORZONE, "Received unrequested file chunk at " + QString::number(offset) + " for " + path);
         return false;
     }
 
@@ -157,9 +161,12 @@ bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) 
        We should really be storing this so that when we receive that earlier chunk we can save this to the file as well.
        However, for now, we will simply discard out of order chunks, which should be fairly rare before multi-source is implemented. */
     if (it != mChunks.begin()) {
-        log(LOG_WARNING, FTFILECREATORZONE, "Received an out of order file chunk for " + path);
+        log(LOG_WARNING, FTFILECREATORZONE, "Received an out of order file chunk at " + QString::number(offset) + " for " + path);
         return false;
     }
+
+    //TODO remove
+    log(LOG_WARNING, FTFILECREATORZONE, "Accepting a file chunk at " + QString::number(offset) + " of size " + QString::number(chunk_size) + " for " + path);
 
     /* Remove it from mChunks */
     ftChunk allocated_chunk = it.value();
@@ -179,30 +186,28 @@ bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) 
     }
 
     /* Update how much has been completed */
-    firstUnreadByte = offset + chunk_size;
+    bytesReceived = offset + chunk_size;
 
-    if (mChunks.size() == 0) firstUnreadByte = lastRequestedByte;
+    if (mChunks.size() == 0) bytesReceived = lastRequestedByte;
 
     return true;
 }
 
-bool ftFileCreator::allocateRemainingChunk(uint64_t &offset, uint32_t &chunk_size) {
+bool ftFileCreator::allocateRemainingChunk(unsigned int friend_id, uint64_t &offset, uint32_t &chunk_size) {
     QMutexLocker stack(&ftcMutex);
 
-    if (finished()) {
-        return false;
-    }
+    if (bytesReceived == fullFileSize) return false;
 
     time_t currentTime = time(NULL);
 
-    /* Check for timed out chunks */
-    QMap<uint64_t, ftChunk>::iterator it;
-    for (it = mChunks.begin(); it != mChunks.end(); it++) {
-        if (it.value().requestTime < (currentTime - CHUNK_MAX_AGE)) {
+    /* Check for timed out chunks we can hand out again. */
+    foreach (uint64_t currentChunk, mChunks.keys()) {
+        if (mChunks[currentChunk].requestTime + CHUNK_MAX_AGE < currentTime) {
             log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::allocateRemainingChunk() chunk request timed out, re-requesting");
-            it.value().requestTime = currentTime;
-            chunk_size = it.value().chunk_size;
-            offset = it.value().offset;
+
+            mChunks[currentChunk].requestTime = currentTime;
+            chunk_size = mChunks[currentChunk].chunk_size;
+            offset = mChunks[currentChunk].offset;
 
             return true;
         }
@@ -211,28 +216,36 @@ bool ftFileCreator::allocateRemainingChunk(uint64_t &offset, uint32_t &chunk_siz
     /* Never allocate a chunk larger than remaining amont to be transferred */
     if (fullFileSize - lastRequestedByte < chunk_size) chunk_size = fullFileSize - lastRequestedByte;
 
+    if (chunk_size == 0) return true;
+
     offset = lastRequestedByte;
     lastRequestedByte += chunk_size;
 
-    if (chunk_size > 0) {
-        log(LOG_DEBUG_BASIC, FTFILECREATORZONE,
-            QString("ftFileCreator::allocateRemainingChunk() adding new chunk") +
-            " firstUnreadByte: " + QString::number(firstUnreadByte) +
-            " lastRequestedByte: " + QString::number(lastRequestedByte) +
-            " fullFileSize: " + QString::number(fullFileSize));
-        mChunks[offset] = ftChunk(offset, chunk_size, currentTime);
-    }
+    log(LOG_DEBUG_BASIC, FTFILECREATORZONE,
+        QString("ftFileCreator::allocateRemainingChunk() adding new chunk") +
+        " bytesReceived: " + QString::number(bytesReceived) +
+        " lastRequestedByte: " + QString::number(lastRequestedByte) +
+        " fullFileSize: " + QString::number(fullFileSize));
+    mChunks[offset] = ftChunk(offset, chunk_size, currentTime, friend_id);
 
     return true;
 }
 
+void ftFileCreator::invalidateChunksRequestedFrom(unsigned int friend_id) {
+    QMutexLocker stack(&ftcMutex);
+    foreach (uint64_t currentChunk, mChunks.keys()) {
+        if (mChunks[currentChunk].friend_requested_from == friend_id) {
+            mChunks.remove(currentChunk);
+        }
+    }
+}
 
 #ifdef false
 bool    ftFileCreator::getFileData(uint64_t offset, uint32_t &chunk_size, void *data) {
     {
         QMutexLocker stack(&ftcMutex);
         /* If we don't have the data */
-        if (offset + chunk_size > firstUnreadByte) return false;
+        if (offset + chunk_size > bytesReceived) return false;
     }
 
     return ftFileProvider::getFileData(offset, chunk_size, data);
@@ -245,7 +258,7 @@ bool ftFileCreator::locked_printChunkMap() {
     std::cerr << std::endl;
 
     /* check start point */
-    std::cerr << "Size: " << fullFileSize << " Start: " << firstUnreadByte << " End: " << lastRequestedByte;
+    std::cerr << "Size: " << fullFileSize << " Start: " << bytesReceived << " End: " << lastRequestedByte;
     std::cerr << std::endl;
     std::cerr << "\tOutstanding Chunks (in the middle)";
     std::cerr << std::endl;

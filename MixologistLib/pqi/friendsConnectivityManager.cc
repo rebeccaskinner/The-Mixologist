@@ -438,8 +438,8 @@ bool FriendsConnectivityManager::getQueuedConnectAttempt(unsigned int librarymix
 /* A note about why we request type and remoteAddress as arguments:
    It may be tempting to think we can just pull that information from currentlyTrying, but that is only the outbound connection try, and fails for inbound. */
 bool FriendsConnectivityManager::reportConnectionUpdate(unsigned int librarymixer_id, int result, ConnectionType type, struct sockaddr_in *remoteAddress) {
-    bool signalFriendsChanged = false;
-
+    bool signalFriendConnected = false;
+    bool signalFriendDisconnected = false;
     {
         QMutexLocker stack(&connMtx);
 
@@ -469,7 +469,7 @@ bool FriendsConnectivityManager::reportConnectionUpdate(unsigned int librarymixe
             mStatusChanged = true;
             currentFriend->lastcontact = time(NULL);
             currentFriend->lastheard = time(NULL);
-            signalFriendsChanged = true;
+            signalFriendConnected = true;
         } else {
             log(LOG_DEBUG_BASIC,
                 FRIEND_CONNECTIVITY_ZONE,
@@ -480,7 +480,7 @@ bool FriendsConnectivityManager::reportConnectionUpdate(unsigned int librarymixe
                 currentFriend->state == FCS_CONNECTED_UDP) {
                 currentFriend->lastcontact = time(NULL);
                 usedSockets.remove(addressToString(remoteAddress));
-                signalFriendsChanged = true;
+                signalFriendDisconnected = true;
             } else {
                 /* The idea here is that we want to remove the hold we have on the socket from usedSockets.
                    However, an inbound connection could have snuck in and taken this over as a connected address, so we only remove if it looks like ours. */
@@ -508,7 +508,8 @@ bool FriendsConnectivityManager::reportConnectionUpdate(unsigned int librarymixe
         }
     }
 
-    if (signalFriendsChanged) emit friendsChanged();
+    if (signalFriendConnected) emit friendConnected(librarymixer_id);
+    if (signalFriendDisconnected) emit friendDisconnected(librarymixer_id);
 
     return true;
 }
@@ -690,7 +691,7 @@ bool FriendsConnectivityManager::addUpdateFriend(unsigned int librarymixer_id, c
     externalAddress.sin_port = htons(externalPort);
     inet_aton(externalIP.toStdString().c_str(), &externalAddress.sin_addr);
 
-    bool signalFriendsChanged = false;
+    bool signalFriendAdded = false;
     {
         QMutexLocker stack(&connMtx);
 
@@ -733,11 +734,11 @@ bool FriendsConnectivityManager::addUpdateFriend(unsigned int librarymixer_id, c
 
             mFriendList[librarymixer_id] = newFriend;
 
-            signalFriendsChanged = true;
+            signalFriendAdded = true;
         }
     }
 
-    if (signalFriendsChanged) emit friendsChanged();
+    if (signalFriendAdded) emit friendAdded(librarymixer_id);
 
     return true;
 }
