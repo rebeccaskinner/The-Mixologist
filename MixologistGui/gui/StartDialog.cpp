@@ -234,7 +234,7 @@ void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
     //First time we have verified that the credentials are good, and can save them to the autoload
     QSettings settings(*startupSettings, QSettings::IniFormat, this);
     settings.setValue("DefaultEmail", rot13(ui.loadEmail->text()));
-    if (ui.autoBox -> checkState()){
+    if (ui.autoBox->isChecked()){
         settings.setValue("DefaultPassword", rot13(ui.loadPassword->text()));
     } else {
         settings.setValue("DefaultPassword", "");

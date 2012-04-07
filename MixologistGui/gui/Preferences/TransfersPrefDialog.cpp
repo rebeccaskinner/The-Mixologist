@@ -72,7 +72,7 @@ bool TransfersPrefDialog::save() {
     files->setDownloadDirectory(ui.downloadsDir->text());
     files->setPartialsDirectory(ui.partialsDir->text());
 
-    settings.setValue("Transfers/IncomingAsk", ui.incomingAsk->checkState());
+    settings.setValue("Transfers/IncomingAsk", ui.incomingAsk->isChecked());
     settings.setValue("Transfers/MaxTotalDownloadRate", ui.totalDownloadRate->value());
     settings.setValue("Transfers/MaxTotalUploadRate", ui.totalUploadRate->value());
     settings.setValue("Transfers/MaxIndividualDownloadRate", ui.indivDownloadRate->value());
