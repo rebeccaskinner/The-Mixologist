@@ -466,6 +466,8 @@ void MainWindow::displayInfoText(InfoTextType type) {
     QString info;
     QAbstractButton* disableAutoConfig = NULL;
     QAbstractButton* reenableAutoConfig = NULL;
+    /* Used by disableAutoConfig to set which port to change to. */
+    int changePortTo = 0;
     if (INFO_TEXT_UNFIREWALLED == type) {
         info += "<b>Direct Connection</b>";
         info += "<p>You've got a direct, unrestricted connection to the Internet.</p>";
@@ -518,10 +520,17 @@ void MainWindow::displayInfoText(InfoTextType type) {
         INFO_TEXT_MANUAL_BAD == type) {
         PeerDetails detail;
         QString ownIP;
-        QString ownPort;
+        QString portString;
+        QString portChangedString = "current";
         if (peers->getPeerDetails(peers->getOwnLibraryMixerId(), detail)) {
             ownIP = detail.localAddr;
-            ownPort = QString::number(detail.localPort);
+            changePortTo = detail.localPort;
+            /* If we are switching from auto to manual, we change our local port to avoid false-positives. */
+            if (INFO_TEXT_MANUAL_BAD != type) {
+                changePortTo++;
+                portChangedString = "new";
+            }
+            portString = QString::number(changePortTo);
         }
         info += "<p><b>Fixing the Problem</b></p>";
         if (INFO_TEXT_MANUAL_BAD != type) {
@@ -532,31 +541,19 @@ void MainWindow::displayInfoText(InfoTextType type) {
         info += QString("<p>For help on configuring your router, ") +
                 "<a href='http://www.pcwintech.com/port-forwarding-guides'>click here for a guide</a> (not affiliated with the Mixologist).</p>";
         info += "<p>To use the guide, first find the brand of your router, and then choose the model number that best matches the model written on your router.</p>";
-        info += QString("<p>When following the guide, set the internal IP address to forward to as <b>" + ownIP + "</b> (your computer's internal network IP), and both the external and internal port as <b>") + ownPort +
-                "</b> (the Mixologist's port), with both TCP and UDP traffic forwarded.</p>";
+        info += QString("<p>When following the guide, set the internal IP address to forward to as <b>" + ownIP + "</b> (your computer's internal network IP), and both the external and internal port as <b>") + portString +
+                "</b> (your Mixologist's " + portChangedString + " manual-mode port), with both TCP and UDP traffic forwarded.</p>";
 
         if (INFO_TEXT_MANUAL_BAD != type) {
-            info += "<p>After you have done everything in the guide to configure your router, click the Turn Off Auto Config button to let the Mixologist know you want to switch to manually configured router mode. (You're totally awesome and savvy).</p>";
+            info += "<p>After you have done everything in the guide to configure your router, click the Turn Off Auto Config button to let the Mixologist know you want to switch to manually configured router mode. (You're totally awesome and savvy!)</p>";
 
             helpBox.addButton(QMessageBox::Cancel);
             disableAutoConfig = helpBox.addButton("Turn Off Auto Config", QMessageBox::AcceptRole);
-
-            QSettings settings(*mainSettings, QSettings::IniFormat, this);
-            if (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT) {
-                disableAutoConfig->setDisabled(true);
-                disableAutoConfig->setToolTip("Auto-config has already been disabled. Restart for this to take effect.");
-            }
         } else {
             info += "<p>Alternatively, if you'd like to give auto-connection configuration another shot, you can do so now.</p>";
 
             helpBox.addButton(QMessageBox::Cancel);
             reenableAutoConfig = helpBox.addButton("Re-enable Auto Config", QMessageBox::AcceptRole);
-
-            QSettings settings(*mainSettings, QSettings::IniFormat, this);
-            if (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT) {
-                reenableAutoConfig->setDisabled(true);
-                reenableAutoConfig->setToolTip("Auto-config has already been re-enabled. Restart for this to take effect.");
-            }
         }
     }
 
@@ -568,40 +565,20 @@ void MainWindow::displayInfoText(InfoTextType type) {
     raise();
     activateWindow();
 
-    bool askExit = false;
-
     if (disableAutoConfig != NULL &&
         (helpBox.clickedButton() == disableAutoConfig)) {
-        int clicked = QMessageBox::information(this,
-                                               "Disabling Connection Auto-Config",
-                                               "If you change your mind in the future, you can turn connection auto-config back on under Options. Proceed?",
-                                               QMessageBox::Yes, QMessageBox::No);
-        if (clicked == QMessageBox::Yes) {
-            PeerDetails ownDetails;
-            peers->getPeerDetails(peers->getOwnLibraryMixerId(), ownDetails);
-            QSettings settings(*mainSettings, QSettings::IniFormat, this);
-            settings.setValue("Network/AutoOrPort", ownDetails.localPort);
-            askExit = true;
-        }
+        PeerDetails ownDetails;
+        peers->getPeerDetails(peers->getOwnLibraryMixerId(), ownDetails);
+        QSettings settings(*mainSettings, QSettings::IniFormat, this);
+        settings.setValue("Network/AutoOrPort", changePortTo);
+        peers->restartOwnConnection();
     }
 
     if (reenableAutoConfig != NULL &&
         (helpBox.clickedButton() == reenableAutoConfig)) {
-        PeerDetails ownDetails;
-        peers->getPeerDetails(peers->getOwnLibraryMixerId(), ownDetails);
         QSettings settings(*mainSettings, QSettings::IniFormat, this);
         settings.setValue("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT);
-        askExit = true;
-    }
-
-    if (askExit) {
-        if (QMessageBox::Yes ==
-            QMessageBox::information(this,
-                                     "Restart Mixologist",
-                                     "Changes will take place on when you restart the Mixologist, exit now?",
-                                     QMessageBox::Yes, QMessageBox::No)) {
-            doQuit();
-        }
+        peers->restartOwnConnection();
     }
 }
 
