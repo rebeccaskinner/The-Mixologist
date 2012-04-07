@@ -598,7 +598,7 @@ bool ftController::setPartialsDirectory(QString path) {
 
             /* move all existing files! */
             foreach (ftTransferModule* file, mDownloads.values()) {
-                file->mFileCreator->moveFile(mPartialsPath);
+                file->mFileCreator->moveFileToDirectory(mPartialsPath);
             }
         }
         return true;

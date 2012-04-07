@@ -41,6 +41,9 @@ public:
        will resume using that file as its base. */
     ftFileCreator(QString savepath, uint64_t size, QString hash);
 
+    /* Closes the file handle to the file if this is a ftFileCreator that holds the file open, otherwise does nothing. */
+    virtual void closeFile();
+
     /* Returns if this file is completed. */
     bool finished() const;
 
@@ -57,6 +60,9 @@ public:
     /* Called from ftTransferModule to write newly received file data */
     bool addFileData(uint64_t offset, uint32_t chunk_size, void *data);
 
+    /* Moves the old file to new location and updates internal variables. */
+    bool moveFileToDirectory(QString newPath);
+
     /* Closes any open file handle and deletes the file from disk. Useful when cancelling a download. */
     bool deleteFileFromDisk();
 
@@ -65,6 +71,11 @@ public:
        Not currently used, as multi-source downloading is not working yet. */
     //virtual bool getFileData(uint64_t offset, uint32_t &chunk_size, void *data);
 private:
+
+    /* QFile object that we use for writing to file.
+       The ftFileProvider simply reads using a temporary file object, since it has no need to hold the file open.
+       Initialized only when needed, NULL if this creator has not been used to write data yet. */
+    QFile *fileWriteAccessor;
 
     /* Updates mChunks with the last chunk received, returns false if this was an unrequested chunk. */
     bool locked_updateChunkMap(uint64_t offset, uint32_t chunk_size);

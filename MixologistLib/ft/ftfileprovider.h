@@ -51,8 +51,8 @@ public:
        Does NOT check security for that friend, do so before calling this. */
     virtual bool getFileData(uint64_t offset, uint32_t &chunk_size, void *data, unsigned int librarymixer_id);
 
-    /* Closes the file handle to the file. */
-    void closeFile();
+    /* Closes the file handle to the file if this is a ftFileCreator that holds the file open, otherwise does nothing. */
+    virtual void closeFile();
 
     /* Return the file's full path. */
     QString getPath() const;
@@ -62,9 +62,6 @@ public:
 
     /* Returns the file size. */
     uint64_t getFileSize() const;
-
-    /* Moves the old file to new location and updates internal variables. */
-    bool moveFile(QString newPath);
 
     /* Accessors for a flag on whether this is an internal Mixologist file.
        Generally used to share files without displaying them in the UI. */
@@ -91,8 +88,6 @@ protected:
     QString hash;
     /* Path to the file. */
     QString path;
-    /* QFile object that we use for all file operations. */
-    QFile *file;
 
     /* True if this is a file that is being shared for the Mixologist's own operations rather than by the user.
        Used by off-LibraryMixer sharing when transfering the XML share information. */

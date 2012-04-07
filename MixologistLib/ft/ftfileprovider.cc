@@ -32,13 +32,10 @@
 #include <QFile>
 
 ftFileProvider::ftFileProvider(QString _path, uint64_t size, QString hash)
-    :fullFileSize(size), hash(hash), path(_path), file(NULL), internalMixologistFile(false) {}
+    :fullFileSize(size), hash(hash), path(_path), internalMixologistFile(false) {}
 
 ftFileProvider::~ftFileProvider() {
-    if (file != NULL) {
-        file->close();
-        file->deleteLater();
-    }
+    closeFile();
 }
 
 bool ftFileProvider::checkFileValid() {
@@ -71,10 +68,7 @@ bool ftFileProvider::FileDetails(uploadFileInfo &fileInfo) {
     return true;
 }
 
-void ftFileProvider::closeFile() {
-    QMutexLocker stack(&ftcMutex);
-    if (file) file->close();
-}
+void ftFileProvider::closeFile() {}
 
 QString ftFileProvider::getPath() const {
     return path;
@@ -92,8 +86,8 @@ bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *da
 
     QMutexLocker stack(&ftcMutex);
 
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return false;
+    QFile fileToRead(path);
+    if (!fileToRead.open(QIODevice::ReadOnly)) return false;
 
     uint32_t requestSize = chunk_size;
     uint64_t baseFileOffset = offset;
@@ -111,9 +105,9 @@ bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *da
         return false;
     }
 
-    file.seek(baseFileOffset);
+    fileToRead.seek(baseFileOffset);
 
-    if (file.read((char *)data, requestSize) == -1) return false;
+    if (fileToRead.read((char *)data, requestSize) == -1) return false;
 
     /* Update stats. */
     time_t currentTime = time(NULL);
@@ -139,23 +133,6 @@ bool ftFileProvider::getFileData(uint64_t offset, uint32_t &chunk_size, void *da
     requestingFriends[librarymixer_id].transferred += requestSize;
 
     return true;
-}
-
-bool ftFileProvider::moveFile(QString newPath) {
-    bool ok;
-    QMutexLocker stack(&ftcMutex);
-    file->close();
-    ok = DirUtil::moveFile(path, newPath);
-    if (ok) {
-        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() succeeded");
-        file->deleteLater();
-        file=NULL;
-        path = newPath;
-        return true;
-    } else {
-        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() failed");
-        return false;
-    }
 }
 
 void ftFileProvider::addPermittedRequestor(unsigned int librarymixer_id) {

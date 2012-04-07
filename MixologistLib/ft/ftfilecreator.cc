@@ -20,15 +20,17 @@
  *  Boston, MA  02110-1301, USA.
  ****************************************************************/
 
-#include "ftfilecreator.h"
-#include <QFileInfo>
-#include "util/debug.h"
+#include <ft/ftfilecreator.h>
+#include <util/dir.h>
+#include <util/debug.h>
 #include <time.h>
+
+#include <QFileInfo>
 
 #define CHUNK_MAX_AGE 20 //20 seconds
 
 ftFileCreator::ftFileCreator(QString path, uint64_t size, QString hash)
-    : ftFileProvider(path, size, hash) {
+    :ftFileProvider(path, size, hash), fileWriteAccessor(NULL) {
 
     {
         QString toLog = "ftFileCreator()";
@@ -46,6 +48,15 @@ ftFileCreator::ftFileCreator(QString path, uint64_t size, QString hash)
         QFile finishedFile(path);
         finishedFile.open(QIODevice::WriteOnly);
         finishedFile.close();
+    }
+}
+
+void ftFileCreator::closeFile() {
+    QMutexLocker stack(&ftcMutex);
+    if (fileWriteAccessor) {
+        fileWriteAccessor->close();
+        fileWriteAccessor->deleteLater();
+        fileWriteAccessor = NULL;
     }
 }
 
@@ -69,10 +80,10 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
 
     QMutexLocker stack(&ftcMutex);
 
-    if (file == NULL){
+    if (fileWriteAccessor == NULL){
         log(LOG_DEBUG_ALERT, FTFILECREATORZONE, "ftFileCreator::addFileData() creating " + path);
-        file = new QFile(path);
-        if (!file->open(QIODevice::ReadWrite)) return false;
+        fileWriteAccessor= new QFile(path);
+        if (!fileWriteAccessor->open(QIODevice::ReadWrite)) return false;
     }
 
     if (offset + chunk_size > fullFileSize) {
@@ -82,9 +93,9 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
 
     if (!locked_updateChunkMap(offset, chunk_size)) return false;
 
-    file->seek(offset);
+    fileWriteAccessor->seek(offset);
 
-    if (file->write((char *)data, chunk_size) == -1) {
+    if (fileWriteAccessor->write((char *)data, chunk_size) == -1) {
         log(LOG_ERROR, FTFILECREATORZONE, "Error while attempting to write to file " + path);
         return false;
     }
@@ -93,20 +104,44 @@ bool ftFileCreator::addFileData(uint64_t offset, uint32_t chunk_size, void *data
        However, on the final finish of the file, it is important that it is written to disk,
        otherwise when the file is moved in ftController, it may be truncated. */
     if (finished()) {
-        if (!file->flush()) {
+        if (!fileWriteAccessor->flush()) {
             log(LOG_ERROR, FTFILECREATORZONE, "Error while attempting to write to file " + path);
             return false;
         } else {
-            file->close();
+            fileWriteAccessor->close();
         }
     }
 
     return true;
 }
 
+bool ftFileCreator::moveFileToDirectory(QString newPath) {
+    bool ok;
+    QMutexLocker stack(&ftcMutex);
+    if (fileWriteAccessor) fileWriteAccessor->close();
+
+    QFileInfo fileToMove(path);
+    QString fullNewPath = newPath + QDir::separator() + fileToMove.fileName();
+
+    ok = DirUtil::moveFile(path, fullNewPath);
+    if (ok) {
+        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() succeeded");
+        if (fileWriteAccessor) {
+            fileWriteAccessor->deleteLater();
+            fileWriteAccessor = NULL;
+        }
+        path = fullNewPath;
+        return true;
+    } else {
+        log(LOG_DEBUG_ALERT, FTFILEPROVIDERZONE, "ftFileProvider::moveFile() failed");
+        return false;
+    }
+}
+
 bool ftFileCreator::deleteFileFromDisk() {
-    if (file) return file->remove();
-    return true;
+    closeFile();
+    QFile fileToDelete(path);
+    return fileToDelete.remove();
 }
 
 bool ftFileCreator::locked_updateChunkMap(uint64_t offset, uint32_t chunk_size) {
