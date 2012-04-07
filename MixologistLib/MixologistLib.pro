@@ -84,7 +84,6 @@ HEADERS += ft/ftcontroller.h \
            pqi/pqi.h \
            pqi/pqi_base.h \
            pqi/pqihandler.h \
-           pqi/pqilistener.h \
            pqi/pqiloopback.h \
            pqi/pqimonitor.h \
            pqi/pqinetwork.h \

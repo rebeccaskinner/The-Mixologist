@@ -32,41 +32,34 @@
 #include <map>
 
 #include "pqi/pqi_base.h"
-#include "pqi/pqilistener.h"
 
 #include "pqi/authmgr.h"
 
 /*
- * Specific implementation of a pqilistener that utilizes SSL.
- *
- * In practice, there is one pqissllistener for all of the Mixologist.
- * It listens on the Mixologist port set by the user or UPNP for incoming connections.
+ * There is one pqissllistener for all of the Mixologist.
+ * It listens on TCP on the main Mixologist port for incoming connections.
  *
  */
 
 class pqissl;
 
-class pqissllistener: public pqilistener {
+class pqissllistener {
 public:
 
     pqissllistener(struct sockaddr_in *addr);
 
-    /**********************************************************************************
-     * pqilistener interface
-     **********************************************************************************/
-
     /* Handles listening for connections and accepting incoming connections.
        Called from AggregatedConnectionsToFriends's tick. */
-    virtual int tick();
+    int tick();
 
     /* Sets the address on which the listener will be listening. */
-    virtual int setListenAddr(struct sockaddr_in addr);
+    int setListenAddr(struct sockaddr_in addr);
 
     /* Begins listening on the set listen address. */
-    virtual int setuplisten();
+    int setuplisten();
 
     /* Stops listening and restarts to a default state. */
-    virtual int resetlisten();
+    int resetlisten();
 
     /**********************************************************************************
      * Methods called by pqissl

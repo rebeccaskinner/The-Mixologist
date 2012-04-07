@@ -24,7 +24,7 @@
 #define AGGREGATED_CONNECTIONS_H
 
 #include "pqi/pqihandler.h"
-#include "pqi/pqilistener.h"
+#include "pqi/pqissllistener.h"
 #include "pqi/pqiservice.h"
 #include "pqi/pqimonitor.h"
 
@@ -33,7 +33,7 @@
  *
  * This is the aggregate that contains all connections to friends.
  *
- * It holds one listening socket that listens on TCP for the entire application - the pqilistener.
+ * It holds one listening socket that listens on TCP for the entire application - the pqissllistener.
  *
  * It also holds a series of ConnectionToFriends, each of which represents the connection to that friend (through whatever means of connection).
  *
@@ -78,7 +78,7 @@ public:
 
 private:
     /* Creates a new ConnectionToFriend object to represent a friend. */
-    ConnectionToFriend *createPerson(std::string id, unsigned int librarymixer_id, pqilistener *listener);
+    ConnectionToFriend *createPerson(std::string id, unsigned int librarymixer_id, pqissllistener *listener);
 
     /* These functions are called by statusChange to handle the various events. */
     /* Creates and adds a new friend. */
@@ -98,6 +98,6 @@ private:
     int tickServiceSend();
 
     /* The global incoming TCP connection listening socket for all. */
-    pqilistener *pqil;
+    pqissllistener *pqil;
 };
 #endif // AGGREGATED_CONNECTIONS_H

@@ -102,7 +102,6 @@ int AggregatedConnectionsToFriends::tick() {
     return i;
 }
 
-/* Initialise pqilistener */
 void AggregatedConnectionsToFriends::init_listener() {
     QMutexLocker stack(&coreMtx);
     pqil = new pqissllistener(ownConnectivityManager->getOwnLocalAddress());
@@ -229,7 +228,7 @@ bool AggregatedConnectionsToFriends::notifyConnect(unsigned int librarymixer_id,
     return (NULL != friendsConnectivityManager);
 }
 
-ConnectionToFriend *AggregatedConnectionsToFriends::createPerson(std::string id, unsigned int librarymixer_id, pqilistener *listener) {
+ConnectionToFriend *AggregatedConnectionsToFriends::createPerson(std::string id, unsigned int librarymixer_id, pqissllistener *listener) {
     log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::createPerson() New friend " + QString::number(librarymixer_id));
 
     ConnectionToFriend *newPerson = new ConnectionToFriend(id, librarymixer_id);
