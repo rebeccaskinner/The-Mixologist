@@ -94,7 +94,7 @@ void FriendsConnectivityManager::setEnabled(bool enabled) {
  * Friends List Updating
  **********************************************************************************/
 
-#define FRIENDS_LIST_DOWNLOAD_TIMEOUT 10
+#define FRIENDS_LIST_DOWNLOAD_TIMEOUT 60
 #define FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND 300 //5 minute wait when inbound connections from friends will have difficulty
 void FriendsConnectivityManager::friendsListUpdateTick() {
     QMutexLocker stack(&connMtx);
