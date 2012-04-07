@@ -94,12 +94,12 @@ int pqissl::connect(struct sockaddr_in raddr) {
 }
 
 int pqissl::listen() {
-    if (sslListener) return sslListener->addFriendToListenFor(PeerId(), this);
+    if (sslListener) return sslListener->addFriendToListenFor(PeerId().c_str(), this);
     return 0;
 }
 
 int pqissl::stoplistening() {
-    if (sslListener) sslListener->removeFriendToListenFor(PeerId());
+    if (sslListener) sslListener->removeFriendToListenFor(PeerId().c_str());
     return 1;
 }
 

@@ -52,11 +52,6 @@ int pqissllistener::tick() {
     return 1;
 }
 
-int pqissllistener::setListenAddr(struct sockaddr_in addr) {
-    listenAddress = addr;
-    return 1;
-}
-
 int pqissllistener::setuplisten() {
     int err;
     if (listenerActive) return -1;
@@ -65,7 +60,7 @@ int pqissllistener::setuplisten() {
     /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #ifndef WINDOWS_SYS // ie UNIX
     if (listeningSocket < 0) {
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Cannot Open Socket!");
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Cannot Open Socket!");
 
         return -1;
     }
@@ -75,7 +70,7 @@ int pqissllistener::setuplisten() {
         std::ostringstream out;
         out << "Error: Cannot make socket NON-Blocking: ";
         out << err << std::endl;
-        pqioutput(PQL_ERROR, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_ERROR, SSL_LISTENER_ZONE, out.str().c_str());
 
         return -1;
     }
@@ -88,7 +83,7 @@ int pqissllistener::setuplisten() {
         out << " Cannot Open Socket!" << std::endl;
         out << "Socket Error:";
         out  << socket_errorType(WSAGetLastError()) << std::endl;
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
 
         return -1;
     }
@@ -102,7 +97,7 @@ int pqissllistener::setuplisten() {
         out << err << std::endl;
         out << "Socket Error:";
         out << socket_errorType(WSAGetLastError()) << std::endl;
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
 
         return -1;
     }
@@ -112,20 +107,20 @@ int pqissllistener::setuplisten() {
     // setup listening address.
     listenAddress.sin_family = AF_INET;
 
-    pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Setting up on " + addressToString(&listenAddress));
+    log(LOG_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Setting up on " + addressToString(&listenAddress));
 
     if (0 != (err = bind(listeningSocket, (struct sockaddr *) &listenAddress, sizeof(listenAddress)))) {
         std::ostringstream out;
         out << "pqissllistener::setuplisten()";
         out << " Cannot Bind to Local Address!" << std::endl;
         showSocketError(out);
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
         getPqiNotify()->AddSysMessage(SYS_ERROR, "Network failure", QString("Unable to open TCP port ") + addressToString(&listenAddress));
 
         exit(1);
         return -1;
     } else {
-        pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Bound to Address.");
+        log(LOG_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Bound to Address.");
     }
 
     if (0 != (err = listen(listeningSocket, 100))) {
@@ -136,14 +131,15 @@ int pqissllistener::setuplisten() {
         exit(1);
         return -1;
     } else {
-        pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Listening to Socket");
+        log(LOG_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Listening to Socket");
     }
     listenerActive = true;
     return 1;
 }
 
 int pqissllistener::resetlisten() {
-    pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, QString("Resetting listen with socket ").append(QString::number(listeningSocket)));
+    QMutexLocker lock(&listenerMutex);
+    log(LOG_DEBUG_BASIC, SSL_LISTENER_ZONE, QString("Resetting listen with socket ").append(QString::number(listeningSocket)));
     if (listenerActive) {
         /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #ifndef WINDOWS_SYS // ie UNIX
@@ -162,6 +158,7 @@ int pqissllistener::resetlisten() {
 }
 
 int pqissllistener::acceptconnection() {
+    QMutexLocker lock(&listenerMutex);
     if (!listenerActive) return 0;
 
     struct sockaddr_in remote_addr;
@@ -172,7 +169,7 @@ int pqissllistener::acceptconnection() {
     /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #ifndef WINDOWS_SYS // ie UNIX
     if (fd < 0) {
-        pqioutput(PQL_DEBUG_ALL, SSL_LISTENER_ZONE,
+        log(LOG_DEBUG_ALL, SSL_LISTENER_ZONE,
                   "pqissllistener::acceptconnnection() Nothing to Accept!");
         return 0;
     }
@@ -183,7 +180,7 @@ int pqissllistener::acceptconnection() {
         out << "pqissllistener::acceptconnection()";
         out << "Error: Cannot make socket NON-Blocking: ";
         out << err << std::endl;
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
 
         close(fd);
         return -1;
@@ -192,7 +189,7 @@ int pqissllistener::acceptconnection() {
     /********************************** WINDOWS/UNIX SPECIFIC PART ******************/
 #else //WINDOWS_SYS 
     if ((unsigned) fd == INVALID_SOCKET) {
-        pqioutput(PQL_DEBUG_ALL, SSL_LISTENER_ZONE,
+        log(LOG_DEBUG_ALL, SSL_LISTENER_ZONE,
                   "pqissllistener::acceptconnnection() Nothing to Accept!");
         return 0;
     }
@@ -206,7 +203,7 @@ int pqissllistener::acceptconnection() {
         out << err << std::endl;
         out << "Socket Error:";
         out << socket_errorType(WSAGetLastError()) << std::endl;
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
 
         closesocket(fd);
         return 0;
@@ -225,14 +222,10 @@ int pqissllistener::acceptconnection() {
 }
 
 void pqissllistener::continueaccepts() {
-    std::map<SSL *, struct sockaddr_in>::iterator it, it_to_delete;
-
-    for (it = incompleteIncomingConnections.begin(); it != incompleteIncomingConnections.end();) {
-        if (0 != continueSSL(it->first, it->second, false)) {
-            it_to_delete = it++;
-            incompleteIncomingConnections.erase(it_to_delete);
-        } else {
-            it++;
+    QMutexLocker lock(&listenerMutex);
+    foreach (SSL *currentSSL, incompleteIncomingConnections.keys()) {
+        if (0 != continueSSL(currentSSL, incompleteIncomingConnections[currentSSL], false)) {
+            incompleteIncomingConnections.remove(currentSSL);
         }
     }
 }
@@ -256,7 +249,7 @@ int pqissllistener::continueSSL(SSL *ssl, struct sockaddr_in remote_addr, bool n
                 incompleteIncomingConnections[ssl] = remote_addr;
             }
 
-            pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, out.str().c_str());
+            log(LOG_DEBUG_BASIC, SSL_LISTENER_ZONE, out.str().c_str());
             return 0;
         }
 
@@ -277,7 +270,7 @@ int pqissllistener::continueSSL(SSL *ssl, struct sockaddr_in remote_addr, bool n
             std::ostringstream out;
             out << "SSL errors (" << err << ")!" << std::endl;
             printSSLError(ssl, err, ssl_err, err_err, out);
-            pqioutput(PQL_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+            log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
         }
 
         SSL_shutdown(ssl);
@@ -298,13 +291,13 @@ int pqissllistener::continueSSL(SSL *ssl, struct sockaddr_in remote_addr, bool n
         out << fd;
         out << std::endl;
         out << "Shutting it down!" << std::endl;
-        pqioutput(PQL_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
 
         return -1;
     }
 
     if (completeConnection(fd, ssl, remote_addr) < 1) {
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "pqissllistener::completeConnection() Failed!");
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "pqissllistener::completeConnection() Failed!");
 
         SSL_shutdown(ssl);
 
@@ -318,7 +311,7 @@ int pqissllistener::continueSSL(SSL *ssl, struct sockaddr_in remote_addr, bool n
         /************************** WINDOWS/UNIX SPECIFIC PART ******************/
         SSL_free(ssl);
 
-        pqioutput(PQL_WARNING, SSL_LISTENER_ZONE, "Unable to complete encrypted connection that was incoming from " + addressToString(&remote_addr));
+        log(LOG_WARNING, SSL_LISTENER_ZONE, "Unable to complete encrypted connection that was incoming from " + addressToString(&remote_addr));
 
         return -1;
     }
@@ -331,80 +324,52 @@ int pqissllistener::completeConnection(int fd, SSL *ssl, struct sockaddr_in &rem
     X509 *peercert = SSL_get_peer_certificate(ssl);
 
     if (peercert == NULL) {
-        pqioutput(LOG_WARNING, SSL_LISTENER_ZONE, "Should not be possible, incoming connection reached pqissllistener::completeConnection() without a certificate!");
+        log(LOG_WARNING, SSL_LISTENER_ZONE, "Should not be possible, incoming connection reached pqissllistener::completeConnection() without a certificate!");
         return -1;
     }
 
     unsigned char peercert_id[20];
     if (!authMgr->getCertId(peercert, peercert_id)) return false;
-    std::string cert_id = std::string((char *)peercert_id, sizeof(peercert_id));
+    QString cert_id = std::string((char *)peercert_id, sizeof(peercert_id)).c_str();
     X509_free(peercert);
 
-    //Find certificate in our knownFriends list
-    bool found = false;
-    std::map<std::string, pqissl *>::iterator it;
-    for (it = knownFriends.begin(); (found!=true) && (it!=knownFriends.end());) {
-        if (it->first == cert_id) found = true;
-        else it++;
-    }
-
-    if (found == false) {
-        /* This should be a fairly obscure case.
-           When we called SSL_accept, the handshake was already made.
-           At that point, the AuthMgr was already queried and verified the certificate was one it recognized.
-           Most of the time our list of pqissl should be the same as the list of certs in AuthMgr.
-           There is, however, the potential for a narrow window where the cert has been downloaded but the pqissl not yet created. */
-        pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "Incoming connection presented an unrecognized certificate: " + addressToString(&remote_addr));
+    /* This should be a fairly obscure case.
+       When we called SSL_accept, the handshake was already made.
+       At that point, the AuthMgr was already queried and verified the certificate was one it recognized.
+       Most of the time our list of pqissl should be the same as the list of certs in AuthMgr.
+       There is, however, the potential for a narrow window where the cert has been downloaded but the pqissl not yet created. */
+    if (!knownFriends.contains(cert_id)) {
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "Incoming connection presented an unrecognized certificate: " + addressToString(&remote_addr));
         return -1;
     }
-
-    pqissl *friendsSSL = it->second;
 
     /* Even though we are connected now, we don't remove this friend from the list of certificates we are listening from.
        At all times the list of knownFriends is the full list of friends.
        This way a connection that died but we haven't realized it can be replaced by a new incoming connection. */
 
-    friendsSSL->acceptInbound(ssl, fd, remote_addr);
+    knownFriends[cert_id]->acceptInbound(ssl, fd, remote_addr);
     return 1;
 }
 
-int pqissllistener::addFriendToListenFor(std::string id, pqissl *acc) {
-    std::map<std::string, pqissl *>::iterator it;
+int pqissllistener::addFriendToListenFor(const QString &cert_id, pqissl *acc) {
+    QMutexLocker lock(&listenerMutex);
 
-    std::ostringstream out;
-    out << "Adding to Cert Listening Addresses Id: " << id << std::endl;
-
-    out << "Current Certs:" << std::endl;    
-    for (it = knownFriends.begin(); it != knownFriends.end(); it++) {
-        out << it->first << std::endl;
-        if (it -> first == id) {
-            out << "pqissllistener::addFriendToListenFor() Already listening for Cert\n";
-
-            pqioutput(PQL_DEBUG_ALERT, SSL_LISTENER_ZONE, out.str().c_str());
-            return -1;
-        }
+    if (knownFriends.contains(cert_id)) {
+        log(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "pqissllistener::addFriendToListenFor() Attempted to start listening for a friend we are already listening for.");
+        return -1;
     }
 
-    pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, out.str().c_str());
-
-    knownFriends[id] = acc;
+    knownFriends[cert_id] = acc;
     return 1;
 }
 
-int pqissllistener::removeFriendToListenFor(std::string id) {
-    // check if in list.
-    std::map<std::string, pqissl *>::iterator it;
-    for (it = knownFriends.begin(); it!=knownFriends.end(); it++) {
-        if (it->first == id) {
-            knownFriends.erase(it);
+int pqissllistener::removeFriendToListenFor(const QString &cert_id) {
+    QMutexLocker lock(&listenerMutex);
 
-            pqioutput(PQL_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllisten::removeFriendToListenFor() Success!");
-            return 1;
-        }
-    }
+    if (!knownFriends.contains(cert_id)) return -1;
 
-    pqioutput(LOG_DEBUG_ALERT, SSL_LISTENER_ZONE, "pqissllistener::removeFriendToListenFor() Failed to Find a Match");
+    knownFriends.remove(cert_id);
 
-    return -1;
+    return 1;
 }
 

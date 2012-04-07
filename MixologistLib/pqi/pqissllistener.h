@@ -25,15 +25,11 @@
 
 #include <openssl/ssl.h>
 
-// operating system specific network header.
-#include "pqi/pqinetwork.h"
+#include <pqi/pqinetwork.h>
+#include <pqi/pqi_base.h>
+#include <pqi/authmgr.h>
 
-#include <string>
-#include <map>
-
-#include "pqi/pqi_base.h"
-
-#include "pqi/authmgr.h"
+#include <QHash>
 
 /*
  * There is one pqissllistener for all of the Mixologist.
@@ -52,12 +48,6 @@ public:
        Called from AggregatedConnectionsToFriends's tick. */
     int tick();
 
-    /* Sets the address on which the listener will be listening. */
-    int setListenAddr(struct sockaddr_in addr);
-
-    /* Begins listening on the set listen address. */
-    int setuplisten();
-
     /* Stops listening and restarts to a default state. */
     int resetlisten();
 
@@ -66,12 +56,15 @@ public:
      **********************************************************************************/
 
     /* Adds a friend to knownFriends. Called from pqissl. */
-    int addFriendToListenFor(std::string id, pqissl *acc);
+    int addFriendToListenFor(const QString &cert_id, pqissl *acc);
 
     /* Removes a friend from knownFriends.  Called from pqissl. */
-    int removeFriendToListenFor(std::string id);
+    int removeFriendToListenFor(const QString &cert_id);
 
 private:
+    /* Begins listening on the set listen address. */
+    int setuplisten();
+
     /* Checks the port to see if there are any inbound connections, and if there are begins to connect. */
     int acceptconnection();
 
@@ -87,6 +80,8 @@ private:
        If everything is okay, hands it off to that friend's pqissl's accept function to complete everything. */
     int completeConnection(int fd, SSL *ssl, struct sockaddr_in &remote_addr);
 
+    mutable QMutex listenerMutex;
+
     /* The address on which the listener has been directed to listen. */
     struct sockaddr_in listenAddress;
 
@@ -98,10 +93,10 @@ private:
 
     /* This is a list of incoming SSL connections that we were waiting for more data on.
        It is looped through by continueaccepts() to attempt to see if we can now complete them. */
-    std::map<SSL *, struct sockaddr_in> incompleteIncomingConnections;
+    QHash<SSL *, struct sockaddr_in> incompleteIncomingConnections;
 
     //A map of certificates that we're accepting connections from and the pqissl to handle them.
-    std::map<std::string, pqissl *> knownFriends;
+    QHash<QString, pqissl *> knownFriends;
 };
 
 #endif // MRK_PQI_SSL_LISTEN_HEADER
