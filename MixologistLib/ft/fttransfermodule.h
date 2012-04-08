@@ -55,30 +55,33 @@ class ftTransferModule : public QObject {
 
 public:
     enum fileTransferStatus {
-        FILE_WAITING = 0,       //Not done, and not downloading at this moment, but could already be partially downloaded
-        FILE_DOWNLOADING = 1,   //Currently downloading
-        FILE_COMPLETE = 2       //Successful completion
+        /* Not done, and not downloading at this moment, but could already be partially downloaded. */
+        FILE_WAITING = 0,
+        /* Currently downloading. */
+        FILE_DOWNLOADING = 1,
+        /* Successful completion. */
+        FILE_COMPLETE = 2
     };
 
     ftTransferModule(unsigned int initial_friend_id, uint64_t size, const QString &hash);
     ~ftTransferModule();
 
-    //Called from ftController, returns 0 normally, returns 1 when file is complete
+    /* Called from ftController, returns 0 normally, returns 1 when file is complete. */
     int tick();
 
-    //Returns the current status
+    /* Returns the current status. */
     ftTransferModule::fileTransferStatus transferStatus() const;
 
-    //Sets the current status
+    /* Sets the current status. */
     void transferStatus(fileTransferStatus newStatus);
 
-    //Called from ftController, returns a list of librarymixer ids of file sources that are known
+    /* Called from ftController, returns a list of librarymixer ids of file sources that are known. */
     bool getFileSources(QList<unsigned int> &sourceIds);
 
-    //Called from ftController, gets the online state and target transfer rate for a friend
+    /* Called from ftController, gets the online state and target transfer rate for a friend. */
     bool getPeerState(unsigned int librarmixer_id, uint32_t &state, uint32_t &tfRate);
 
-    //Called from ftDataDemultiplex when data is received, frees the data whether successful or not
+    /* Called from ftDataDemultiplex when data is received, frees the data whether successful or not. */
     bool recvFileData(unsigned int librarymixer_id, uint64_t offset, uint32_t chunk_size, void *data);
 
     /* Has an independent Mutex, can be accessed directly */
@@ -92,23 +95,23 @@ public:
     void friendDisconnected(unsigned int friend_id);
 
 private:
-    //Updates actualRate with the total from all sources
-    void updateActualRate();
-    //Called by tick, handles calculating target rates and then requesting an appropriate amount of data
-    bool locked_tickPeerTransfer(peerInfo &info);
-    //Called by recvFileData, updates info about our transfer
-    //If we are rttActive and calculating a new rate, and we have finished receiving the full chunk, calculates the new rate change
-    void locked_recvDataUpdateStats(peerInfo &info, uint64_t offset, uint32_t chunk_size);
+    /* Called by tick, this is the meat of the outbound data requests.
+       Handles calculating target rates and then requesting an appropriate amount of data. */
+    bool locked_tickPeerTransfer(peerInfo &currentPeer);
+
+    /* Called by recvFileData, updates info about our transfer so that locked_tickPeerTransfer can know how much to request.
+       If we are rttActive and calculating a new rate, and we have finished receiving the full chunk, calculates the new rate change. */
+    void locked_recvDataUpdateStats(peerInfo &currentPeer, uint64_t startingByte, uint32_t chunk_size);
 
     mutable QMutex tfMtx;
 
-    //Controls the current status of the download
+    /* Controls the current status of the download. */
     fileTransferStatus mTransferStatus;
 
-    //List of all sources, with first element the LibraryMixer ID of the source
+    /* List of all sources, with first element the LibraryMixer ID of the source. */
     QMap<unsigned int, peerInfo> mFileSources;
 
-    //Total transfer speed on this file
+    /* Total transfer speed on this file. */
     double actualRate;
 };
 
@@ -120,7 +123,7 @@ public:
 
     peerInfo(unsigned int _librarymixer_id)
         :librarymixer_id(_librarymixer_id), actualRate(0), state(PQIPEER_NOT_ONLINE),
-        offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransferred(0), nResets(0),
+        offset(0), chunkSize(0), receivedSize(0), lastRequestTime(0), lastReceiveTime(0), pastTickTransferred(0), numResets(0),
         rtt(0), rttActive(false), rttStart(0), rttOffset(0),mRateChange(1), fastStart(true) {return;}
 
     unsigned int librarymixer_id;
@@ -144,8 +147,9 @@ public:
     time_t lastReceiveTime;
     uint32_t pastTickTransferred;
 
-    /* Count to disable non-existant files */
-    uint32_t nResets;
+    /* Number of times that we have reset trying for this file from this peer.
+       Used to disable non-existant files. */
+    uint32_t numResets;
 
     /* rtt rate control
      * Rate control is based on the amount of time it takes for a complete chunk to be received.
