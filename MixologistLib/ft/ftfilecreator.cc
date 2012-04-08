@@ -27,6 +27,8 @@
 
 #include <QFileInfo>
 
+#include <cstdlib>
+
 /* This is the max age a chunk that has been allocated can get to before being re-requested next time a chunk is requested.
    Note that this number must be significantly larger than the rtt time in transferModule,
    otherwise when transferModule tentatively increases the chunk size requested and we fall behind,

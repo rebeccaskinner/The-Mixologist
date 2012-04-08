@@ -26,7 +26,6 @@
 
 #include <ft/ftfileprovider.h>
 #include <QMap>
-#include <cstdlib>
 
 /*
  * Corresponds to a single file that is being written to, and by extending ftFileProvider,
