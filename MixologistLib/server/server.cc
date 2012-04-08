@@ -86,7 +86,7 @@ void Server::oneSecondTick() {
 }
 
 #define MAX_SECONDS_TO_SLEEP 1
-#define MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER 0.15
+#define MAX_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER 0.15
 
 void Server::variableTick() {
     static double secondsToSleep, averageSecondsToSleep = 0.25;
@@ -100,12 +100,15 @@ void Server::variableTick() {
     /* Adjust tick rate depending on whether there is more file transfer data backing up. */
     if (moreDataExists == 1) {
         secondsToSleep = 0.9 * averageSecondsToSleep;
-        if (secondsToSleep > MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER) {
-            secondsToSleep = MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER;
-            averageSecondsToSleep = MIN_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER;
+        if (secondsToSleep > MAX_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER) {
+            secondsToSleep = MAX_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER;
+            averageSecondsToSleep = MAX_SECONDS_TO_SLEEP_DURING_FILE_TRANSFER;
         }
     } else {
-        secondsToSleep = 1.1 * averageSecondsToSleep;
+        /* It is possible to get the seconds to sleep so low that 1.1 * that amount doesn't have enough precision to bring the number back up.
+           When the secondsToSleep is extremely low, we switching to a doubling strategy that is guaranteed to be able to bring it back. */
+        if (secondsToSleep < .001) secondsToSleep = 2 * averageSecondsToSleep;
+        else secondsToSleep = 1.1 * averageSecondsToSleep;
     }
 
     if (secondsToSleep > MAX_SECONDS_TO_SLEEP) {
