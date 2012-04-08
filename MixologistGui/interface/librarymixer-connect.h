@@ -25,6 +25,7 @@
 #include <QObject>
 #include <QBuffer>
 #include <QtNetwork>
+#include <QDomElement>
 
 #define MIXOLOGY_CHECKOUT_LINK "mixology:userid==[[id]]¦name==[[full_formatted_name]]¦itemid==[[item_id]]¦"
 #define MIXOLOGY_CONTACT_LINK "mixology:userid==[[id]]¦"
@@ -96,7 +97,8 @@ signals:
     void downloadedInfo(QString name, unsigned int librarymixer_id,
                         QString checkout_link1, QString contact_link1, QString link_title1,
                         QString checkout_link2, QString contact_link2, QString link_title2,
-                        QString checkout_link3, QString contact_link3, QString link_title3);
+                        QString checkout_link3, QString contact_link3, QString link_title3,
+                        QDomElement libraryNode);
     void uploadedInfo();
     void downloadedFriends();
     void downloadedFriendsLibrary();
@@ -123,6 +125,8 @@ private:
 
     /* Cleans up on receiving an error, and emits the errorReceived signal. */
     void handleErrorReceived(int error);
+
+    mutable QMutex lmMutex;
 
     int httpGetId;
     int version_check_id;

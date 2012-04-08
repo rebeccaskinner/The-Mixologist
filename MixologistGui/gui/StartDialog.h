@@ -58,7 +58,8 @@ private slots:
         void downloadedInfo(QString name, unsigned int librarymixer_id,
                             QString checkout_link1, QString contact_link1, QString link_title1,
                             QString checkout_link2, QString contact_link2, QString link_title2,
-                            QString checkout_link3, QString contact_link3, QString link_title3);
+                            QString checkout_link3, QString contact_link3, QString link_title3,
+                            QDomElement libraryNode);
         //Begin 4th step to download friends
         void uploadedInfo();
         //Begin 5th step to download library of friends items

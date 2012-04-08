@@ -69,9 +69,10 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
 
     librarymixerconnect = new LibraryMixerConnect();
     connect(librarymixerconnect, SIGNAL(downloadedVersion(qulonglong,QString, QString)), this, SLOT(downloadedVersion(qulonglong,QString,QString)), Qt::QueuedConnection);
-    /* This connection must by direct and not queued, as we must handle set up before passing control back to librarymixerconnect here. */
-    connect(librarymixerconnect, SIGNAL(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)),
-            this, SLOT(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString)));
+    //QDomElement is not a default registerd type for QT's meta-object system, so we must first manually register it.
+    qRegisterMetaType<QDomElement>("QDomElement");
+    connect(librarymixerconnect, SIGNAL(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString,QDomElement)),
+            this, SLOT(downloadedInfo(QString,unsigned int,QString,QString,QString,QString,QString,QString,QString,QString,QString,QDomElement)), Qt::QueuedConnection);
     connect(librarymixerconnect, SIGNAL(uploadedInfo()), this, SLOT(uploadedInfo()), Qt::QueuedConnection);
     connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(downloadedFriends()), Qt::QueuedConnection);
     connect(librarymixerconnect, SIGNAL(downloadedFriendsLibrary()), this, SLOT(finishLoading()), Qt::QueuedConnection);
@@ -228,7 +229,8 @@ void StartDialog::downloadedVersion(qulonglong _version, QString description, QS
 void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
                                  QString checkout_link1, QString contact_link1, QString link_title1,
                                  QString checkout_link2, QString contact_link2, QString link_title2,
-                                 QString checkout_link3, QString contact_link3, QString link_title3) {
+                                 QString checkout_link3, QString contact_link3, QString link_title3,
+                                 QDomElement libraryNode) {
     //First time we have the librarymixer_id and can initialize user directory
     Init::loadUserDir(librarymixer_id);
     //First time we have verified that the credentials are good, and can save them to the autoload
@@ -304,6 +306,7 @@ void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
 
     //Must start server now so that we can get the IP address to upload in the next step
     Init::createControl(name);
+    Init::loadLibrary(libraryNode);
 
     ui.loadStatus->setText("Updating Info");
     ui.progressBar->setValue(40);

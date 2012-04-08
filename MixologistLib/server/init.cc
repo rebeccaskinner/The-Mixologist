@@ -303,6 +303,10 @@ Control *Init::createControl(QString ownName) {
     return server;
 }
 
+void Init::loadLibrary(const QDomElement &libraryElement) {
+    librarymixermanager->mergeLibrary(libraryElement);
+}
+
 QString Init::getBaseDirectory(bool withDirSeperator) {
     if (withDirSeperator) return (basedir + QDir::separator());
     return basedir;

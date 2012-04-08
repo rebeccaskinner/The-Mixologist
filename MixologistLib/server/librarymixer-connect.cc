@@ -52,6 +52,7 @@ LibraryMixerConnect::LibraryMixerConnect()
 }
 
 void LibraryMixerConnect::setLogin(const QString &_email, const QString &_password) {
+    QMutexLocker stack(&lmMutex);
     email = _email;
     password = _password;
 }
@@ -110,6 +111,7 @@ int LibraryMixerConnect::downloadXML(const QString &path, QIODevice *destination
 }
 
 int LibraryMixerConnect::downloadVersion(qlonglong current) {
+    QMutexLocker stack(&lmMutex);
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
     QString url = "/api/mixologist_version?current=";
@@ -119,6 +121,7 @@ int LibraryMixerConnect::downloadVersion(qlonglong current) {
 }
 
 int LibraryMixerConnect::downloadInfo() {
+    QMutexLocker stack(&lmMutex);
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
     info_download_id = downloadXML("/api/user?id=&name=&checkout_link1=&contact_link1=&link_title1=&checkout_link2=&contact_link2=&link_title2=&checkout_link3=&contact_link3=&link_title3=&library=&libraryonlycheckout=true&librarypaginate=-1",
@@ -127,6 +130,7 @@ int LibraryMixerConnect::downloadInfo() {
 }
 
 int LibraryMixerConnect::downloadLibrary(bool blocking) {
+    QMutexLocker stack(&lmMutex);
     if (lastLibraryUpdate.isNull() || lastLibraryUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
         lastLibraryUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
@@ -145,6 +149,7 @@ int LibraryMixerConnect::downloadLibrary(bool blocking) {
 }
 
 int LibraryMixerConnect::downloadFriends(bool blocking) {
+    QMutexLocker stack(&lmMutex);
     if (lastFriendUpdate.isNull() || lastFriendUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
         lastFriendUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
@@ -164,6 +169,7 @@ int LibraryMixerConnect::downloadFriends(bool blocking) {
 }
 
 int LibraryMixerConnect::downloadFriendsLibrary() {
+    QMutexLocker stack(&lmMutex);
     if (lastFriendLibraryUpdate.isNull() || lastFriendLibraryUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
         lastFriendLibraryUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
@@ -202,6 +208,7 @@ int LibraryMixerConnect::uploadXML(const QString &path,
 }
 
 int LibraryMixerConnect::uploadInfo(const int link_to_set, const QString &public_key) {
+    QMutexLocker stack(&lmMutex);
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
     uploadBuffer = new QBuffer();
@@ -229,6 +236,7 @@ int LibraryMixerConnect::uploadInfo(const int link_to_set, const QString &public
 }
 
 int LibraryMixerConnect::uploadAddress(const QString &localIP, ushort localPort, const QString &externalIP, ushort externalPort) {
+    QMutexLocker stack(&lmMutex);
     buffer = new QBuffer();
     if (!buffer->open(QIODevice::ReadWrite)) return -1;
     uploadBuffer = new QBuffer();
@@ -261,6 +269,7 @@ int LibraryMixerConnect::uploadAddress(const QString &localIP, ushort localPort,
 }
 
 void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
+    QMutexLocker stack(&lmMutex);
     if (requestId != httpGetId) return; //skip request completions that aren't related to actual http requests
     if (requestId == version_check_id) {
         if (error) goto versionDownloadError;
@@ -333,13 +342,8 @@ void LibraryMixerConnect::httpRequestFinishedSlot(int requestId, bool error) {
         emit downloadedInfo(nameNode.text(), idNode.text().toInt(),
                             checkout1Node.text(), contact1Node.text(), title1Node.text(),
                             checkout2Node.text(), contact2Node.text(), title2Node.text(),
-                            checkout3Node.text(), contact3Node.text(), title3Node.text());
-
-        /* The connection used by StartDialog to the signal downloadedInfo will run in the same thread.
-           This is essential because it means that all of the StartDialog setup, including the creation of the librarymixermanager
-           will occur before this line, which uses the librarymixermanager. */
-        librarymixermanager->mergeLibrary(libraryNode);
-
+                            checkout3Node.text(), contact3Node.text(), title3Node.text(),
+                            libraryNode);
         return;
     } else if (requestId == info_upload_id) {
         if (error) goto infoUploadError;
@@ -528,6 +532,7 @@ void LibraryMixerConnect::handleErrorReceived(int error) {
 }
 
 void LibraryMixerConnect::sslErrorsSlot(const QList<QSslError> &errors) {
+    QMutexLocker stack(&lmMutex);
     /* Fix for the weird erroneous QSslErrors set to NoError that showed up after upgrading to OpenSSL 1.0.0a
        from the old custom Retroshare version */
     bool realError = false;
@@ -547,10 +552,12 @@ void LibraryMixerConnect::sslErrorsSlot(const QList<QSslError> &errors) {
 }
 
 void LibraryMixerConnect::slotAuthenticationRequired() {
+    QMutexLocker stack(&lmMutex);
     http->abort();
     handleErrorReceived(bad_login_error);
 }
 
 void LibraryMixerConnect::blockingTimeOut() {
+    QMutexLocker stack(&lmMutex);
     doneTransfer = true;
 }

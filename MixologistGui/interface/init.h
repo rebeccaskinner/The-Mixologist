@@ -21,6 +21,7 @@
 
 /* Initialisation Class */
 #include <QString>
+#include <QDomElement>
 
 class NotifyBase;
 class Control;
@@ -41,6 +42,8 @@ public:
     static QString InitEncryption(unsigned int librarymixer_id);
     /* Creates, initializes and returns a new Control object. */
     static Control* createControl(QString name);
+    /* Loads in the library from a QDomElement. */
+    static void loadLibrary(const QDomElement &libraryElement);
 
     /* Returns the basedir, without or without a trailing separator. */
     static QString getBaseDirectory(bool withDirSeperator);
