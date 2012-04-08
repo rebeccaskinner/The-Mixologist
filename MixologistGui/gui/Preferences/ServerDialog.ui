@@ -513,7 +513,7 @@
         <item>
          <widget class="QLabel" name="portLabel">
           <property name="text">
-           <string>Port Number</string>
+           <string>Your Port Number</string>
           </property>
          </widget>
         </item>

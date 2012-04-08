@@ -48,8 +48,10 @@ ServerDialog::ServerDialog(QWidget *parent)
 
     if (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT) {
         ui.disableAutoConfig->setChecked(false);
+        autoConfigClicked(false);
     } else {
-        ui.disableAutoConfig->setChecked(true);;
+        ui.disableAutoConfig->setChecked(true);
+        autoConfigClicked(true);
     }
 
     QSettings serverSettings(*startupSettings, QSettings::IniFormat, this);
@@ -81,9 +83,6 @@ bool ServerDialog::save() {
 
 void ServerDialog::showAdvanced(bool enabled) {
     ui.remoteBox->setVisible(enabled);
-    /* Only show the ports if we are both on advanced mode and auto-config is disabled. */
-    ui.portNumber->setVisible(enabled && ui.disableAutoConfig->isChecked());
-    ui.portLabel->setVisible(enabled && ui.disableAutoConfig->isChecked());
 }
 
 void ServerDialog::editedServer(){
@@ -95,6 +94,6 @@ void ServerDialog::editedServer(){
 void ServerDialog::autoConfigClicked(bool autoConfigDisabled) {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     /* Only show the ports if we are both on advanced mode and auto-config is disabled. */
-    ui.portNumber->setVisible((autoConfigDisabled && settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()));
-    ui.portLabel->setVisible((autoConfigDisabled && settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()));
+    ui.portNumber->setEnabled(autoConfigDisabled);
+    ui.portLabel->setEnabled(autoConfigDisabled);
 }
