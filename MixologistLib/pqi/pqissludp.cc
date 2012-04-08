@@ -32,7 +32,7 @@
 #include "util/debug.h"
 
 pqissludp::pqissludp(PQInterface *parent)
-    :pqissl(NULL, parent), tou_bio(NULL), mConnectPeriod(0) {
+    :pqissl(parent), tou_bio(NULL), mConnectPeriod(0) {
     sockaddr_clear(&remote_addr);
     isTcpOverUdpConnection = true;
 }

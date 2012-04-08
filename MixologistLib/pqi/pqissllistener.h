@@ -39,10 +39,16 @@
 
 class pqissl;
 
+class pqissllistener;
+extern pqissllistener *sslListener;
+
 class pqissllistener {
 public:
 
-    pqissllistener(struct sockaddr_in *addr);
+    pqissllistener();
+
+    /* Begins listening on the set listen address. */
+    int setuplisten(struct sockaddr_in *addr);
 
     /* Handles listening for connections and accepting incoming connections.
        Called from AggregatedConnectionsToFriends's tick. */
@@ -62,9 +68,6 @@ public:
     int removeFriendToListenFor(const QString &cert_id);
 
 private:
-    /* Begins listening on the set listen address. */
-    int setuplisten();
-
     /* Checks the port to see if there are any inbound connections, and if there are begins to connect. */
     int acceptconnection();
 

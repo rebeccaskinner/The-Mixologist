@@ -63,11 +63,10 @@ static const int PQISSL_SSL_CONNECT_TIMEOUT = 30;
  *
  */
 
-pqissl::pqissl(pqissllistener *sslListener, PQInterface *parent)
+pqissl::pqissl(PQInterface *parent)
     :NetBinInterface(parent, parent->PeerId(), parent->LibraryMixerId()),
      connectionState(STATE_IDLE), currentlyConnected(false),
      sslmode(PQISSL_ACTIVE), ssl_connection(NULL), mOpenSocket(-1),
-     sslListener(sslListener),
      sameLAN(false), failedButRetry(false), errorZeroReturnCount(0),
      mConnectionAttemptTimeout(0), mConnectionAttemptTimeoutAt(0) {
     /* set address to zero */

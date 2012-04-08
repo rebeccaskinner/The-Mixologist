@@ -53,13 +53,11 @@
  *
  */
 
-class pqissllistener;
-
 class pqissl: public NetBinInterface {
     friend class pqissllistener;
 
 public:
-    pqissl(pqissllistener *l, PQInterface *parent);
+    pqissl(PQInterface *parent);
     virtual ~pqissl();
 
     /**********************************************************************************
@@ -187,9 +185,6 @@ protected:
     SSL *ssl_connection;
     int mOpenSocket;
     struct sockaddr_in remote_addr;
-
-    /* Pointer to the global sslListener that we'll need to register with. */
-    pqissllistener *sslListener;
 
     /* Reading in packets may require multiple calls to readdata().
        This stores how far in we've made it into our read so far. */

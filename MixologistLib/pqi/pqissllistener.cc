@@ -34,15 +34,14 @@
 #include "interface/iface.h" //for librarymixerconnect variable
 #include "interface/librarymixer-connect.h"
 
-pqissllistener::pqissllistener(struct sockaddr_in *addr)
-    :listenAddress(*addr), listenerActive(false) {
+pqissllistener::pqissllistener()
+    :listenerActive(false) {
 
     if (!(authMgr->active())) {
         getPqiNotify()->AddSysMessage(SYS_ERROR, "Encryption failure", "SSL-CTX-CERT-ROOT not initialised!");
         exit(1);
     }
 
-    setuplisten();
     return;
 }
 
@@ -52,7 +51,11 @@ int pqissllistener::tick() {
     return 1;
 }
 
-int pqissllistener::setuplisten() {
+int pqissllistener::setuplisten(struct sockaddr_in *addr) {
+    QMutexLocker lock(&listenerMutex);
+
+    listenAddress = *addr;
+
     int err;
     if (listenerActive) return -1;
 
@@ -133,6 +136,8 @@ int pqissllistener::setuplisten() {
     } else {
         log(LOG_DEBUG_BASIC, SSL_LISTENER_ZONE, "pqissllistener::setuplisten() Listening to Socket");
     }
+
+    log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Opened TCP port on " + QString::number(ntohs(listenAddress.sin_port)));
     listenerActive = true;
     return 1;
 }

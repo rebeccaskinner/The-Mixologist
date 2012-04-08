@@ -47,8 +47,6 @@ const uint32_t UDP_STD_PERIOD = 5; /* 5 seconds */
 /* MUTEX NOTES:
  * Functions from the implemented classes (pqihandler, p3ServiceServer) have their own mutexes. */
 
-AggregatedConnectionsToFriends::AggregatedConnectionsToFriends() :pqil(NULL) {}
-
 int AggregatedConnectionsToFriends::tickServiceRecv() {
     RawItem *incomingItem = NULL;
     int i = 0;
@@ -87,7 +85,7 @@ int AggregatedConnectionsToFriends::tickServiceSend() {
 int AggregatedConnectionsToFriends::tick() {
     {
         QMutexLocker stack(&coreMtx);
-        if (pqil) pqil->tick();
+        if (sslListener) sslListener->tick();
     }
 
     int i = 0;
@@ -104,16 +102,14 @@ int AggregatedConnectionsToFriends::tick() {
 
 void AggregatedConnectionsToFriends::init_listener() {
     QMutexLocker stack(&coreMtx);
-    pqil = new pqissllistener(ownConnectivityManager->getOwnLocalAddress());
+    if (!sslListener) sslListener = new pqissllistener();
+
+    sslListener->setuplisten(ownConnectivityManager->getOwnLocalAddress());
 }
 
 void AggregatedConnectionsToFriends::stop_listener() {
     QMutexLocker stack(&coreMtx);
-    if (pqil) {
-        pqil->resetlisten();
-        delete pqil;
-        pqil = NULL;
-    }
+    if (sslListener) sslListener->resetlisten();
 }
 
 void AggregatedConnectionsToFriends::load_transfer_rates() {
@@ -148,7 +144,7 @@ int AggregatedConnectionsToFriends::addPeer(std::string id, unsigned int library
         }
     }
 
-    ConnectionToFriend *newFriend = createPerson(id, librarymixer_id, pqil);
+    ConnectionToFriend *newFriend = createPerson(id, librarymixer_id, sslListener);
 
     //reset it to start it working.
     newFriend->reset();
@@ -232,7 +228,7 @@ ConnectionToFriend *AggregatedConnectionsToFriends::createPerson(std::string id,
     log(LOG_DEBUG_BASIC, AGGREGATED_CONNECTIONS_ZONE, "AggregatedConnectionsToFriends::createPerson() New friend " + QString::number(librarymixer_id));
 
     ConnectionToFriend *newPerson = new ConnectionToFriend(id, librarymixer_id);
-    pqissl *newSsl = new pqissl((pqissllistener *) listener, newPerson);
+    pqissl *newSsl = new pqissl(newPerson);
 
     Serialiser *newTcpSerialiser = new Serialiser();
     newTcpSerialiser->addSerialType(new FileItemSerialiser());

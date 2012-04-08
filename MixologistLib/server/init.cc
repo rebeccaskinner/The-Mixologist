@@ -11,6 +11,7 @@
 #include "pqi/pqinetwork.h"
 #include "pqi/pqinotify.h"
 #include "pqi/pqiloopback.h"
+#include "pqi/pqissllistener.h"
 #include "pqi/aggregatedConnections.h"
 
 #include "server/librarymixer-library.h"
@@ -75,6 +76,7 @@ ftTempList *tempList = NULL;
 MixologyService *mixologyService = NULL;
 StatusService *statusService = NULL;
 AggregatedConnectionsToFriends *aggregatedConnectionsToFriends = NULL;
+pqissllistener *sslListener = NULL;
 
 void Init::InitNetConfig() {
     /* Setup logging */

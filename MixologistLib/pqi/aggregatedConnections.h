@@ -54,7 +54,7 @@ class ConnectionToFriend;
 
 class AggregatedConnectionsToFriends: public pqihandler, public pqiMonitor, public p3ServiceServer {
 public:
-    AggregatedConnectionsToFriends();
+    AggregatedConnectionsToFriends() {}
 
     /* Creates the listener and has it begin listening on the listen address. */
     void init_listener();
