@@ -195,7 +195,7 @@ signals:
 
 private slots:
     /* Set whether the Mixologist should be attempting to connect to friends.
-       If enabled is true, calls for an immediate connect attempt to all friends. */
+       If enabled is true, will update the friends list and then begin connectin to friends. */
     void setEnabled(bool enabled);
 
     /* Connected to the UDP Sorter for when we receive a UDP Tunneler packet. */
@@ -257,6 +257,9 @@ private:
 
     /* Whether connecting to friends is currently enabled. */
     bool friendsManagerEnabled;
+
+    /* Set by setEnabled to signal we need to download the friends list and then enable friendsManagerEnabled. */
+    bool downloadFriendsAndEnable;
 
     /* The last time our friends list was updated from LibraryMixer. */
     time_t friendsListUpdateTime;

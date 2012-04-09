@@ -65,6 +65,7 @@ friendListing::friendListing()
 FriendsConnectivityManager::FriendsConnectivityManager()
     :mStatusChanged(false),
      friendsManagerEnabled(false),
+     downloadFriendsAndEnable(false),
      friendsListUpdateTime(0),
      outboundConnectionTryAllTime(0) {
     connect(librarymixerconnect, SIGNAL(downloadedFriends()), this, SLOT(friendsListUpdated()));
@@ -81,12 +82,13 @@ void FriendsConnectivityManager::tick() {
 void FriendsConnectivityManager::setEnabled(bool enabled) {
     {
         QMutexLocker stack(&connMtx);
-        friendsManagerEnabled = enabled;
-    }
+        if (enabled) {
+            downloadFriendsAndEnable = true;
+        } else {
+            downloadFriendsAndEnable = false;
+            friendsManagerEnabled = false;
+        }
 
-    if (enabled) {
-        log(LOG_WARNING, FRIEND_CONNECTIVITY_ZONE, "Connection set up complete, beginning to look for your friends");
-        tryConnectToAll();
     }
 }
 
@@ -99,19 +101,23 @@ void FriendsConnectivityManager::setEnabled(bool enabled) {
 void FriendsConnectivityManager::friendsListUpdateTick() {
     QMutexLocker stack(&connMtx);
 
-    if (!friendsManagerEnabled) return;
-
     /* Only restricted-cone and symmetric NAT firewalled connections need to maintain their friends list periodically.
-       All other connections should be able to handle inbound connections, and if necessary their friends list can be updated in response to those. */
-    if (!connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus())) return;
+       All other connections should be able to handle inbound connections, and if necessary their friends list can be updated in response to those.
+       The only time normal connections will update their friends list in this function is when downloadFriendsAndEnable is true. */
+    if (!connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus()) &&
+        !downloadFriendsAndEnable) return;
+
+    time_t now = time(NULL);
+
+    if (connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus()) &&
+       (now - FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND < friendsListUpdateTime)) return;
+
+    /* If we get here, we are actively trying to update our friends list. */
 
     static time_t friendsListUpdateAttemptTime = 0;
-    time_t now = time(NULL);
-    if (now - FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND > friendsListUpdateTime) {
-        if (now - FRIENDS_LIST_DOWNLOAD_TIMEOUT > friendsListUpdateAttemptTime) {
-            friendsListUpdateAttemptTime = time(NULL);
-            librarymixerconnect->downloadFriends();
-        }
+    if (now - FRIENDS_LIST_DOWNLOAD_TIMEOUT > friendsListUpdateAttemptTime) {
+        friendsListUpdateAttemptTime = time(NULL);
+        librarymixerconnect->downloadFriends();
     }
 }
 
@@ -119,6 +125,15 @@ void FriendsConnectivityManager::friendsListUpdated() {
     QMutexLocker stack(&connMtx);
     friendsListUpdateTime = time(NULL);
     log(LOG_DEBUG_ALERT, FRIEND_CONNECTIVITY_ZONE, "Updated friends list from LibraryMixer.");
+
+    bool connect = false;
+    if (downloadFriendsAndEnable) {
+        downloadFriendsAndEnable = false;
+        friendsManagerEnabled = true;
+        log(LOG_WARNING, FRIEND_CONNECTIVITY_ZONE, "Connection set up complete, beginning to look for your friends");
+    }
+
+    if (connect) tryConnectToAll();
 }
 
 /**********************************************************************************
