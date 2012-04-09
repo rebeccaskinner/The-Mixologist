@@ -50,7 +50,7 @@
 #define REQUESTED_RETRY_WAIT_TIME 10 //10 seconds wait if our connection attempt failed and we were signaled to try again
 #define SENT_TCP_CONNECT_BACK_WAIT_TIME 8 //8 second wait for our TCP connect back to succeed
 #define LAST_HEARD_TIMEOUT 300 //5 minute wait if haven't heard from a friend before we mark them as disconnected
-#define UDP_PUNCHING_PERIOD 20 //20 seconds between UDP hole punches
+#define UDP_SEND_PERIOD 20 //20 seconds between UDP hole punches
 
 friendListing::friendListing()
     :name(""), id(""), librarymixer_id(0),
@@ -149,36 +149,53 @@ void FriendsConnectivityManager::connectivityTick() {
 
         time_t now = time(NULL);
 
-        /* If applicable, do the UDP hole punching.
+        /* Do the UDP maintenance methods. */
+        ConnectionStatus currentStatus = ownConnectivityManager->getConnectionStatus();
+
+        /* Do UDP hole-punching if applicable.
            We send to all friends that are disconnected, in case they are online and behind firewalls.
            We also send to all friends we are connected to via UDP, in order to be certain the firewalls don't time out our connections if we are idle.
            Note that we are treating CONNECTION_STATUS_UDP_HOLE_PUNCHING (full-cone NAT hole punching)
            the same as CONNECTION_STATUS_RESTRICTED_CONE_UDP_HOLE_PUNCHING for now.
            The full-cone NAT hole punching actually only requires punching one friend each cycle, but we are punching all friends each cycle for both. */
-        if (connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus())) {
-            static time_t last_punch = 0;
-            if (now - last_punch > UDP_PUNCHING_PERIOD) {
-                log(LOG_DEBUG_BASIC, FRIEND_CONNECTIVITY_ZONE, "FriendsConnectivityManager::connectivityTick() Sending UDP Tunnelers");
-                last_punch = now;
+        /* If we have a good connection, send TCP connect-back requests to all.
+           Shooting out a UDP packet to each offline friend should be a fairly lightweight task.
+           This serves as a constant connection attempt in case any past connection attempts were lost. */
+        if (connectionStatusUdpHolePunching(currentStatus) ||
+            connectionStatusGoodConnection(currentStatus)) {
+            static time_t lastUdpSend = 0;
+            if (now - lastUdpSend > UDP_SEND_PERIOD) {
+                log(LOG_DEBUG_BASIC, FRIEND_CONNECTIVITY_ZONE, "FriendsConnectivityManager::connectivityTick() Sending UDP");
+                lastUdpSend = now;
                 foreach (friendListing *currentFriend, friendsConnectivityManager->mFriendList.values()) {
-                    if (currentFriend->state == FCS_NOT_CONNECTED) {
-                        if (udpMainSocket) {
-                            udpMainSocket->sendUdpTunneler(&currentFriend->serveraddr, ownConnectivityManager->getOwnExternalAddress(), peers->getOwnLibraryMixerId());
+                    if (connectionStatusUdpHolePunching(currentStatus)) {
+                        if (currentFriend->state == FCS_NOT_CONNECTED) {
+                            if (udpMainSocket) {
+                                udpMainSocket->sendUdpTunneler(&currentFriend->serveraddr, ownConnectivityManager->getOwnExternalAddress(), peers->getOwnLibraryMixerId());
+                            }
+                        } else if (currentFriend->state == FCS_CONNECTED_UDP) {
+                            statusService->sendKeepAlive(currentFriend->librarymixer_id);
                         }
-                    } else if (currentFriend->state == FCS_CONNECTED_UDP) {
-                        statusService->sendKeepAlive(currentFriend->librarymixer_id);
+                    } else if (connectionStatusGoodConnection(currentStatus)) {
+                        if (currentFriend->state == FCS_NOT_CONNECTED) {
+                            if (udpMainSocket) {
+                                udpMainSocket->sendTcpConnectionRequest(&currentFriend->serveraddr, ownConnectivityManager->getOwnExternalAddress(), peers->getOwnLibraryMixerId());
+                            }
+                        }
                     }
                 }
             }
         }
 
+
+        /* Handle the timing-based tasks for friends.
+           Do both the timeout of connected friends, and also resume any delayed friends. */
         time_t timeoutIfOlder = now - LAST_HEARD_TIMEOUT;
 
-        /* Do both the timeout of connected friends, and any scheduled TCP trying now. */
         foreach (friendListing *currentFriend, mFriendList.values()) {
             if (currentFriend->state == FCS_NOT_MIXOLOGIST_ENABLED) continue;
 
-            /* Check if connected peers need to be timed out */
+            /* Check if connected friends need to be timed out */
             else if (currentFriend->state == FCS_CONNECTED_TCP ||
                      currentFriend->state == FCS_CONNECTED_UDP) {
                 if (currentFriend->lastheard < timeoutIfOlder) {
@@ -197,6 +214,7 @@ void FriendsConnectivityManager::connectivityTick() {
                 } else continue;
             }
 
+            /* Check if any delayed friends need to be resumed. */
             else if (currentFriend->nextTryDelayedUntil != 0 &&
                      now > currentFriend->nextTryDelayedUntil) {
                 log(LOG_DEBUG_BASIC, FRIEND_CONNECTIVITY_ZONE,
@@ -207,7 +225,9 @@ void FriendsConnectivityManager::connectivityTick() {
             }
         }
 
-        /* Do the TCP retry with all friends. */
+        /* Do the TCP retry with all friends.
+           Except for symmetric NATs, which depend on this for all connections,
+           this is just a different way to try connecting to friends that is only run infrequently. */
         if (ownConnectivityManager->getConnectionStatus() == CONNECTION_STATUS_SYMMETRIC_NAT &&
             now - outboundConnectionTryAllTime > TCP_RETRY_PERIOD_SYMMETRIC_NAT)
             retryAll = true;
