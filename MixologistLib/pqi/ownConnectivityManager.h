@@ -118,6 +118,9 @@ private slots:
     /* Connected to the LibraryMixerConnect so we know when we have updated LibraryMixer with our new address. */
     void addressUpdatedOnLibraryMixer();
 
+    /* Connected to the connection ready signal, triggers a check of UPNP port mappings, whether or not we're on UPNP. */
+    void checkUpnpMappings(bool check);
+
 private:
     /**********************************************************************************
      * Setup Helpers

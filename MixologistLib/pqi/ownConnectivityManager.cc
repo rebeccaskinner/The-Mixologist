@@ -54,6 +54,7 @@ OwnConnectivityManager::OwnConnectivityManager()
     sockaddr_clear(&ownExternalAddress);
 
     connect(librarymixerconnect, SIGNAL(uploadedAddress()), this, SLOT(addressUpdatedOnLibraryMixer()));
+    connect(this, SIGNAL(ownConnectionReadinessChanged(bool)), this, SLOT(checkUpnpMappings(bool)));
 
     /* Load balance between the servers by picking the order at random. */
     if (rand() % 2 == 0) {
@@ -136,16 +137,15 @@ void OwnConnectivityManager::select_NetInterface_OpenPorts() {
         }
 
         aggregatedConnectionsToFriends->init_listener();
+
+        if (!mUpnpMgr) mUpnpMgr = new upnpHandler();
+        mUpnpMgr->setTargetPort(ntohs(ownLocalAddress.sin_port));
     }
 }
 
 void OwnConnectivityManager::shutdown() {
     QMutexLocker stack(&ownConMtx);
-    if (mUpnpMgr) {
-        mUpnpMgr->shutdown();
-        delete mUpnpMgr;
-        mUpnpMgr = NULL;
-    }
+    if (mUpnpMgr) mUpnpMgr->shutdown();
 
     TCP_over_UDP_shutdown();
 
@@ -241,16 +241,14 @@ void OwnConnectivityManager::netTick() {
                 }
             }
         } else if (CONNECTION_STATUS_TRYING_UPNP == connectionStatus) {
-            if (!mUpnpMgr) {
+            upnpHandler::upnpStates currentUpnpState = mUpnpMgr->getUpnpState();
+
+            if (currentUpnpState == upnpHandler::UPNP_STATE_UNINITIALIZED) {
                 log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
                     "Attempting to configure firewall using Universal Plug and Play");
-                mUpnpMgr = new upnpHandler();
-                mUpnpMgr->setTargetPort(ntohs(ownLocalAddress.sin_port));
                 mUpnpMgr->startup();
                 connectionSetupStepTimeOutAt = time(NULL) + UPNP_INIT_TIMEOUT;
             }
-    
-            upnpHandler::upnpStates currentUpnpState = mUpnpMgr->getUpnpState();
     
             if (currentUpnpState == upnpHandler::UPNP_STATE_ACTIVE) {
                 connectionStatusChanged = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_UPNP_TEST);
@@ -258,11 +256,10 @@ void OwnConnectivityManager::netTick() {
                     "Universal Plug and Play successfully configured router");
             } else {
                 if (currentUpnpState == upnpHandler::UPNP_STATE_UNAVAILABLE ||
+                    currentUpnpState == upnpHandler::UPNP_STATE_FAILED ||
                     time(NULL) > connectionSetupStepTimeOutAt) {
     
                     mUpnpMgr->shutdown();
-                    delete mUpnpMgr;
-                    mUpnpMgr = NULL;
     
                     connectionStatusChanged = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_MAIN_PORT);
     
@@ -280,8 +277,6 @@ void OwnConnectivityManager::netTick() {
                 log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Contacting primary STUN server to test Universal Plug and Play configuration");
             } else if (currentStatus == -1) {
                 mUpnpMgr->shutdown();
-                delete mUpnpMgr;
-                mUpnpMgr = NULL;
     
                 connectionStatusChanged = setNewConnectionStatus(CONNECTION_STATUS_STUNNING_MAIN_PORT);
                 log(LOG_WARNING, OWN_CONNECTIVITY_ZONE,
@@ -577,6 +572,12 @@ void OwnConnectivityManager::setFallbackExternalIP(QString address) {
     QMutexLocker stack(&ownConMtx);
     log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Setting external IP address based on what LibraryMixer sees");
     inet_aton(address.toStdString().c_str(), &ownExternalAddress.sin_addr);
+}
+
+void OwnConnectivityManager::checkUpnpMappings(bool check) {
+    if (!check) return;
+    QMutexLocker stack(&ownConMtx);
+    if (mUpnpMgr) mUpnpMgr->checkMappings();
 }
 
 #define NET_INTERFACE_CHECK_INTERVAL 10 //Every 10 seconds

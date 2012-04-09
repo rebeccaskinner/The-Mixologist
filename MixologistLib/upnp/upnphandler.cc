@@ -22,24 +22,29 @@
 #include "upnp/upnphandler.h"
 #include "util/debug.h"
 #include <pqi/pqinetwork.h>
+#include <pqi/ownConnectivityManager.h>
 
 #include <QThread>
+#include <QTimer>
 
 upnpHandler::upnpHandler()
-    :upnpState(UPNP_STATE_UNINITIALISED), upnpConfig(NULL), targetPort(0){}
+    :upnpState(UPNP_STATE_UNINITIALIZED), upnpConfig(NULL), targetPort(0){}
 
 /* Interface */
 void  upnpHandler::startup() {
+    {
+        QMutexLocker stack(&upnpMtx);
+        upnpState = UPNP_STATE_STARTING;
+    }
     UPnPAsynchronizer::createWorker(this)->requestStart();
 }
 
-
 void upnpHandler::shutdown() {
-    shutdown_upnp();
+    internalShutdown();
 }
 
 void upnpHandler::restart() {
-    UPnPAsynchronizer::createWorker(this)->requestRestart();;
+    UPnPAsynchronizer::createWorker(this)->requestRestart();
 }
 
 upnpHandler::upnpStates upnpHandler::getUpnpState() {
@@ -87,8 +92,71 @@ void upnpHandler::setTargetPort(unsigned short newPort) {
     targetPort = newPort;
 }
 
-#define UPNP_DISCOVERY_TIMEOUT 2000
-bool upnpHandler::initUPnPState() {
+void upnpHandler::checkMappings() {
+    UPnPAsynchronizer::createWorker(this)->requestCheckMappings();
+}
+
+bool upnpHandler::internalCheckMappings() {
+    QMutexLocker stack(&upnpMtx);
+    if (upnpState == UPNP_STATE_UNINITIALIZED) {
+        internalInit();
+        return false;
+    } else if (upnpState == UPNP_STATE_STARTING) {
+        return false;
+    } else if (upnpState == UPNP_STATE_UNAVAILABLE) {
+        return true;
+    }
+
+    QString ownLocalIP = QString(inet_ntoa(ownConnectivityManager->getOwnLocalAddress()->sin_addr));
+    QString ownLocalPort = QString::number(ntohs(ownConnectivityManager->getOwnLocalAddress()->sin_port));
+
+    int result;
+    int currentIndex = 0;
+    char index[6];
+    char intClient[16];
+    char intPort[6];
+    char extPort[6];
+    char protocol[4];
+    char desc[80];
+    char enabled[6];
+    char rHost[64];
+    char duration[16];
+    /*unsigned int num=0;
+        UPNP_GetPortMappingNumberOfEntries(urls->controlURL, data->first.servicetype, &num);
+    printf("PortMappingNumberOfEntries : %u\n", num);*/
+    do {
+        snprintf(index, 6, "%d", currentIndex);
+        rHost[0] = '\0';
+        enabled[0] = '\0';
+        duration[0] = '\0';
+        desc[0] = '\0';
+        extPort[0] = '\0';
+        intPort[0] = '\0';
+        intClient[0] = '\0';
+        result = UPNP_GetGenericPortMappingEntry(upnpConfig->urls.controlURL,
+                                                 upnpConfig->data.first.servicetype,
+                                                 index, extPort, intClient, intPort,
+                                                 protocol, desc, enabled,
+                                                 rHost, duration);
+        if(result == UPNPCOMMAND_SUCCESS) {
+            if ((QString(intClient) == ownLocalIP) &&
+                (QString(desc) == QString("Mixologist")) &&
+                (QString(intPort) != ownLocalPort)) {
+
+                log(LOG_WARNING, UPNPHANDLERZONE, "Found outdated UPNP mapping to " + QString(protocol) + " port " + QString(intPort) + ", removing it");
+                if (RemoveRedirect(&(upnpConfig->urls), &(upnpConfig->data), extPort, protocol)) {
+                    currentIndex--;
+                }
+            }
+        }
+        currentIndex++;
+    } while (result == UPNPCOMMAND_SUCCESS);
+
+    return true;
+}
+
+#define UPNP_DISCOVERY_TIMEOUT 2000 //2000 milliseconds
+bool upnpHandler::internalInit() {
     /* allocate memory */
     UPnPConfigData *newConfigData = new UPnPConfigData;
 
@@ -118,9 +186,12 @@ bool upnpHandler::initUPnPState() {
                 inet_aton(newConfigData->lanaddr, &(upnp_internalAddress.sin_addr));
                 upnp_internalAddress.sin_port = htons(targetPort);
 
-                upnpState = UPNP_STATE_READY;
+                upnpState = UPNP_STATE_STARTING;
 
-                if (upnpConfig) delete upnpConfig;
+                if (upnpConfig) {
+                    if (upnpConfig->devlist) freeUPNPDevlist(upnpConfig->devlist);
+                    delete upnpConfig;
+                }
                 upnpConfig = newConfigData;
             }
 
@@ -131,7 +202,6 @@ bool upnpHandler::initUPnPState() {
         }
 
         freeUPNPDevlist(newConfigData->devlist);
-        newConfigData->devlist = 0;
     } else {
         log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "No UPnP Devices found on the network!");
     }
@@ -142,7 +212,10 @@ bool upnpHandler::initUPnPState() {
     {
         QMutexLocker stack(&upnpMtx);
         upnpState = UPNP_STATE_UNAVAILABLE;
-        if (upnpConfig) delete upnpConfig;
+        if (upnpConfig) {
+            if (upnpConfig->devlist) freeUPNPDevlist(upnpConfig->devlist);
+            delete upnpConfig;
+        }
         upnpConfig = NULL;
     }
 
@@ -152,20 +225,15 @@ bool upnpHandler::initUPnPState() {
 void upnpHandler::printUPnPState() {
     QMutexLocker stack(&upnpMtx);
 
-    if (!upnpConfig || upnpState == UPNP_STATE_UNINITIALISED || upnpState == UPNP_STATE_UNAVAILABLE) return;
+    if (!upnpConfig || upnpState == UPNP_STATE_UNINITIALIZED || upnpState == UPNP_STATE_UNAVAILABLE) return;
 
     DisplayInfos(&(upnpConfig->urls), &(upnpConfig->data));
     GetConnectionStatus(&(upnpConfig->urls), &(upnpConfig->data));
     ListRedirections(&(upnpConfig->urls), &(upnpConfig->data));
 }
 
-bool upnpHandler::start_upnp() {
+bool upnpHandler::internalStart() {
     QMutexLocker stack(&upnpMtx);
-
-    if (!upnpConfig || upnpState == UPNP_STATE_UNINITIALISED || upnpState == UPNP_STATE_UNAVAILABLE) {
-        log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "upnpHandler::start_upnp() Not Ready");
-        return false;
-    }
 
     if (targetPort == 0) {
         log(LOG_DEBUG_BASIC, UPNPHANDLERZONE, "Unable to set externalPort");
@@ -218,32 +286,29 @@ bool upnpHandler::start_upnp() {
     return true;
 }
 
-bool upnpHandler::shutdown_upnp() {
+bool upnpHandler::internalShutdown() {
     QMutexLocker stack(&upnpMtx);
 
-    if (!upnpConfig || upnpState == UPNP_STATE_UNINITIALISED || upnpState == UPNP_STATE_UNAVAILABLE) {
-        return false;
-    }
-
-    /* always attempt this (unless no port number) */
-    if (targetPort > 0) {
-
-        char externalPortTCP[256];
-        char externalPortUDP[256];
-
-        snprintf(externalPortTCP, 256, "%d", targetPort);
-        snprintf(externalPortUDP, 256, "%d", targetPort);
-
+    if (upnpState == UPNP_STATE_ACTIVE || upnpState == UPNP_STATE_FAILED) {
         log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Attempting to remove redirection port: TCP");
-
+        char externalPortTCP[256];
+        snprintf(externalPortTCP, 256, "%d", targetPort);
         RemoveRedirect(&(upnpConfig->urls), &(upnpConfig->data), externalPortTCP, "TCP");
 
         log(LOG_DEBUG_ALERT, UPNPHANDLERZONE, "Attempting to remove redirection port: UDP");
-
+        char externalPortUDP[256];
+        snprintf(externalPortUDP, 256, "%d", targetPort);
         RemoveRedirect(&(upnpConfig->urls), &(upnpConfig->data), externalPortUDP, "UDP");
-
-        upnpState = UPNP_STATE_READY;
     }
+
+    if (upnpConfig) {
+        if (upnpConfig->devlist) freeUPNPDevlist(upnpConfig->devlist);
+        delete upnpConfig;
+        upnpConfig = NULL;
+    }
+
+    targetPort = 0;
+    upnpState = UPNP_STATE_UNINITIALIZED;
 
     return true;
 }
@@ -262,6 +327,7 @@ UPnPAsynchronizer::UPnPAsynchronizer(upnpHandler* handler)
     :handler(handler){
     this->connect(this, SIGNAL(startRequested()), this, SLOT(startUPnP()), Qt::QueuedConnection);
     this->connect(this, SIGNAL(stopRequested()), this, SLOT(stopUPnP()), Qt::QueuedConnection);
+    this->connect(this, SIGNAL(checkMappingsRequested()), this, SLOT(checkUPnPMappings()), Qt::QueuedConnection);
 }
 
 void UPnPAsynchronizer::requestStart() {
@@ -273,8 +339,12 @@ void UPnPAsynchronizer::requestRestart() {
     emit startRequested();
 }
 
+void UPnPAsynchronizer::requestCheckMappings() {
+    emit checkMappingsRequested();
+}
+
 void UPnPAsynchronizer::startUPnP() {
-    if (handler->initUPnPState()) handler->start_upnp();
+    if (handler->internalInit()) handler->internalStart();
 
     handler->printUPnPState();
 
@@ -285,7 +355,18 @@ void UPnPAsynchronizer::startUPnP() {
 }
 
 void UPnPAsynchronizer::stopUPnP() {
-    handler->shutdown_upnp();
+    handler->internalShutdown();
 
     handler->printUPnPState();
+}
+
+void UPnPAsynchronizer::checkUPnPMappings() {
+    static short currentTry = 0;
+    if (!handler->internalCheckMappings() &&
+        currentTry < 60) {
+        QTimer::singleShot(5000, this, SLOT(checkUPnPMappings()));
+    } else {
+        emit workCompleted();
+        this->deleteLater();
+    }
 }
