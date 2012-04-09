@@ -101,23 +101,17 @@ void FriendsConnectivityManager::setEnabled(bool enabled) {
 void FriendsConnectivityManager::friendsListUpdateTick() {
     QMutexLocker stack(&connMtx);
 
-    /* Only restricted-cone and symmetric NAT firewalled connections need to maintain their friends list periodically.
-       All other connections should be able to handle inbound connections, and if necessary their friends list can be updated in response to those.
-       The only time normal connections will update their friends list in this function is when downloadFriendsAndEnable is true. */
-    if (!connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus()) &&
-        !downloadFriendsAndEnable) return;
-
     time_t now = time(NULL);
 
-    if (connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus()) &&
-       (now - FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND < friendsListUpdateTime)) return;
+    if (downloadFriendsAndEnable ||
+        (connectionStatusUdpHolePunching(ownConnectivityManager->getConnectionStatus()) &&
+         (now - FRIENDS_LIST_UPDATE_PERIOD_LIMITED_INBOUND < friendsListUpdateTime))) {
 
-    /* If we get here, we are actively trying to update our friends list. */
-
-    static time_t friendsListUpdateAttemptTime = 0;
-    if (now - FRIENDS_LIST_DOWNLOAD_TIMEOUT > friendsListUpdateAttemptTime) {
-        friendsListUpdateAttemptTime = time(NULL);
-        librarymixerconnect->downloadFriends();
+        static time_t friendsListUpdateAttemptTime = 0;
+        if (now - FRIENDS_LIST_DOWNLOAD_TIMEOUT > friendsListUpdateAttemptTime) {
+            friendsListUpdateAttemptTime = time(NULL);
+            librarymixerconnect->downloadFriends();
+        }
     }
 }
 
@@ -133,6 +127,8 @@ void FriendsConnectivityManager::friendsListUpdated() {
         log(LOG_WARNING, FRIEND_CONNECTIVITY_ZONE, "Connection set up complete, beginning to look for your friends");
     }
 
+    /* We don't want to try connect all on every friends list update because updates triggered by
+       an incoming connection that we disconnect for receiving an unrecognized cert we just want them to try again. */
     if (connect) tryConnectToAll();
 }
 
