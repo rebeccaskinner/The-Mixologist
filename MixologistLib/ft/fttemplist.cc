@@ -86,7 +86,7 @@ void ftTempList::addTempItem(const QString &title, const QStringList &paths, uns
 
     notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_WAITING, title);
 
-    foreach(QString path, paths) fileWatcher->addFile(path);
+    foreach(QString path, paths) fileWatcher->addPriorityFile(path);
 }
 
 void ftTempList::removeReturnBorrowedTempItem(const QString &itemKey) {

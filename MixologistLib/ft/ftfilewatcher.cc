@@ -49,6 +49,12 @@ void ftFileWatcher::addFile(const QString &path, qlonglong existingSize, unsigne
     fileSysWatcher->addPath(path);
 }
 
+void ftFileWatcher::addPriorityFile(const QString &path) {
+    addHashJob(path, true);
+    QMutexLocker stack(&fileWatcherMutex);
+    fileSysWatcher->addPath(path);
+}
+
 void ftFileWatcher::addDirectory(const QString &path) {
     QMutexLocker stack(&fileWatcherMutex);
     fileSysWatcher->addPath(path);

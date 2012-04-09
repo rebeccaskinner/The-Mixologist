@@ -49,6 +49,9 @@ public:
        If existingSize and existingModified information is provided, will check if file has changed and only queue a request to hash if changed. */
     void addFile(const QString &path, qlonglong existingSize = 0, unsigned int existingModified = 0);
 
+    /* Same as regular addFile, but the hash job it requests will be a priority hash, and bumped to the front of the queue. */
+    void addPriorityFile(const QString &path);
+
     /* Adds a new directory to the watch list. */
     void addDirectory(const QString &path);
 
