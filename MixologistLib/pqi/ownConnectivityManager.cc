@@ -580,23 +580,37 @@ void OwnConnectivityManager::setFallbackExternalIP(QString address) {
 }
 
 #define NET_INTERFACE_CHECK_INTERVAL 10 //Every 10 seconds
+#define SLEEP_MODE_DETECTION_SENSITIVITY 30 //30 second gap will indicate we were in sleep mode
 void OwnConnectivityManager::checkNetInterfacesTick() {
     static time_t lastChecked = time(NULL);
-    if (time(NULL) < lastChecked + NET_INTERFACE_CHECK_INTERVAL) return;
+    static time_t lastTick = time(NULL);
+    time_t now = time(NULL);
 
     bool resetNeeded = false;
     {
         QMutexLocker stack(&ownConMtx);
-        /* Don't do anything if we have an empty local address, which indicates we are in a connectivity shutdown state. */
-        if (ownLocalAddress.sin_addr.s_addr == 0) return;
 
-        /* If the network interface list has changed and we have a bad address already, or our local address is no longer present on this computer,
-           shutdown our connections, and then restart everything from scratch. */
-        if (networkInterfaceList != getLocalInterfaces()) {
-            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Detected change in network interface list");
-            if (isLoopbackNet(&ownLocalAddress.sin_addr) ||
-                !interfaceStillExists(&ownLocalAddress.sin_addr)) resetNeeded = true;
+        if (now > lastTick + SLEEP_MODE_DETECTION_SENSITIVITY) {
+            log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Detected computer was asleep, re-detecting connection and updating friends list");
+            resetNeeded = true;
         }
+
+        if (now > lastChecked + NET_INTERFACE_CHECK_INTERVAL)  {
+            lastChecked = now;
+
+            /* Don't do anything if we have an empty local address, which indicates we are in a connectivity shutdown state. */
+            if (ownLocalAddress.sin_addr.s_addr == 0) return;
+
+            /* If the network interface list has changed and we have a bad address already, or our local address is no longer present on this computer,
+               shutdown our connections, and then restart everything from scratch. */
+            if (networkInterfaceList != getLocalInterfaces()) {
+                log(LOG_WARNING, OWN_CONNECTIVITY_ZONE, "Detected change in network interface list");
+                if (isLoopbackNet(&ownLocalAddress.sin_addr) || !interfaceStillExists(&ownLocalAddress.sin_addr))
+                    resetNeeded = true;
+            }
+        }
+
+        lastTick = now;
     }
 
     if (resetNeeded) restartOwnConnection();

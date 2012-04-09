@@ -129,7 +129,8 @@ private:
        Returns true when there's nothing to do, false when we're trying to contact LibraryMixer. */
     void contactLibraryMixerTick();
 
-    /* Makes sure that we haven't moved to a different network, invalidating our old network interfaces. */
+    /* Makes sure that we haven't moved to a different network, invalidating our old network interfaces.
+       Also checks to make sure we haven't been asleep, in which case we should rediscover our current environment. */
     void checkNetInterfacesTick();
 
     /* If port randomization is not set, returns the saved port if it is valid.
