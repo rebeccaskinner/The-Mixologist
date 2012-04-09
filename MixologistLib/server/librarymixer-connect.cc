@@ -130,41 +130,56 @@ int LibraryMixerConnect::downloadInfo() {
 }
 
 int LibraryMixerConnect::downloadLibrary(bool blocking) {
+    bool doBlocking = false;
     QMutexLocker stack(&lmMutex);
     if (lastLibraryUpdate.isNull() || lastLibraryUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
         lastLibraryUpdate = QDateTime::currentDateTime();
         buffer = new QBuffer();
         if (!buffer->open(QIODevice::ReadWrite)) return -1;
-        library_download_id = downloadXML("/api/user?library=&libraryonlycheckout=true&librarypaginate=-1", buffer);
         if (blocking) {
             doneTransfer = false;
-            QTimer::singleShot(BLOCKING_TRANSFER_TIMEOUT, this, SLOT(blockingTimeOut()));
-            while (!doneTransfer) {
-                qApp->processEvents(QEventLoop::WaitForMoreEvents);
-            }
-            return 0;
-        } else return library_download_id;
+            doBlocking = true;
+        }
+        library_download_id = downloadXML("/api/user?library=&libraryonlycheckout=true&librarypaginate=-1", buffer);
+
+        if (!doBlocking) return library_download_id;
+    }
+    if (doBlocking) {
+        doneTransfer = false;
+        QTimer::singleShot(BLOCKING_TRANSFER_TIMEOUT, this, SLOT(blockingTimeOut()));
+        while (!doneTransfer) {
+            qApp->processEvents(QEventLoop::WaitForMoreEvents);
+        }
+        return 0;
     }
     return -1;
 }
 
 int LibraryMixerConnect::downloadFriends(bool blocking) {
-    QMutexLocker stack(&lmMutex);
-    if (lastFriendUpdate.isNull() || lastFriendUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
-        lastFriendUpdate = QDateTime::currentDateTime();
-        buffer = new QBuffer();
-        if (!buffer->open(QIODevice::ReadWrite)) return -1;
-        friend_download_id = downloadXML("/api/friends?name=&id=&scratch[Mixology_Public_Key]=&scratch[Mixology_Local_IP]=&scratch[Mixology_Local_Port]=&scratch[Mixology_External_IP]=&scratch[Mixology_External_Port]=",
-                                         buffer);
-        if (blocking) {
-            doneTransfer = false;
-            QTimer::singleShot(BLOCKING_TRANSFER_TIMEOUT, this, SLOT(blockingTimeOut()));
-            while (!doneTransfer) {
-                qApp->processEvents(QEventLoop::WaitForMoreEvents);
+    bool doBlocking = false;
+    {
+        QMutexLocker stack(&lmMutex);
+        if (lastFriendUpdate.isNull() || lastFriendUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
+            lastFriendUpdate = QDateTime::currentDateTime();
+            buffer = new QBuffer();
+            if (!buffer->open(QIODevice::ReadWrite)) return -1;
+            if (blocking) {
+                doneTransfer = false;
+                doBlocking = true;
             }
-            return 0;
-        } else return friend_download_id;
+            friend_download_id = downloadXML("/api/friends?name=&id=&scratch[Mixology_Public_Key]=&scratch[Mixology_Local_IP]=&scratch[Mixology_Local_Port]=&scratch[Mixology_External_IP]=&scratch[Mixology_External_Port]=",
+                                             buffer);
+            if (!doBlocking) return friend_download_id;
+        }
     }
+    if (doBlocking) {
+        QTimer::singleShot(BLOCKING_TRANSFER_TIMEOUT, this, SLOT(blockingTimeOut()));
+        while (!doneTransfer) {
+            qApp->processEvents(QEventLoop::WaitForMoreEvents);
+        }
+        return 0;
+    }
+
     return -1;
 }
 
