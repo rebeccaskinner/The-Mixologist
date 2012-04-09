@@ -128,10 +128,9 @@ void Init::processCmdLine(int argcIgnored, char **argvIgnored) {
 
     int c;
     int debugLevel;
-    /* getopt info: every availiable option is listet here. if it is followed by a ':' it
-       needs an argument. If it is followed by a '::' the argument is optional.
-    */
-    while ((c = getopt(argc, argv,"hc:d:")) != -1) {
+    /* getopt info: every available option is listed here. if it is followed by a ':' it
+       needs an argument. If it is followed by a '::' the argument is optional. */
+    while ((c = getopt(argc, argv,"hd:")) != -1) {
         switch (c) {
             case 'd':
                 debugLevel = atoi(optarg);
@@ -144,14 +143,12 @@ void Init::processCmdLine(int argcIgnored, char **argvIgnored) {
                 break;
             case 'h':
                 std::cerr << "Help: " << std::endl;
-                std::cerr << "-w [password]     Set the password" << std::endl;
                 std::cerr << "-d [debuglevel]   Set the debuglevel" << std::endl;
                 exit(1);
                 break;
             default:
-                std::cerr << "Unknown Option!" << std::endl;
+                std::cerr << "Unknown Option: " << c << std::endl;
                 std::cerr << "Use '-h' for help." << std::endl;
-                exit(1);
         }
     }
 
