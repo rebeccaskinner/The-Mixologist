@@ -116,15 +116,18 @@ void FriendsConnectivityManager::friendsListUpdateTick() {
 }
 
 void FriendsConnectivityManager::friendsListUpdated() {
-    QMutexLocker stack(&connMtx);
-    friendsListUpdateTime = time(NULL);
-    log(LOG_DEBUG_ALERT, FRIEND_CONNECTIVITY_ZONE, "Updated friends list from LibraryMixer.");
-
     bool connect = false;
-    if (downloadFriendsAndEnable) {
-        downloadFriendsAndEnable = false;
-        friendsManagerEnabled = true;
-        log(LOG_WARNING, FRIEND_CONNECTIVITY_ZONE, "Connection set up complete, beginning to look for your friends");
+    {
+        QMutexLocker stack(&connMtx);
+        friendsListUpdateTime = time(NULL);
+        log(LOG_DEBUG_ALERT, FRIEND_CONNECTIVITY_ZONE, "Updated friends list from LibraryMixer.");
+
+        if (downloadFriendsAndEnable) {
+            downloadFriendsAndEnable = false;
+            friendsManagerEnabled = true;
+            connect = true;
+            log(LOG_WARNING, FRIEND_CONNECTIVITY_ZONE, "Connection set up complete, beginning to look for your friends");
+        }
     }
 
     /* We don't want to try connect all on every friends list update because updates triggered by
