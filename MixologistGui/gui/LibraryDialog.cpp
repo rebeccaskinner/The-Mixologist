@@ -61,6 +61,9 @@ void LibraryDialog::showAdvanced(bool enable) {
     ui.offLMListLabel->setVisible(enable);
     ui.offLMListIcon->setVisible(enable);
     if (enable) {
+        /* We might end up removing it even if it isn't showing with this, but that's harmless.
+           However, double-adding results in a segfault on quit when the offLMHeaderLayout tries to free the spacer twice. */
+        ui.offLMHeaderLayout->removeItem(offLMHeaderSpacer);
         ui.offLMHeaderLayout->addSpacerItem(offLMHeaderSpacer);
     } else {
         ui.offLMHeaderLayout->removeItem(offLMHeaderSpacer);
