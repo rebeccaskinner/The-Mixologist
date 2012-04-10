@@ -41,8 +41,9 @@
 #include <pqi/friendsConnectivityManager.h>
 #include <pqi/pqinotify.h>
 
-#include <QSettings>
 #include <interface/settings.h>
+
+#include <QTimer>
 
 /******
  * #define CONTROL_DEBUG 1
@@ -71,40 +72,43 @@ void ftController::friendDisconnected(unsigned int friend_id) {
     }
 }
 
-#define MAX_CONCURRENT_DOWNLOADS_IN_GROUP 2
 void ftController::run() {
-    while (true) {
-        sleep(1);
+    QTimer *threadTimer = new QTimer(this);
+    connect(threadTimer, SIGNAL(timeout()), this, SLOT(runThread()));
+    threadTimer->start(1000);
+    exec();
+}
 
-        if (!mInitialLoadDone) loadSavedTransfers();
+#define MAX_CONCURRENT_DOWNLOADS_IN_GROUP 2
+void ftController::runThread() {
+    if (!mInitialLoadDone) loadSavedTransfers();
 
-        /* Check on our downloadGroups and see if any transfers need to be activated or finished. */
-        if (mFtActive) {
-            QMutexLocker stack(&ctrlMutex);
-            int waiting_to_download, downloading, completed, total;
-            foreach (int key, mDownloadGroups.keys()) {
-                mDownloadGroups[key].getStatus(&waiting_to_download, &downloading, &completed, &total);
+    /* Check on our downloadGroups and see if any transfers need to be activated or finished. */
+    if (mFtActive) {
+        QMutexLocker stack(&ctrlMutex);
+        int waiting_to_download, downloading, completed, total;
+        foreach (int key, mDownloadGroups.keys()) {
+            mDownloadGroups[key].getStatus(&waiting_to_download, &downloading, &completed, &total);
 
-                if (downloading < MAX_CONCURRENT_DOWNLOADS_IN_GROUP && waiting_to_download > 0) {
-                    mDownloadGroups[key].startOneTransfer();
-                }
+            if (downloading < MAX_CONCURRENT_DOWNLOADS_IN_GROUP && waiting_to_download > 0) {
+                mDownloadGroups[key].startOneTransfer();
+            }
 
-                if (completed == total && !mDownloadGroups[key].downloadFinished) {
-                    finishGroup(key);
-                }
+            if (completed == total && !mDownloadGroups[key].downloadFinished) {
+                finishGroup(key);
             }
         }
+    }
 
-        /* Tick the active transferModules, i.e. send the requests for downloads */
-        if (mFtActive) {
-            QMutexLocker stack(&ctrlMutex);
-            foreach (ftTransferModule* transfer, mDownloads.values()){
-                if (transfer->transferStatus() == ftTransferModule::FILE_DOWNLOADING) {
-                    transfer->tick();
-                }
+    /* Tick the active transferModules, i.e. send the requests for downloads */
+    if (mFtActive) {
+        QMutexLocker stack(&ctrlMutex);
+        foreach (ftTransferModule* transfer, mDownloads.values()){
+            if (transfer->transferStatus() == ftTransferModule::FILE_DOWNLOADING) {
+                transfer->tick();
             }
-            offLMList->tick();
         }
+        offLMList->tick();
     }
 }
 

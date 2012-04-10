@@ -25,7 +25,7 @@
 
 #include "pqi/pqi.h"
 #include "pqi/pqiservice.h"
-#include <QThread>
+#include <QObject>
 
 /* This provides easy to use extensions to the pqiservice class provided in src/pqi.
  *

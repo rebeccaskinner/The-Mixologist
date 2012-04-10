@@ -30,6 +30,8 @@
 #include "ft/ftserver.h"
 #include "util/debug.h"
 
+#include <QTimer>
+
 /* For Thread Behaviour */
 const uint32_t DMULTIPLEX_MIN   = 10; /* 1ms sleep */
 const uint32_t DMULTIPLEX_MAX   = 1000; /* 1 sec sleep */
@@ -52,26 +54,29 @@ void ftDataDemultiplex::addFileMethod(ftFileMethod *fileMethod) {
 }
 
 void ftDataDemultiplex::run() {
-    while (1) {
-        bool doneWork = false;
-        while (workQueued() && doWork()) {
-            doneWork = true;
-        }
-        time_t now = time(NULL);
-        if (doneWork) {
-            mLastWork = now;
-            mLastSleep = (uint32_t) (DMULTIPLEX_MIN + (mLastSleep - DMULTIPLEX_MIN) / 2.0);
-        } else {
-            uint32_t deltaT = now - mLastWork;
-            double frac = deltaT / DMULTIPLEX_RELAX;
+    QTimer::singleShot(1000, this, SLOT(runThread()));
+    exec();
+}
 
-            mLastSleep += (uint32_t)((DMULTIPLEX_MAX - DMULTIPLEX_MIN) * (frac + 0.05));
-            if (mLastSleep > DMULTIPLEX_MAX) {
-                mLastSleep = DMULTIPLEX_MAX;
-            }
-        }
-        msleep(mLastSleep);
+void ftDataDemultiplex::runThread() {
+    bool doneWork = false;
+    while (workQueued() && doWork()) {
+        doneWork = true;
     }
+    time_t now = time(NULL);
+    if (doneWork) {
+        mLastWork = now;
+        mLastSleep = (uint32_t) (DMULTIPLEX_MIN + (mLastSleep - DMULTIPLEX_MIN) / 2.0);
+    } else {
+        uint32_t deltaT = now - mLastWork;
+        double frac = deltaT / DMULTIPLEX_RELAX;
+
+        mLastSleep += (uint32_t)((DMULTIPLEX_MAX - DMULTIPLEX_MIN) * (frac + 0.05));
+        if (mLastSleep > DMULTIPLEX_MAX) {
+            mLastSleep = DMULTIPLEX_MAX;
+        }
+    }
+    QTimer::singleShot(mLastSleep, this, SLOT(runThread()));
 }
 
 void ftDataDemultiplex::FileUploads(QList<uploadFileInfo> &uploads) {

@@ -156,6 +156,9 @@ public:
     bool handleReceiveData(unsigned int librarymixer_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data);
 
 private slots:
+    /* Connected to a timer, analagous to run() in a normal thread. */
+    void runThread();
+
     /* Informs the transfer modules that the given friend is now online.
        Connected to the friendConnected signal from friendsConnectivityManager. */
     void friendConnected(unsigned int friend_id);

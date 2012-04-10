@@ -96,6 +96,9 @@ public:
     virtual bool recvDataRequest(unsigned int librarymixer_id, QString hash, uint64_t size, uint64_t offset, uint32_t chunksize);
 
 public slots:
+    /* Connected to a timer, analagous to run() in a normal thread. */
+    void runThread();
+
     /* Should be called whenever any of the file providing classes knows that a given file that was previously available
        is no longer available, so that ftDataDemultiplex can clear out any cached information about the file.
        While it is nice to call this when a file is removed to keep things clean, it is important to call this when a file

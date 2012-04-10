@@ -99,8 +99,12 @@ void ftServer::SetupFtServer() {
 
 void ftServer::StartupThreads() {
     fileDownloadController->start();
-
     mFtDataplex->start();
+}
+
+void ftServer::StopThreads() {
+    fileDownloadController->exit();
+    mFtDataplex->exit();
 }
 
 /***************************************************************/

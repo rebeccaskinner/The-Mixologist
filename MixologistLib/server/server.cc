@@ -50,7 +50,9 @@ void Server::beginTimers() {
 }
 
 bool Server::ShutdownMixologist() {
+    ftserver->StopThreads();
     ownConnectivityManager->shutdown();
+
     return true;
 }
 
