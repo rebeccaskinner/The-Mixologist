@@ -34,27 +34,25 @@ class GeneralDialog : public ConfigPage {
 public:
 	GeneralDialog(QWidget *parent = 0);
         ~GeneralDialog(){}
-	/** Saves the changes on this page */
+        /* Saves the changes on this page */
         bool save();
 
 private slots:
-        /** Immediately clears stored login information */
+        /* Immediately clears stored login information */
         void clearLogin();
-        /** Set mixology: links to be associated with the Mixologist. */
+        /* Set mixology: links to be associated with the Mixologist. */
         void AssociateMixologyLinks();
-        /** Toggles visibility of NetworkDialog on MainWindow and ServerDialog on PreferencesWindow for use with button. */
-        void showAdvanced(bool show);
+        /* Changes the display and cascades changes to all windows on showing advanced. */
+        void showAdvanced(bool enable);
 
 private:
-        /** Called when the "show on startup" checkbox is toggled. */
+        /* Called when the "show on startup" checkbox is toggled. */
         void toggleShowOnStartup(bool checked);
-        /** Enables/disables the clearLogin button and sets its tooltip */
+        /* Enables/disables the clearLogin button and sets its tooltip */
         void enableClearLogin(bool enable);
-        /** Enables/disables off-LibraryMixer sharing. */
-        void enableOffLibraryMixer(bool enable);
-        /** Enables/disables the associateLinks button and sets its tooltip */
+        /* Enables/disables the associateLinks button and sets its tooltip */
         void enableAssociateLinks(bool enable);
-        /** Qt Designer generated object */
+        /* Qt Designer generated object */
 	Ui::GeneralDialog ui;
 
 

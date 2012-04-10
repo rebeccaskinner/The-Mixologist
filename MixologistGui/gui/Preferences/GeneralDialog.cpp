@@ -27,7 +27,7 @@
 #include <QFileDialog>
 #include <gui/Preferences/GeneralDialog.h>
 #include <gui/MainWindow.h> //for settings files
-#include <gui/NetworkDialog.h>
+#include <gui/LibraryDialog.h>
 #include "gui/Util/OSHelpers.h"
 #include <interface/init.h>
 #include <interface/iface.h>
@@ -68,28 +68,20 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     ui.startMinimized->setChecked(settings.value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool());
-    ui.offLM->setChecked(settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool());
 
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
         ui.showAdvanced->setChecked(true);
-        ui.showAdvanced->setText("Hide Advanced View");
+        ui.showAdvanced->setText("Advanced features enabled");
+    } else {
+        ui.showAdvanced->setChecked(false);
+        ui.showAdvanced->setText("Advanced features disabled");
     }
 }
 
 bool GeneralDialog::save() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
-    if (settings.value("Transfers/EnableOffLibraryMixer").toBool() != ui.offLM->isChecked()) {
-        QMessageBox infoBox(this);
-        infoBox.setIcon(QMessageBox::Information);
-        infoBox.setText(QString("You have ") +
-                        (ui.offLM->isChecked() ? "enabled" : "disabled") +
-                        " adding and browsing files not listed on LibraryMixer, this will take effect when you restart the Mixologist");
-        infoBox.exec();
-    }
-
     settings.setValue("Gui/StartMinimized", ui.startMinimized->isChecked());
-    settings.setValue("Transfers/EnableOffLibraryMixer", ui.offLM->isChecked());
 
     if (canHandleRunOnBoot()) setRunOnBoot(ui.runOnBoot->isChecked());
     return true;
@@ -141,19 +133,9 @@ void GeneralDialog::clearLogin() {
 void GeneralDialog::showAdvanced(bool show) {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
     settings.setValue("Gui/ShowAdvanced", show);
-    if(show) {
-        ui.showAdvanced->setText("Hide Advanced View");
-        mainwindow->networkDialog = new NetworkDialog(mainwindow->ui.stackPages);
-        mainwindow->actionPages.insert(mainwindow->ui.actionNetwork, mainwindow->networkDialog);
-        mainwindow->ui.stackPages->insertWidget(mainwindow->ui.stackPages->count(), mainwindow->networkDialog);
-        mainwindow->ui.actionNetwork->setVisible(true);
-        QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)), mainwindow->networkDialog, SLOT(setLogInfo(QString)), Qt::QueuedConnection);
-    } else {
-        ui.showAdvanced->setText("Show Advanced View");
-        mainwindow->ui.actionNetwork->setVisible(false);
-        mainwindow->ui.stackPages->removeWidget(mainwindow->networkDialog);
-        mainwindow->actionPages.remove(mainwindow->ui.actionNetwork);
-        mainwindow->networkDialog->deleteLater();
-    }
+    mainwindow->showAdvanced(show);
+    mainwindow->libraryDialog->showAdvanced(show);
     mainwindow->preferencesWindow->connectionDialog->showAdvanced(show);
+    if (show) ui.showAdvanced->setText("Advanced features enabled");
+    else ui.showAdvanced->setText("Advanced features disabled");
 }

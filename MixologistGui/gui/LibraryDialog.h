@@ -34,6 +34,9 @@ class LibraryDialog : public QWidget {
         /* Default Constructor */
         LibraryDialog(QWidget *parent = 0);
 
+        /* Shows or hides the off-LibraryMixer pane. */
+        void showAdvanced(bool enable);
+
     private slots:
         /* Opens the Mixology server (generally LibraryMixer) in the browser to manage library. */
         void addLibraryClicked();
@@ -45,8 +48,9 @@ class LibraryDialog : public QWidget {
         void updatedLibrary();
 
     private:
-        LibraryModel* unmatchedModel;
         LibraryModel* libraryModel;
+
+        QSpacerItem* offLMHeaderSpacer;
 
 	/** Qt Designer generated object */
         Ui::LibraryDialog ui;

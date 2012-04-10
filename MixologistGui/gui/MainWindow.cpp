@@ -49,7 +49,6 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
     /* Tutorials */
     tutorial_library_done = settings.value("Tutorial/Library", DEFAULT_TUTORIAL_DONE_LIBRARY).toBool();
     tutorial_friends_library_done = settings.value("Tutorial/FriendsLibrary", DEFAULT_TUTORIAL_DONE_FRIENDS_LIBRARY).toBool();
-    offLM_enabled = settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool();
 
     /* Toolbar and stack pages */
     //These toolbar buttons change the page in the stack page
@@ -77,14 +76,11 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
 
     /* Now add the conditional tabs */
     grp->addAction(ui.actionNetwork);
-    if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
-        networkDialog = new NetworkDialog(ui.stackPages);
-        actionPages.insert(ui.actionNetwork, networkDialog);
-        ui.stackPages->insertWidget(ui.stackPages->count(), networkDialog);
-        QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)),
-                         networkDialog, SLOT(setLogInfo(QString)), Qt::QueuedConnection);
-
-    } else ui.actionNetwork->setVisible(false);
+    networkDialog = new NetworkDialog(ui.stackPages);
+    actionPages.insert(ui.actionNetwork, networkDialog);
+    ui.stackPages->insertWidget(ui.stackPages->count(), networkDialog);
+    QObject::connect(guiNotify, SIGNAL(logInfoChanged(QString)),
+                     networkDialog, SLOT(setLogInfo(QString)), Qt::QueuedConnection);
 
     connect(grp, SIGNAL(triggered(QAction *)), this, SLOT(showPage(QAction *)));
 
@@ -166,8 +162,16 @@ MainWindow::MainWindow(QWidget *, Qt::WFlags) {
 
     trayIcon->show();
 
+    showAdvanced(settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool());
+
     /* Load backed up window settings. */
     GuiSettingsUtil::loadWidgetInformation(this);
+}
+
+void MainWindow::showAdvanced(bool enable) {
+    offLM_enabled = enable;
+    ui.actionNetwork->setVisible(enable);
+    ui.actionFriendsLibrary->setVisible(enable);
 }
 
 void MainWindow::switchToDialog(QWidget *dialog) {

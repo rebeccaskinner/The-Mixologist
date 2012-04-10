@@ -43,19 +43,11 @@ FriendsLibraryDialog::FriendsLibraryDialog(QWidget *parent)
     ui.libraryList->setModel(librarySearchModel);
 
     /* Setup OffLMFriendModel */
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
-        OffLMFriendModel* friendModel = new OffLMFriendModel(ui.offLMList, this);
-        OffLMSearchModel* searchableFriendModel = new OffLMSearchModel(ui.searchBar, this);
-        searchableFriendModel->setSourceModel(friendModel);
-        friendModel->setContainingSearchModel(searchableFriendModel);
-        ui.offLMList->setModel(searchableFriendModel);
-    } else {
-        ui.offLMList->setVisible(false);
-        ui.offLMListLabel->setVisible(false);
-        ui.offLMListIcon->setVisible(false);
-        ui.offLMHeaderLayout->removeItem(ui.offLMHeaderSpacer);
-    }
+    OffLMFriendModel* friendModel = new OffLMFriendModel(ui.offLMList, this);
+    OffLMSearchModel* searchableFriendModel = new OffLMSearchModel(ui.searchBar, this);
+    searchableFriendModel->setSourceModel(friendModel);
+    friendModel->setContainingSearchModel(searchableFriendModel);
+    ui.offLMList->setModel(searchableFriendModel);
 }
 
 void FriendsLibraryDialog::updateLibrary() {

@@ -81,21 +81,18 @@ void ftServer::SetupFtServer() {
     connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemRemoved()), this, SIGNAL(friendLibraryItemRemoved()));
     connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryStateChanged(int)), this, SIGNAL(friendLibraryStateChanged(int)));
 
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
-        offLMList = new ftOffLMList();
-        mFtDataplex->addFileMethod(offLMList);
-        connect(offLMList, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
-        connect(offLMList, SIGNAL(offLMFriendAboutToBeAdded(int)), this, SIGNAL(offLMFriendAboutToBeAdded(int)), Qt::DirectConnection);
-        connect(offLMList, SIGNAL(offLMFriendAboutToBeRemoved(int)), this, SIGNAL(offLMFriendAboutToBeRemoved(int)), Qt::DirectConnection);
-        connect(offLMList, SIGNAL(offLMFriendAdded()), this, SIGNAL(offLMFriendAdded()));
-        connect(offLMList, SIGNAL(offLMFriendRemoved()), this, SIGNAL(offLMFriendRemoved()));
-        connect(offLMList, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), Qt::DirectConnection);
-        connect(offLMList, SIGNAL(offLMOwnItemAdded()), this, SIGNAL(offLMOwnItemAdded()));
-        connect(offLMList, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)), this, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)));
-        connect(offLMList, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), Qt::DirectConnection);
-        connect(offLMList, SIGNAL(offLMOwnItemRemoved()), this, SIGNAL(offLMOwnItemRemoved()));
-    }
+    offLMList = new ftOffLMList();
+    mFtDataplex->addFileMethod(offLMList);
+    connect(offLMList, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
+    connect(offLMList, SIGNAL(offLMFriendAboutToBeAdded(int)), this, SIGNAL(offLMFriendAboutToBeAdded(int)), Qt::DirectConnection);
+    connect(offLMList, SIGNAL(offLMFriendAboutToBeRemoved(int)), this, SIGNAL(offLMFriendAboutToBeRemoved(int)), Qt::DirectConnection);
+    connect(offLMList, SIGNAL(offLMFriendAdded()), this, SIGNAL(offLMFriendAdded()));
+    connect(offLMList, SIGNAL(offLMFriendRemoved()), this, SIGNAL(offLMFriendRemoved()));
+    connect(offLMList, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), Qt::DirectConnection);
+    connect(offLMList, SIGNAL(offLMOwnItemAdded()), this, SIGNAL(offLMOwnItemAdded()));
+    connect(offLMList, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)), this, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)));
+    connect(offLMList, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), Qt::DirectConnection);
+    connect(offLMList, SIGNAL(offLMOwnItemRemoved()), this, SIGNAL(offLMOwnItemRemoved()));
 
     return;
 }
@@ -249,39 +246,39 @@ void ftServer::returnFiles(const QString &title, const QStringList &paths, unsig
  **********************************************************************************/
 
 void ftServer::addOffLMShare(QString path){
-    if (offLMList) offLMList->addOffLMShare(path);
+    offLMList->addOffLMShare(path);
 }
 
 bool ftServer::removeOffLMShare(OffLMShareItem* toRemove){
-    if (offLMList) return offLMList->removeOffLMShare(toRemove);
+    return offLMList->removeOffLMShare(toRemove);
     return false;
 }
 
 bool ftServer::setOffLMShareMethod(OffLMShareItem *toModify, OffLMShareItem::shareMethodState state){
-    if (offLMList) return offLMList->setOffLMShareMethod(toModify, state);
+    return offLMList->setOffLMShareMethod(toModify, state);
     return false;
 }
 
 void ftServer::setOffLMShareLabel(OffLMShareItem *toModify, QString newLabel) {
-    if (offLMList) offLMList->setOffLMShareLabel(toModify, newLabel);
+    offLMList->setOffLMShareLabel(toModify, newLabel);
 }
 
 OffLMShareItem* ftServer::getOwnOffLMRoot() const {
-    if (offLMList) return offLMList->getOwnOffLMRoot();
+    return offLMList->getOwnOffLMRoot();
     return NULL;
 }
 
 void ftServer::recheckOffLMFiles() const {
-    if (offLMList) offLMList->recheckFiles();
+    offLMList->recheckFiles();
 }
 
 OffLMShareItem* ftServer::getFriendOffLMShares(int index) const {
-    if (offLMList) return offLMList->getFriendOffLMShares(index);
+    return offLMList->getFriendOffLMShares(index);
     return NULL;
 }
 
 int ftServer::getOffLMShareFriendCount() const {
-    if (offLMList) return offLMList->getOffLMShareFriendCount();
+    return offLMList->getOffLMShareFriendCount();
     return 0;
 }
 

@@ -47,15 +47,23 @@ LibraryDialog::LibraryDialog(QWidget *parent)
     connect(librarymixerconnect, SIGNAL(downloadedLibrary()), this, SLOT(updatedLibrary()), Qt::QueuedConnection);
 
     /* Setup Off-LM Model. */
-    QSettings settings(*mainSettings, QSettings::IniFormat);
-    if (settings.value("Transfers/EnableOffLibraryMixer", DEFAULT_ENABLE_OFF_LIBRARYMIXER_SHARING).toBool()) {
-        OffLMOwnModel* ownModel = new OffLMOwnModel(ui.offLMList, this);
-        ui.offLMList->setModel(ownModel);
+    OffLMOwnModel* ownModel = new OffLMOwnModel(ui.offLMList, this);
+    ui.offLMList->setModel(ownModel);
+
+    offLMHeaderSpacer = ui.offLMHeaderSpacer;
+
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    showAdvanced(settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool());
+}
+
+void LibraryDialog::showAdvanced(bool enable) {
+    ui.offLMList->setVisible(enable);
+    ui.offLMListLabel->setVisible(enable);
+    ui.offLMListIcon->setVisible(enable);
+    if (enable) {
+        ui.offLMHeaderLayout->addSpacerItem(offLMHeaderSpacer);
     } else {
-        ui.offLMList->setVisible(false);
-        ui.offLMListLabel->setVisible(false);
-        ui.offLMListIcon->setVisible(false);
-        ui.offLMHeaderLayout->removeItem(ui.offLMHeaderSpacer);
+        ui.offLMHeaderLayout->removeItem(offLMHeaderSpacer);
     }
 }
 

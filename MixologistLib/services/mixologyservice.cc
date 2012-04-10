@@ -198,7 +198,7 @@ int MixologyService::tick() {
                 if (lending->source_type & FILE_HINTS_ITEM) {
                     librarymixermanager->setLent(friend_id, lending->source_id);
                 } else if (lending->source_type & FILE_HINTS_OFF_LM) {
-                    if (offLMList) offLMList->setLent(friend_id, lending->source_id);
+                    offLMList->setLent(friend_id, lending->source_id);
                 }
             } else if (lending->flags & TRANSFER_COMPLETE_RETURNED) {
                 log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back " + lending->source_id);

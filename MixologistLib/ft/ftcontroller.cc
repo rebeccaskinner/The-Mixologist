@@ -103,7 +103,7 @@ void ftController::run() {
                     transfer->tick();
                 }
             }
-            if (offLMList) offLMList->tick();
+            offLMList->tick();
         }
     }
 }
@@ -242,8 +242,8 @@ bool ftController::moveLentFilesToOriginalPaths(int groupKey) {
         result = librarymixermanager->returnBorrowedFiles(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_id,
                                                           paths, hashes, filesizes, moveFile, mDownloadGroups[groupKey].finalDestination);
     } else if (mDownloadGroups[groupKey].source_type & FILE_HINTS_OFF_LM) {
-        if (offLMList) result = offLMList->returnBorrowedFiles(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_id,
-                                                               paths, hashes, filesizes, moveFile, mDownloadGroups[groupKey].finalDestination);
+        result = offLMList->returnBorrowedFiles(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_id,
+                                                paths, hashes, filesizes, moveFile, mDownloadGroups[groupKey].finalDestination);
     }
 
     if (result == 1) {
@@ -650,7 +650,7 @@ bool ftController::handleReceiveData(unsigned int librarymixer_id, const QString
     if (it != mDownloads.end()) {
         it.value()->recvFileData(librarymixer_id, offset, chunksize, data);
         return true;
-    } else if (offLMList) {
+    } else {
         /* If it's not for any of our files, see if it might be for ftOffLMList's Xmls. */
         return offLMList->handleReceiveData(librarymixer_id, hash, offset, chunksize, data);
     }

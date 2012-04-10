@@ -58,7 +58,9 @@ int StatusService::tick() {
     }
     QString offLMXmlHash = "";
     qlonglong offLMXmlSize = 0;
-    if (offLMList) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
+
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
     foreach (unsigned int friend_id, *listToUse) {
         BasicStatusItem *item = new BasicStatusItem();
         item->LibraryMixerId(friend_id);
@@ -75,16 +77,16 @@ int StatusService::tick() {
     while ((netitem=recvItem()) != NULL) {
         BasicStatusItem *statusItem = dynamic_cast<BasicStatusItem*>(netitem);
         if (statusItem != NULL) {
-            if (offLMList) offLMList->receiveFriendOffLMXmlInfo(statusItem->LibraryMixerId(),
-                                                                statusItem->offLMXmlHash,
-                                                                statusItem->offLMXmlSize);
+            offLMList->receiveFriendOffLMXmlInfo(statusItem->LibraryMixerId(),
+                                                 statusItem->offLMXmlHash,
+                                                 statusItem->offLMXmlSize);
         }
 
         OnConnectStatusItem *onConnectItem = dynamic_cast<OnConnectStatusItem*>(netitem);
         if (onConnectItem != NULL) {
-            if (offLMList) offLMList->receiveFriendOffLMXmlInfo(onConnectItem->LibraryMixerId(),
-                                                                onConnectItem->offLMXmlHash,
-                                                                onConnectItem->offLMXmlSize);
+            offLMList->receiveFriendOffLMXmlInfo(onConnectItem->LibraryMixerId(),
+                                                 onConnectItem->offLMXmlHash,
+                                                 onConnectItem->offLMXmlSize);
             if (onConnectItem->clientName == control->clientName() &&
                 onConnectItem->clientVersion > control->clientVersion() &&
                 onConnectItem->clientVersion > control->latestKnownVersion()) {
@@ -116,7 +118,8 @@ void StatusService::sendKeepAlive(unsigned int friend_id) {
 void StatusService::sendOnConnectItem(unsigned int friend_id) {
     QString offLMXmlHash = "";
     qlonglong offLMXmlSize = 0;
-    if (offLMList) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
 
     OnConnectStatusItem *item = new OnConnectStatusItem(control->clientName(), control->clientVersion());
     item->offLMXmlHash = offLMXmlHash;

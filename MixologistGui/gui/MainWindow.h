@@ -47,6 +47,9 @@ class MainWindow : public QMainWindow {
 public:
     MainWindow(QWidget *parent = 0, Qt::WFlags flags = 0);
 
+    /* Shows or hides the advanced tabs, and also whether we need to display the tutorial pop-ups for the library pages. */
+    void showAdvanced(bool enable);
+
     /* Public variables for the GUI */
 
     /* Tray Icon stuff, accessed to create balloon pop ups. */

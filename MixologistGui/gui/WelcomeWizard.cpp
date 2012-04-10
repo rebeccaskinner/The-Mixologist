@@ -49,8 +49,7 @@ WelcomeWizard::WelcomeWizard(QWidget *parent) :QWizard(parent) {
 void WelcomeWizard::accept() {
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
-    if (field("DisableOffLM").toBool()) settings.setValue("Transfers/EnableOffLibraryMixer", false);
-    else settings.setValue("Transfers/EnableOffLibraryMixer", true);
+    settings.setValue("Gui/ShowAdvanced", field("EnableAdvanced").toBool());
 
     settings.setValue("Tutorial/Initial", true);
 
@@ -79,20 +78,21 @@ IntroPage::IntroPage(QWidget *parent) :QWizardPage(parent) {
 }
 
 ConclusionPage::ConclusionPage(QWidget *parent) :QWizardPage(parent) {
-    setTitle(tr("Additional File Transfer Method"));
+    setTitle(tr("Advanced Features"));
 
-    QLabel *label = new QLabel("<p>Besides the features on the previous page, the Mixologist also has an extra file transfer method. "
-                               "This lets you drag and drop whole folders that your friends can copy or borrow, without ever listing them on LibraryMixer's website. "
-                               "You can browse or search the list of files your friends have shared with you in this way in the Mixologist whether they're on or offline.</p>"
-                               "<p>If this seems really confusing to you, you can disable this additional file transfer method. "
-                               "If you disable it, you can basically just leave the Mixologist main window minimized all the time, and interact with the Mixologist entirely through the LibraryMixer website.</p>"
-                               "<p><b>Do you want to disable the optional Mixologist-based file transfer method now?</b></p>");
+    QLabel *label = new QLabel("<p>Besides the features on the previous page, the Mixologist also has a number of advanced features.</p>"
+                               "<p>The biggest among these is the ability to list files and browse friends' files not on LibraryMixer. "
+                               "You can drag and drop whole folders that your friends can copy or borrow, without ever listing them on LibraryMixer's website.</p>"
+                               "<p>Additionally, more information will be available to you on both the inner-workings of the Mixologist and of your connections with friends.</p>"
+                               "<p>If this seems really confusing to you, you can leave the advanced features disabled to keep things simple.</p>"
+                               "<p>With the advanced features disabled, you can basically just leave the Mixologist main window minimized all the time, and interact with the Mixologist entirely through the LibraryMixer website.</p>"
+                               "<p><b>Do you want to enable the advanced features now?</b></p>");
     label->setWordWrap(true);
 
     QRadioButton* yesButton = new QRadioButton("Yes", this);
-    registerField("DisableOffLM", yesButton);
+    registerField("EnableAdvanced", yesButton);
     QRadioButton* noButton = new QRadioButton("No", this);
-    yesButton->setChecked(true);
+    noButton->setChecked(true);
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(label);
