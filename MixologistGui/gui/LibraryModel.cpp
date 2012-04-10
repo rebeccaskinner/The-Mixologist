@@ -172,6 +172,10 @@ void LibraryModel::customContextMenu(QPoint point) {
         QAction *matchToMessage = new QAction(QIcon(IMAGE_MESSAGE), tr("Auto send a message when requested"), &contextMenu);
         connect(matchToMessage, SIGNAL(triggered()), this, SLOT(setMatchToMessage()));
         contextMenu.addAction(matchToMessage);
+    } else {
+        QAction *matchToMessage = new QAction(QIcon(IMAGE_MESSAGE), tr("Change auto-response message"), &contextMenu);
+        connect(matchToMessage, SIGNAL(triggered()), this, SLOT(setMatchToMessage()));
+        contextMenu.addAction(matchToMessage);
     }
     if (status != LibraryMixerItem::MATCHED_TO_FILE &&
         status != LibraryMixerItem::MATCHED_TO_LEND) {
@@ -216,7 +220,12 @@ void LibraryModel::customContextMenu(QPoint point) {
 
 void LibraryModel::setMatchToMessage() {
     bool ok;
-    QString text = QInputDialog::getText(ownItemView, tr("Auto Response"), tr("Enter your auto response message:"), QLineEdit::Normal, "", &ok);
+    QString defaultText = "";
+
+    LibraryMixerItem* item = files->getLibraryMixerItem(contextItemId);
+    if (item->itemState() == LibraryMixerItem::MATCHED_TO_MESSAGE) defaultText = item->message();
+
+    QString text = QInputDialog::getText(ownItemView, tr("Auto Response"), tr("Enter your auto response message:"), QLineEdit::Normal, defaultText, &ok);
     if (ok) {
         files->setMatchMessage(contextItemId, text);
     }
