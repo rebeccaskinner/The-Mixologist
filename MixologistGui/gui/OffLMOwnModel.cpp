@@ -43,10 +43,10 @@ OffLMOwnModel::OffLMOwnModel(QTreeView* view, QWidget *parent) :QAbstractItemMod
        However, geometriesChanged seems to work, though it ends up being called not only after construction, but also when moving between pages and destruction. */
     connect(ownItemView->header(), SIGNAL(geometriesChanged()), this, SLOT(resizeHeader()));
     connect(files, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), this, SLOT(itemAboutToBeInserted(OffLMShareItem*)), Qt::DirectConnection);
-    connect(files, SIGNAL(offLMOwnItemAdded()), this, SLOT(itemInserted()));
-    connect(files, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)), this, SLOT(itemChanged(OffLMShareItem*)));
+    connect(files, SIGNAL(offLMOwnItemAdded()), this, SLOT(itemInserted()), Qt::QueuedConnection);
+    connect(files, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)), this, SLOT(itemChanged(OffLMShareItem*)), Qt::QueuedConnection);
     connect(files, SIGNAL(offLMOwnItemAboutToBeRemoved(OffLMShareItem*)), this, SLOT(itemAboutToBeRemoved(OffLMShareItem*)), Qt::DirectConnection);
-    connect(files, SIGNAL(offLMOwnItemRemoved()), this, SLOT(itemRemoved()));
+    connect(files, SIGNAL(offLMOwnItemRemoved()), this, SLOT(itemRemoved()), Qt::QueuedConnection);
 }
 
 int OffLMOwnModel::columnCount(const QModelIndex &parent) const {

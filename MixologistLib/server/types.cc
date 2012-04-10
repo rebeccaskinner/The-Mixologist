@@ -664,14 +664,6 @@ int OffLMShareItem::friendId() const {return friend_id;}
 
 void OffLMShareItem::friendId(int newFriendId) {friend_id = newFriendId;}
 
-QString OffLMShareItem::xmlHash() const {return xml_hash;}
-
-void OffLMShareItem::xmlHash(QString newXmlHash) {xml_hash = newXmlHash;}
-
-qlonglong OffLMShareItem::xmlSize() const {return xml_size;}
-
-void OffLMShareItem::xmlSize(qlonglong newXmlSize) {xml_size = newXmlSize;}
-
 void OffLMShareItem::getRecursiveFileInfo(QStringList &paths, QStringList &hashes, QList<qlonglong> &filesizes) {
     if (isFile()) {
         paths.append(fullPath());

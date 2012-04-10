@@ -438,12 +438,6 @@ public:
        Must be manuallly set externally for the root item, and all appended children will automatically be sets. */
     int friendId() const;
     void friendId(int newFriendId);
-    /* Accessors for the hash and size of the Xml file in which this friend's shares are stored.
-       Must be manually set externally. */
-    QString xmlHash() const;
-    void xmlHash(QString newXmlHash);
-    qlonglong xmlSize() const;
-    void xmlSize(qlonglong newXmlSize);
     /* Populates the information on either the current file, or if this is a folder, on all contained files.
        The lists are synchronized, in that element 1 of each refers to a given file, element 2 another, etc. */
     void getRecursiveFileInfo(QStringList &paths, QStringList &hashes, QList<qlonglong> &filesizes);
@@ -488,10 +482,8 @@ private:
     OffLMShareItem* parentItem; //The OffLMShareItem containing this item, or NULL if root
     QHash<int, OffLMShareItem*> childItems; //Cache of contained OffLMShareItems, hashed by order
 
-    /* The below are used only for friends (as opposed to self) */
+    /* Tagged onto friend's root nodes so we can keep track of who the node belongs to. */
     int friend_id;
-    QString xml_hash;
-    qlonglong xml_size;
 };
 
 /**********************************************************************************

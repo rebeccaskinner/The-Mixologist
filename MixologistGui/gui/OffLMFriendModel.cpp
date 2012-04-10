@@ -34,15 +34,24 @@
 #define IMAGE_DOWNLOAD             ":/Images/Download.png"
 
 OffLMFriendModel::OffLMFriendModel(QTreeView* view, QWidget *parent) :QAbstractItemModel(parent), friendItemView(view) {
-    connect(files, SIGNAL(offLMFriendAboutToBeAdded(int)), this, SLOT(friendAboutToBeAdded(int)), Qt::DirectConnection);
-    connect(files, SIGNAL(offLMFriendAboutToBeRemoved(int)), this, SLOT(friendAboutToBeRemoved(int)), Qt::DirectConnection);
-    connect(files, SIGNAL(offLMFriendAdded()), this, SLOT(friendAdded()));
-    connect(files, SIGNAL(offLMFriendRemoved()), this, SLOT(friendRemoved()));
+    files->readExistingFriendsOffLMShares(friendRoots);
+    /* Crude sorting mechanism. If performance becomes an issue, or is this a cleaner way to do this, can revisit. */
+    QMap<QString, unsigned int> sortingMap;
+    foreach (unsigned int friend_id, friendRoots.keys()) {
+        sortingMap.insertMulti(peers->getPeerName(friend_id).toLower(), friend_id);
+    }
+    foreach (unsigned int friend_id, sortingMap.values()) {
+        friendDisplayOrder.append(friend_id);
+    }
+
+    connect(files, SIGNAL(offLMFriendAdded(uint)), this, SLOT(friendAdded(uint)), Qt::QueuedConnection);
+    connect(files, SIGNAL(offLMFriendRemoved(uint)), this, SLOT(friendRemoved(uint)), Qt::QueuedConnection);
     connect(friendItemView, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(friendListContextMenu(QPoint)));
     /* This can't be done in the constructor because ownItemView isn't setup yet because LibraryDialog hasn't finished constructing yet.
        However, geometriesChanged seems to work, thouhg it ends up being called not only after construction, but also when moving between pages and destruction. */
     connect(friendItemView->header(), SIGNAL(geometriesChanged()), this, SLOT(resizeHeader()));
     connect(friendItemView->header(), SIGNAL(geometriesChanged()), this, SLOT(setDefaultExpansion()));
+
 }
 
 void OffLMFriendModel::setContainingSearchModel(OffLMSearchModel *model) {
@@ -145,7 +154,9 @@ QModelIndex OffLMFriendModel::index(int row, int column, const QModelIndex &pare
     OffLMShareItem* item;
     //An invalid parent indicates the view is querying a friend's root
     if (!parent.isValid()) {
-        item = files->getFriendOffLMShares(row);
+        if (friendDisplayOrder.size() > row)
+            item = friendRoots[friendDisplayOrder[row]];
+        else item = NULL;
     //Otherwise indicates the view is querying a share/file/folder
     } else {
         item = static_cast<OffLMShareItem*>(parent.internalPointer())->child(row);
@@ -163,7 +174,7 @@ QModelIndex OffLMFriendModel::parent(const QModelIndex &index) const {
 
     if (!parentItem) return QModelIndex();
 
-     return createIndex(parentItem->order(), 0, parentItem);
+    return createIndex(parentItem->order(), 0, parentItem);
 }
 
 int OffLMFriendModel::rowCount(const QModelIndex &parent) const {
@@ -171,7 +182,7 @@ int OffLMFriendModel::rowCount(const QModelIndex &parent) const {
 
     //An invalid parent indicates the view is querying a root row
     if (!parent.isValid()) {
-        return files->getOffLMShareFriendCount();
+        return friendDisplayOrder.size();
     //Otherwise indicates the view is querying an item held in a folder
     } else {
         return static_cast<OffLMShareItem*>(parent.internalPointer())->childCount();
@@ -249,24 +260,39 @@ void OffLMFriendModel::requestItem(){
     mainwindow->switchToDialog(mainwindow->transfersDialog);
 }
 
-void OffLMFriendModel::friendAboutToBeAdded(int row) {
-    beginInsertRows(QModelIndex(), row, row);
-    lastAddedRow = row;
-}
+void OffLMFriendModel::friendAdded(unsigned int friend_id) {
+    QString friendName = peers->getPeerName(friend_id);
 
-void OffLMFriendModel::friendAdded() {
+    int row;
+    for (row = 0; row < friendDisplayOrder.size(); row++) {
+        if (friendName > peers->getPeerName(friend_id)) break;
+    }
+
+    OffLMShareItem* newFriend = files->readFriendOffLMShares(friend_id);
+
+    if (!newFriend) return;
+
+    beginInsertRows(QModelIndex(), row, row);
+
+    friendDisplayOrder.insert(row, friend_id);
+    friendRoots[friend_id] = newFriend;
+
     endInsertRows();
 
-    friendItemView->setExpanded(containingSearchModel->mapFromSource(index(lastAddedRow, 0, QModelIndex())), true);
+    friendItemView->setExpanded(containingSearchModel->mapFromSource(index(row, 0, QModelIndex())), true);
 
     resizeHeader();
 }
 
-void OffLMFriendModel::friendAboutToBeRemoved(int row) {
-    beginRemoveRows(QModelIndex(), row, row);
-}
+void OffLMFriendModel::friendRemoved(unsigned int friend_id) {
+    int currentRow = friendDisplayOrder.indexOf(friend_id);
 
-void OffLMFriendModel::friendRemoved() {
+    beginRemoveRows(QModelIndex(), currentRow, currentRow);
+
+    friendDisplayOrder.removeOne(friend_id);
+    delete friendRoots[friend_id];
+    friendRoots.remove(friend_id);
+
     endRemoveRows();
 }
 

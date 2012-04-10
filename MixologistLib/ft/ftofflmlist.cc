@@ -77,22 +77,16 @@ ftOffLMList::ftOffLMList() {
             sanitizedXmlSize = 0;
         }
 
-        /* Load friends' XMLs, which are stored in the OFF_LM_DIR with name equal to friend_id.xmlHash.xml. */
         QDir offLMDir(Init::getUserDirectory(true) + OFF_LM_DIR);
         foreach(QString currentFile, offLMDir.entryList(QDir::Files)) {
-            /* Can't perform cleanup of orphaned xmls for removed friends here, because friends list is not yet ready.
-               Where can we do it?
-               It's probably best to add a method orphanCleanup that is called after startup from the tick.*/
             if (currentFile == OWN_FILE || currentFile == OWN_SANITIZED_FILE) continue;
 
             bool valid;
             int friendId = currentFile.split(".")[0].toInt(&valid);
             if (valid) {
                 QString hash = currentFile.split(".")[1];
-                if (!readFriendOffLMShares(friendId, hash)) valid = false;
+                friendXmlInfos[friendId] = friendXmlInfo(hash, QFileInfo(currentFile).size());
             }
-
-            if (!valid) QFile(offLMDir.canonicalPath() + QDir::separator() + currentFile).remove();
         }
     }
 
@@ -169,23 +163,25 @@ void ftOffLMList::getOwnOffLMXmlInfo(QString *hash, qlonglong *size) const {
 
 void ftOffLMList::receiveFriendOffLMXmlInfo(unsigned int friend_id, const QString &hash, qlonglong size) {
     QMutexLocker stack(&offLmMutex);
-    if (friendRoots.contains(friend_id) &&
-        friendRoots[friend_id]->xmlHash() == hash &&
-        friendRoots[friend_id]->xmlSize() == size) return;
+    /* If we've already got this XML. */
+    if (friendXmlInfos.contains(friend_id) &&
+        friendXmlInfos[friend_id].xml_hash == hash &&
+        friendXmlInfos[friend_id].xml_size == size) return;
 
+    /* If we've been instructed to clear this friend's off-LM by an empty hash. */
     if (hash.isEmpty()) {
-        removeFriendOffLMShares(friend_id);
+        QFile::remove(friendXmlFile(friend_id, hash));
+        if (friendXmlInfos.contains(friend_id)) friendXmlInfos.remove(friend_id);
         return;
-    } else {
-        if (friendsXmlDownloads.contains(friend_id)) {
-            if (hash == friendsXmlDownloads[friend_id]->mFileCreator->getHash()) {
-                return;
-            } else {
-                removeFriendDownload(friend_id);
-            }
-        } else if (friendRoots.contains(friend_id) &&
-                   friendRoots[friend_id]->xmlHash() == hash) {
+    }
+
+    /* If we're already downloading for this friend, then if it's the same then we're already done.
+       If it's different, cancel the old download and get the new one. */
+    if (friendsXmlDownloads.contains(friend_id)) {
+        if (hash == friendsXmlDownloads[friend_id]->mFileCreator->getHash()) {
             return;
+        } else {
+            removeFriendDownload(friend_id);
         }
     }
 
@@ -194,9 +190,10 @@ void ftOffLMList::receiveFriendOffLMXmlInfo(unsigned int friend_id, const QStrin
     friendsXmlDownloads[friend_id] = newXmlDownload;
 }
 
-bool ftOffLMList::handleReceiveData(unsigned int friend_id, const QString &/*hash*/, uint64_t offset, uint32_t chunksize, void *data) {
+bool ftOffLMList::handleReceiveData(unsigned int friend_id, const QString &hash, uint64_t offset, uint32_t chunksize, void *data) {
     QMutexLocker stack(&offLmMutex);
-    if (friendsXmlDownloads.contains(friend_id)) {
+    if (friendsXmlDownloads.contains(friend_id) &&
+        friendsXmlDownloads[friend_id]->mFileCreator->getHash() == hash) {
         friendsXmlDownloads[friend_id]->recvFileData(friend_id, offset, chunksize, data);
         return true;
     }
@@ -231,16 +228,48 @@ int ftOffLMList::returnBorrowedFiles(unsigned int friend_id, const QString &item
     return result;
 }
 
-OffLMShareItem* ftOffLMList::getFriendOffLMShares(int index) const {
-    QMutexLocker stack(&offLmMutex);
-    if (index < 0 || index >= friends.size()) return NULL;
-    return friendRoots[friends.at(index)];
+void ftOffLMList::readExistingFriendsOffLMShares(QHash<unsigned int, OffLMShareItem *> &friendRoots) const {
+    /* Load friends' XMLs, which are stored in the OFF_LM_DIR with name equal to friend_id.xmlHash.xml. */
+    QDir offLMDir(Init::getUserDirectory(true) + OFF_LM_DIR);
+    foreach(QString currentFile, offLMDir.entryList(QDir::Files)) {
+        /* TODO we can now Can't perform cleanup of orphaned xmls for removed friends here, because friends list is not yet ready.
+           Where can we do it?
+           It's probably best to add a method orphanCleanup that is called after startup from the tick.*/
+        if (currentFile == OWN_FILE || currentFile == OWN_SANITIZED_FILE) continue;
+
+        bool valid;
+        int friendId = currentFile.split(".")[0].toInt(&valid);
+        if (valid) {
+            QString hash = currentFile.split(".")[1];
+            OffLMShareItem* newItem = internalReadFriendOffLMShares(friendId, hash);
+            if (!newItem) valid = false;
+            else friendRoots[friendId] = newItem;
+        }
+
+        if (!valid) QFile(offLMDir.canonicalPath() + QDir::separator() + currentFile).remove();
+    }
 }
 
-int ftOffLMList::getOffLMShareFriendCount() const {
-    /* This causes deadlocks when we emit we're about to insert a new because the view needs to check the size.
-       QMutexLocker stack(&offLmMutex); */
-    return friends.size();
+OffLMShareItem* ftOffLMList::readFriendOffLMShares(unsigned int friend_id) const {
+    QString xmlHash;
+    {
+        QMutexLocker stack(&offLmMutex);
+        if (!friendXmlInfos.contains(friend_id)) return NULL;
+        xmlHash = friendXmlInfos[friend_id].xml_hash;
+    }
+
+    return internalReadFriendOffLMShares(friend_id, xmlHash);
+}
+
+OffLMShareItem* ftOffLMList::internalReadFriendOffLMShares(unsigned int friend_id, const QString &xmlHash) const {
+    QDomDocument friendXml;
+    QDomElement friendRootNode;
+    if (XmlUtil::openXml(friendXmlFile(friend_id, xmlHash), friendXml, friendRootNode, "offLM", QIODevice::ReadOnly)) {
+        OffLMShareItem* friendRootItem = new OffLMShareItem(friendRootNode, 0);
+        friendRootItem->friendId(friend_id);
+        return friendRootItem;
+    }
+    return NULL;
 }
 
 ftFileMethod::searchResult ftOffLMList::search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int /*librarymixer_id*/, QString &path) {
@@ -316,39 +345,15 @@ void ftOffLMList::newFileHash(QString path, qlonglong size, unsigned int modifie
 
 bool ftOffLMList::addFriendOffLMShares(unsigned int friend_id, QString path, QString xmlHash){
     log(LOG_WARNING, FTOFFLMLIST, "Received updated off-LibraryMixer list from " + QString::number(friend_id));
-    if (friendRoots.contains(friend_id)) removeFriendOffLMShares(friend_id);
-    DirUtil::moveFile(path, friendXmlFile(friend_id, xmlHash));
-    return readFriendOffLMShares(friend_id, xmlHash);
-}
-
-bool ftOffLMList::readFriendOffLMShares(unsigned int friend_id, QString xmlHash) {
-    QDomDocument friendXml;
-    QDomElement friendRootNode;
-
-    if (XmlUtil::openXml(friendXmlFile(friend_id, xmlHash), friendXml, friendRootNode, "offLM", QIODevice::ReadOnly)){
-        OffLMShareItem* friendRootItem = new OffLMShareItem(friendRootNode, 0);
-        friendRootItem->friendId(friend_id);
-        friendRootItem->xmlHash(xmlHash);
-        friendRootItem->xmlSize(QFileInfo(friendXmlFile(friend_id, xmlHash)).size());
-
-        emit offLMFriendAboutToBeAdded(friends.size());
-        friends.append(friend_id);
-        friendRoots[friend_id] = friendRootItem;
-        emit offLMFriendAdded();
-
-        return true;
+    if (friendXmlInfos.contains(friend_id)) {
+        QFile::remove(friendXmlFile(friend_id, friendXmlInfos[friend_id].xml_hash));
+        friendXmlInfos.remove(friend_id);
+        emit offLMFriendRemoved(friend_id);
     }
-    return false;
-}
-
-void ftOffLMList::removeFriendOffLMShares(unsigned int friend_id) {
-    if (friendRoots.contains(friend_id)) {
-        emit offLMFriendAboutToBeRemoved(friends.indexOf(friend_id));
-        QFile::remove(friendXmlFile(friend_id, friendRoots[friend_id]->xmlHash()));
-        friendRoots.remove(friend_id);
-        friends.removeOne(friend_id);
-        emit offLMFriendRemoved();
-    }
+    if (!DirUtil::moveFile(path, friendXmlFile(friend_id, xmlHash))) return false;
+    friendXmlInfos[friend_id] = friendXmlInfo(xmlHash, QFileInfo(friendXmlFile(friend_id, xmlHash)).size());
+    emit offLMFriendAdded(friend_id);
+    return true;
 }
 
 QString ftOffLMList::ownXmlFile() const {

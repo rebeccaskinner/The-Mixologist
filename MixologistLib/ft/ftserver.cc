@@ -84,10 +84,8 @@ void ftServer::SetupFtServer() {
     offLMList = new ftOffLMList();
     mFtDataplex->addFileMethod(offLMList);
     connect(offLMList, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
-    connect(offLMList, SIGNAL(offLMFriendAboutToBeAdded(int)), this, SIGNAL(offLMFriendAboutToBeAdded(int)), Qt::DirectConnection);
-    connect(offLMList, SIGNAL(offLMFriendAboutToBeRemoved(int)), this, SIGNAL(offLMFriendAboutToBeRemoved(int)), Qt::DirectConnection);
-    connect(offLMList, SIGNAL(offLMFriendAdded()), this, SIGNAL(offLMFriendAdded()));
-    connect(offLMList, SIGNAL(offLMFriendRemoved()), this, SIGNAL(offLMFriendRemoved()));
+    connect(offLMList, SIGNAL(offLMFriendAdded(uint)), this, SIGNAL(offLMFriendAdded(uint)));
+    connect(offLMList, SIGNAL(offLMFriendRemoved(uint)), this, SIGNAL(offLMFriendRemoved(uint)));
     connect(offLMList, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), this, SIGNAL(offLMOwnItemAboutToBeAdded(OffLMShareItem*)), Qt::DirectConnection);
     connect(offLMList, SIGNAL(offLMOwnItemAdded()), this, SIGNAL(offLMOwnItemAdded()));
     connect(offLMList, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)), this, SIGNAL(offLMOwnItemChanged(OffLMShareItem*)));
@@ -276,14 +274,12 @@ void ftServer::recheckOffLMFiles() const {
     offLMList->recheckFiles();
 }
 
-OffLMShareItem* ftServer::getFriendOffLMShares(int index) const {
-    return offLMList->getFriendOffLMShares(index);
-    return NULL;
+void ftServer::readExistingFriendsOffLMShares(QHash<unsigned int, OffLMShareItem *> &friendRoots) const {
+    return offLMList->readExistingFriendsOffLMShares(friendRoots);
 }
 
-int ftServer::getOffLMShareFriendCount() const {
-    return offLMList->getOffLMShareFriendCount();
-    return 0;
+OffLMShareItem* ftServer::readFriendOffLMShares(unsigned int friend_id) const {
+    return offLMList->readFriendOffLMShares(friend_id);
 }
 
 /***

@@ -67,10 +67,8 @@ public slots:
     void requestItem();
 
     /* The following slots are used by the files interface to inform of changes to the model. */
-    void friendAboutToBeAdded(int row);
-    void friendAdded();
-    void friendAboutToBeRemoved(int row);
-    void friendRemoved();
+    void friendAdded(unsigned int friend_id);
+    void friendRemoved(unsigned int friend_id);
 
 private slots:
     /* Sets the column widths of the view to defaults. */
@@ -80,8 +78,11 @@ private slots:
     void setDefaultExpansion();
 
 private:
-    /* Keeps track of which row was just added and needs to be expanded when adding is complete. */
-    int lastAddedRow;
+    /* The data for the model .*/
+    QHash<unsigned int, OffLMShareItem*> friendRoots;
+
+    /* We use this to keep track of the order of display, the display orders match the order in the list. */
+    QList<unsigned int> friendDisplayOrder;
 
     /* Info for keeping track of context menu actions. */
     OffLMShareItem* contextItem;

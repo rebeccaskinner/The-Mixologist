@@ -42,9 +42,9 @@ LibraryFriendModel::LibraryFriendModel(QTreeView* view, QWidget *parent)
 
     connect(files, SIGNAL(friendLibraryItemAboutToBeInserted(int)), this, SLOT(itemAboutToBeInserted(int)), Qt::DirectConnection);
     connect(files, SIGNAL(friendLibraryItemAboutToBeRemoved(int)), this, SLOT(itemAboutToBeRemoved(int)), Qt::DirectConnection);
-    connect(files, SIGNAL(friendLibraryItemInserted()), this, SLOT(itemInserted()));
-    connect(files, SIGNAL(friendLibraryItemRemoved()), this, SLOT(itemRemoved()));
-    connect(files, SIGNAL(friendLibraryStateChanged(int)), this, SLOT(itemStateChanged(int)));
+    connect(files, SIGNAL(friendLibraryItemInserted()), this, SLOT(itemInserted()), Qt::QueuedConnection);
+    connect(files, SIGNAL(friendLibraryItemRemoved()), this, SLOT(itemRemoved()), Qt::QueuedConnection);
+    connect(files, SIGNAL(friendLibraryStateChanged(int)), this, SLOT(itemStateChanged(int)), Qt::QueuedConnection);
 
     connect(ownItemView, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(customContextMenu(QPoint)));
     /* This can't be done in the constructor because ownItemView isn't setup yet because LibraryDialog hasn't finished constructing yet.

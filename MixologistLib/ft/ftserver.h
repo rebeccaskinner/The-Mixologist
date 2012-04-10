@@ -200,7 +200,6 @@ public:
     /**********************************************************************************
      * Off LibraryMixer Sharing Control
      **********************************************************************************/
-public:
     /* Adds a new share to the list of base root paths shared off-LibraryMixer.
        The supplied path should be in QT format with respect to directory separators. */
     void addOffLMShare(QString path);
@@ -222,14 +221,13 @@ public:
     /* Queues an asynchronous recheck of all files in ftOffLMList. */
     void recheckOffLMFiles() const;
 
-    /* Returns the root item of a friend's OffLMShareItem tree, as determined by index, or NULL if not present.
-       The friends are stored in an arbitrary order, so there is no way to know which friend will be returned by index.
-       However, the items are guaranteed to be stored in a consistent order, so by stepping through index until
-       a NULL is returned, all friends with OffLMShares are guaranteed to be returned once and only once. */
-    OffLMShareItem* getFriendOffLMShares(int index) const;
+    /* Reads all existing saved friend off-LibraryMixer shares from disk, keyed by their ID.
+       The caller will be responsible for calling delete on each OffLMShareItem it no longer needs. */
+    void readExistingFriendsOffLMShares(QHash<unsigned int, OffLMShareItem*> &friendRoots) const;
 
-    /* Returns the number of friends we have off LibraryMixer share information for. */
-    int getOffLMShareFriendCount() const;
+    /* Reads a specific friend's off-LibraryMixer shares from disk.
+       Useful for after a signal informs a listener that a new friend has been added. */
+    OffLMShareItem* readFriendOffLMShares(unsigned int friend_id) const;
 
     /**********************************************************************************
      * Borrowing Management

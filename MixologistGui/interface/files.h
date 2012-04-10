@@ -220,21 +220,18 @@ public:
     /* Queues an asynchronous recheck of all files in ftOffLMList. */
     virtual void recheckOffLMFiles() const = 0;
 
-    /* Returns the root item of a friend's OffLMShareItem tree, as determined by index, or NULL if not present.
-       The friends are stored in an arbitrary order, so there is no way to know which friend will be returned by index.
-       However, the items are guaranteed to be stored in a consistent order, so by stepping through index until
-       a NULL is returned, all friends with OffLMShares are guaranteed to be returned once and only once. */
-    virtual OffLMShareItem* getFriendOffLMShares(int index) const = 0;
+    /* Reads all existing saved friend off-LibraryMixer shares from disk, keyed by their ID.
+       The caller will be responsible for calling delete on each OffLMShareItem it no longer needs. */
+    virtual void readExistingFriendsOffLMShares(QHash<unsigned int, OffLMShareItem*> &friendRoots) const = 0;
 
-    /* Returns the number of friends we have off LibraryMixer share information for. */
-    virtual int getOffLMShareFriendCount() const = 0;
+    /* Reads a specific friend's off-LibraryMixer shares from disk.
+       Useful for after a signal informs a listener that a new friend has been added. */
+    virtual OffLMShareItem* readFriendOffLMShares(unsigned int friend_id) const = 0;
 
 signals:
     /* Signals for the Off-LibraryMixer sharing. */
-    void offLMFriendAboutToBeAdded(int row);
-    void offLMFriendAdded();
-    void offLMFriendAboutToBeRemoved(int row);
-    void offLMFriendRemoved();
+    void offLMFriendAdded(unsigned int friend_id);
+    void offLMFriendRemoved(unsigned int friend_id);
     void offLMOwnItemAboutToBeAdded(OffLMShareItem* item);
     void offLMOwnItemAdded();
     void offLMOwnItemChanged(OffLMShareItem* item);
