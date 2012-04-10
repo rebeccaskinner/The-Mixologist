@@ -59,7 +59,7 @@ int StatusService::tick() {
     QString offLMXmlHash = "";
     qlonglong offLMXmlSize = 0;
 
-    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    QSettings settings(*mainSettings, QSettings::IniFormat);
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
     foreach (unsigned int friend_id, *listToUse) {
         BasicStatusItem *item = new BasicStatusItem();
@@ -118,7 +118,7 @@ void StatusService::sendKeepAlive(unsigned int friend_id) {
 void StatusService::sendOnConnectItem(unsigned int friend_id) {
     QString offLMXmlHash = "";
     qlonglong offLMXmlSize = 0;
-    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    QSettings settings(*mainSettings, QSettings::IniFormat);
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) offLMList->getOwnOffLMXmlInfo(&offLMXmlHash, &offLMXmlSize);
 
     OnConnectStatusItem *item = new OnConnectStatusItem(control->clientName(), control->clientVersion());

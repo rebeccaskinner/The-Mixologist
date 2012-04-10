@@ -80,7 +80,7 @@ void OwnConnectivityManager::select_NetInterface_OpenPorts() {
     {
         QMutexLocker stack(&ownConMtx);
 
-        QSettings settings(*mainSettings, QSettings::IniFormat, this);
+        QSettings settings(*mainSettings, QSettings::IniFormat);
         autoConfigEnabled = (settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT) == DEFAULT_NETWORK_AUTO_OR_PORT);
 
         /* Set the network interface we will use for the Mixologist. */
@@ -655,7 +655,7 @@ void OwnConnectivityManager::restartOwnConnection() {
 
 int OwnConnectivityManager::getLocalPort() {
     if (!autoConfigEnabled) {
-        QSettings settings(*mainSettings, QSettings::IniFormat, this);
+        QSettings settings(*mainSettings, QSettings::IniFormat);
         int storedPort = settings.value("Network/AutoOrPort", DEFAULT_NETWORK_AUTO_OR_PORT).toInt();
         if (storedPort > Peers::MIN_PORT &&
             storedPort < Peers::MAX_PORT) return storedPort;
