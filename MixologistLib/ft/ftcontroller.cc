@@ -73,7 +73,9 @@ void ftController::friendDisconnected(unsigned int friend_id) {
 }
 
 void ftController::run() {
-    QTimer *threadTimer = new QTimer(this);
+    /* If ftController's thread were to be started and then stopped then this would be a memory leak.
+       We aren't planning on ever stopping ftController's thread other than on quit, so unless that changes, this should be fine. */
+    QTimer *threadTimer = new QTimer();
     connect(threadTimer, SIGNAL(timeout()), this, SLOT(runThread()));
     threadTimer->start(1000);
     exec();
