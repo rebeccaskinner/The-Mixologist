@@ -229,6 +229,7 @@ Control *Init::createControl(QString ownName) {
     char *envSaveDir = getenv("HOME");
     char *envTmpDir = getenv("TMPDIR");
     saveDir = envSaveDir;
+    saveDir.append(QDir::separator() + "/Desktop");
     if (envTmpDir != NULL) partialsDir = envTmpDir;
     else partialsDir = "/tmp";
     partialsDir = partialsDir + QDir::separator() + "MixologistPartialDownloads";
