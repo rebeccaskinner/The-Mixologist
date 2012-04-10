@@ -84,7 +84,7 @@ PopupChatDialog::PopupChatDialog(int _librarymixer_id, QWidget *parent, Qt::WFla
 
     requestMenu->addSeparator();
 
-    QAction *clearRequestAct = new QAction(tr("Clear request"), requestMenu);
+    QAction *clearRequestAct = new QAction(tr("Clear menu for this request"), requestMenu);
     connect(clearRequestAct, SIGNAL(triggered()), this, SLOT(clearRequest()));
     requestMenu->addAction(clearRequestAct);
 
