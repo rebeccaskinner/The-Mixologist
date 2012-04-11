@@ -131,18 +131,20 @@ int LibraryMixerConnect::downloadInfo() {
 
 int LibraryMixerConnect::downloadLibrary(bool blocking) {
     bool doBlocking = false;
-    QMutexLocker stack(&lmMutex);
-    if (lastLibraryUpdate.isNull() || lastLibraryUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
-        lastLibraryUpdate = QDateTime::currentDateTime();
-        buffer = new QBuffer();
-        if (!buffer->open(QIODevice::ReadWrite)) return -1;
-        if (blocking) {
-            doneTransfer = false;
-            doBlocking = true;
-        }
-        library_download_id = downloadXML("/api/user?library=&libraryonlycheckout=true&librarypaginate=-1", buffer);
+    {
+        QMutexLocker stack(&lmMutex);
+        if (lastLibraryUpdate.isNull() || lastLibraryUpdate.secsTo(QDateTime::currentDateTime()) > CONNECT_COOLDOWN) {
+            lastLibraryUpdate = QDateTime::currentDateTime();
+            buffer = new QBuffer();
+            if (!buffer->open(QIODevice::ReadWrite)) return -1;
+            if (blocking) {
+                doneTransfer = false;
+                doBlocking = true;
+            }
+            library_download_id = downloadXML("/api/user?library=&libraryonlycheckout=true&librarypaginate=-1", buffer);
 
-        if (!doBlocking) return library_download_id;
+            if (!doBlocking) return library_download_id;
+        }
     }
     if (doBlocking) {
         doneTransfer = false;
