@@ -211,7 +211,7 @@ int MixologyService::tick() {
                     offLMList->setLent(friend_id, lending->source_id);
                 }
             } else if (lending->flags & TRANSFER_COMPLETE_RETURNED) {
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back an item from " + lending->LibraryMixerId());
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back an item from " + QString::number(lending->LibraryMixerId()));
                 borrowManager->returnedBorrowed(friend_id, lending->source_type, lending->source_id);
             }
         }
