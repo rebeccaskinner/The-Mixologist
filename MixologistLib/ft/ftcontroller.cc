@@ -168,7 +168,7 @@ void ftController::finishGroup(int groupKey) {
     removeGroupFromSavedTransfers(groupKey);
 
     if (success) {
-        if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_BORROW) {
+        if (mDownloadGroups [groupKey].downloadType == downloadGroup::DOWNLOAD_BORROW) {
             borrowManager->addBorrowed(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_type, mDownloadGroups[groupKey].source_id, mDownloadGroups[groupKey].title);
         } else if (mDownloadGroups[groupKey].downloadType == downloadGroup::DOWNLOAD_RETURN) {
             mixologyService->sendBorrowedReturned(mDownloadGroups[groupKey].friend_id, mDownloadGroups[groupKey].source_type, mDownloadGroups[groupKey].source_id);
@@ -198,7 +198,7 @@ bool ftController::moveFilesToDownloadPath(int groupKey) {
     }
 
     /* Now move the files if they aren't being used as part of any other transfer, or copy them if they are. */
-    bool success;
+    bool success = true;
     for (int i = 0; i < mDownloadGroups[groupKey].filesInGroup.count(); i++) {
         QString currentLocation = mDownloadGroups[groupKey].filesInGroup[i]->mFileCreator->getPath();
         QString finalLocation = mDownloadGroups[groupKey].finalDestination + QDir::separator() + mDownloadGroups[groupKey].filenames[i];
