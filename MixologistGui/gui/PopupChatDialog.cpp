@@ -65,26 +65,26 @@ PopupChatDialog::PopupChatDialog(int _librarymixer_id, QWidget *parent, Qt::WFla
 
     //Build drop down menu for requests
     QMenu *requestMenu = new QMenu(this);
-    QAction *matchToMessage = new QAction(tr("In the future, auto send a message when requested"), requestMenu);
+    QAction *matchToMessage = new QAction(tr("Always auto send a message when requested"), requestMenu);
     connect(matchToMessage, SIGNAL(triggered()), this, SLOT(setMatchToMessage()));
     requestMenu->addAction(matchToMessage);
 
-    QAction *matchToFiles = new QAction(tr("In the future, auto send one or more files when requested"), requestMenu);
+    QAction *matchToFiles = new QAction(tr("Always auto send one or more files when requested"), requestMenu);
     connect(matchToFiles, SIGNAL(triggered()), this, SLOT(setMatchToFiles()));
     requestMenu->addAction(matchToFiles);
 
-    QAction *matchToLend = new QAction(tr("In the future, auto lend one or more files when requested"), requestMenu);
+    QAction *matchToLend = new QAction(tr("Always auto lend one or more files when requested"), requestMenu);
     connect(matchToLend, SIGNAL(triggered()), this, SLOT(setMatchToLend()));
     requestMenu->addAction(matchToLend);
 
     requestMenu->addSeparator();
-    QAction *matchToChat = new QAction(tr("In the future, open a chat window and never ask again to set an auto response"), requestMenu);
+    QAction *matchToChat = new QAction(tr("Always open a chat window and never ask again to set an auto response"), requestMenu);
     connect(matchToChat, SIGNAL(triggered()), this, SLOT(setMatchToChat()));
     requestMenu->addAction(matchToChat);
 
     requestMenu->addSeparator();
 
-    QAction *clearRequestAct = new QAction(tr("Clear menu for this request"), requestMenu);
+    QAction *clearRequestAct = new QAction(tr("Dismiss current request"), requestMenu);
     connect(clearRequestAct, SIGNAL(triggered()), this, SLOT(clearRequest()));
     requestMenu->addAction(clearRequestAct);
 
@@ -135,7 +135,7 @@ void PopupChatDialog::resetStatusBar() {
 }
 
 void PopupChatDialog::updateStatusTyping() {
-    if (time(NULL) - last_status_send_time > 5) {   // limit 'peer is typing' packets to at most every 10 sec
+    if (time(NULL) - last_status_send_time > 5) {   // limit 'peer is typing' packets to at most every 5 sec
         msgs->sendStatusString(librarymixer_id, peers->getOwnName() + " is typing...");
         last_status_send_time = time(NULL) ;
     }
