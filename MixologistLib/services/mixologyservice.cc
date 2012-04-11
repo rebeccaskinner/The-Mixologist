@@ -70,7 +70,7 @@ int MixologyService::tick() {
 
         MixologyRequest *request = dynamic_cast<MixologyRequest *>(item);
         if (request != NULL) {
-            log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a request for " + QString::number(request->item_id));
+            log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a request from " + QString::number(friend_id));
             MixologyResponse *response = new MixologyResponse();
             LibraryMixerItem* libraryItem;
             response->LibraryMixerId(request->LibraryMixerId());
@@ -194,14 +194,14 @@ int MixologyService::tick() {
         if (lending != NULL) {
             if (lending->flags & TRANSFER_COMPLETE_BORROWED) {
                 unsigned int friend_id = lending->LibraryMixerId();
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Lent " + QString::number(lending->source_type) + ", " + lending->source_id + " to " + QString::number(friend_id));
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Lent an item to " + QString::number(friend_id));
                 if (lending->source_type & FILE_HINTS_ITEM) {
                     librarymixermanager->setLent(friend_id, lending->source_id);
                 } else if (lending->source_type & FILE_HINTS_OFF_LM) {
                     offLMList->setLent(friend_id, lending->source_id);
                 }
             } else if (lending->flags & TRANSFER_COMPLETE_RETURNED) {
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back " + lending->source_id);
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Finished getting back an item from " + lending->LibraryMixerId());
                 borrowManager->returnedBorrowed(friend_id, lending->source_type, lending->source_id);
             }
         }
@@ -283,7 +283,7 @@ void MixologyService::sendSuggestion(unsigned int friend_id, const QString &titl
     suggest->hashes(hashes);
     suggest->filesizes(filesizes);
     notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_SENT, title);
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(friend_id) + ".");
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(friend_id));
     sendItem(suggest);
 }
 
@@ -297,7 +297,7 @@ void MixologyService::sendReturn(unsigned int friend_id, int source_type, const 
     returnItem->hashes(hashes);
     returnItem->filesizes(filesizes);
     notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_SENT, title);
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Returning " + QString::number(returnItem->source_type) + ", " + returnItem->source_id + " to " + QString::number(friend_id) + ".");
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Returning an item to " + QString::number(friend_id));
     sendItem(returnItem);
 }
 
@@ -307,7 +307,7 @@ void MixologyService::sendBorrowed(unsigned int friend_id, int source_type, cons
     lend->flags = TRANSFER_COMPLETE_BORROWED;
     lend->source_type = source_type;
     lend->source_id = source_id;
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Letting " + QString::number(friend_id) + " know borrow of " + QString::number(lend->source_type) + ", " + lend->source_id + " fully received.");
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Letting " + QString::number(friend_id) + " know borrowed item fully received.");
     sendItem(lend);
 }
 
@@ -361,7 +361,7 @@ bool MixologyService::prepFileResponse(unsigned int item_id, int status, Mixolog
             response->hashes(item->hashes());
             response->filesizes(item->filesizes());
             if (!response->checkWellFormed()) {
-                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Error preparing a response for " + item->title());
+                log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Error preparing a response for item");
                 response->itemStatus = MixologyResponse::ITEM_STATUS_INTERNAL_ERROR;
             }
         }
@@ -374,7 +374,7 @@ void MixologyService::sendRequest(unsigned int librarymixer_id, uint32_t item_id
     mrequest->LibraryMixerId(librarymixer_id);
     mrequest->item_id = item_id;
     pending->timeOfLastTry = time(NULL);
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending a request for " + pending->name);
+    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending a request for to " + QString::number(librarymixer_id));
     sendItem(mrequest);
 }
 
