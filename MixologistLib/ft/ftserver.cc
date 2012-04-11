@@ -69,11 +69,9 @@ void ftServer::SetupFtServer() {
     /* librarymixermanager was already instantiated in init. */
     mFtDataplex->addFileMethod(librarymixermanager);
     connect(librarymixermanager, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), mFtDataplex, SLOT(fileNoLongerAvailable(QString,qulonglong)));
-    connect(librarymixermanager, SIGNAL(libraryItemAboutToBeInserted(int)), this, SIGNAL(libraryItemAboutToBeInserted(int)), Qt::DirectConnection);
-    connect(librarymixermanager, SIGNAL(libraryItemAboutToBeRemoved(int)), this, SIGNAL(libraryItemAboutToBeRemoved(int)), Qt::DirectConnection);
-    connect(librarymixermanager, SIGNAL(libraryItemInserted()), this, SIGNAL(libraryItemInserted()));
-    connect(librarymixermanager, SIGNAL(libraryItemRemoved()), this, SIGNAL(libraryItemRemoved()));
-    connect(librarymixermanager, SIGNAL(libraryStateChanged(int)), this, SIGNAL(libraryStateChanged(int)));
+    connect(librarymixermanager, SIGNAL(libraryItemInserted(uint)), this, SIGNAL(libraryItemInserted(uint)));
+    connect(librarymixermanager, SIGNAL(libraryItemRemoved(uint)), this, SIGNAL(libraryItemRemoved(uint)));
+    connect(librarymixermanager, SIGNAL(libraryStateChanged(uint)), this, SIGNAL(libraryStateChanged(uint)));
 
     connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemAboutToBeInserted(int)), this, SIGNAL(friendLibraryItemAboutToBeInserted(int)), Qt::DirectConnection);
     connect(libraryMixerFriendLibrary, SIGNAL(friendLibraryItemAboutToBeRemoved(int)), this, SIGNAL(friendLibraryItemAboutToBeRemoved(int)), Qt::DirectConnection);
@@ -195,20 +193,16 @@ void ftServer::FileUploads(QList<uploadFileInfo> &uploads) {
 /**********************************************************************************
  * LibraryMixer Item Control
  **********************************************************************************/
-QMap<unsigned int, LibraryMixerItem*>* ftServer::getLibrary() {
-    return librarymixermanager->getLibrary();
+void ftServer::getLibrary(QMap<unsigned int, LibraryMixerItem> &library) const {
+    librarymixermanager->getLibrary(library);
 }
 
-LibraryMixerItem* ftServer::getLibraryMixerItem(unsigned int item_id) {
-    return librarymixermanager->getLibraryMixerItem(item_id);
+bool ftServer::getLibraryMixerItem(unsigned int item_id, LibraryMixerItem &itemToFill) const {
+    return librarymixermanager->getLibraryMixerItem(item_id, itemToFill);
 }
 
-LibraryMixerItem* ftServer::getLibraryMixerItem(QStringList paths) {
-    return librarymixermanager->getLibraryMixerItem(paths);
-}
-
-int ftServer::getLibraryMixerItemStatus(unsigned int item_id, bool retry) {
-    return librarymixermanager->getLibraryMixerItemStatus(item_id, retry);
+bool ftServer::getLibraryMixerItem(QStringList paths, LibraryMixerItem &itemToFill) const {
+    return librarymixermanager->getLibraryMixerItem(paths, itemToFill);
 }
 
 bool ftServer::setMatchChat(unsigned int item_id){

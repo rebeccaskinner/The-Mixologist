@@ -167,48 +167,43 @@ void PopupChatDialog::addSysMsg(const QString &text) {
 
 void PopupChatDialog::insertRequestEvent(int event, unsigned int item_id) {
     QString message;
-    QString requestedItemName;
-    LibraryMixerItem* item;
+    LibraryMixerItem item;
+
+    if (event != NOTIFY_TRANSFER_NO_SUCH_ITEM) {
+        if (!files->getLibraryMixerItem(item_id, item)) return;
+    }
 
     switch(event) {
         case NOTIFY_TRANSFER_CHAT:
-            requestedItemName = files->getLibraryMixerItem(item_id)->title();
             message = friendName + " is interested in getting " +
-                      requestedItemName + " from you.";
+                      item.title + " from you.";
             break;
         case NOTIFY_TRANSFER_MESSAGE:
-            item = files->getLibraryMixerItem(item_id);
-            requestedItemName = item->title();
-            message = "Auto response for '" + requestedItemName + "': " + item->message();
+            message = "Auto response for '" + item.title + "': " + item.message;
             linkify(message);
             break;
         case NOTIFY_TRANSFER_LENT:
-            requestedItemName = files->getLibraryMixerItem(item_id)->title();
             message = friendName + " is interested in getting " +
-                      requestedItemName + " but it's currently lent to " +
-                      peers->getPeerName(files->getLibraryMixerItem(item_id)->lentTo()) + ".";
+                      item.title + " but it's currently lent to " +
+                      peers->getPeerName(item.lentTo) + ".";
             break;
         case NOTIFY_TRANSFER_UNMATCHED:
             requestedItemId = item_id;
-            requestedItemName = files->getLibraryMixerItem(item_id)->title();
-            ui.requestLabel->setText("'" + requestedItemName + "'' requested");
+            ui.requestLabel->setText("'" + item.title + "'' requested");
             ui.requestButton->setVisible(true);
             message = friendName + " is interested in getting " +
-                      requestedItemName + " from you.";
+                      item.title + " from you.";
             break;
         case NOTIFY_TRANSFER_BROKEN_MATCH:
             requestedItemId = item_id;
-            requestedItemName = files->getLibraryMixerItem(item_id)->title();
-            ui.requestLabel->setText("'" + requestedItemName + "'' requested");
+            ui.requestLabel->setText("'" + item.title + "'' requested");
             ui.requestButton->setVisible(true);
             message = friendName + " is interested in getting " +
-                      requestedItemName + " from you. You marked to automatically send a file, but the marked file has gone missing.";
+                      item.title + " from you. You marked to automatically send a file, but the marked file has gone missing.";
             break;
         case NOTIFY_TRANSFER_NO_SUCH_ITEM:
             message = friendName + " requested something from you that isn't in your library on LibraryMixer.";
             break;
-        default:
-            return;
     }
     addSysMsg(message);
 }
@@ -538,22 +533,24 @@ void PopupChatDialog::sendFiles(QStringList paths) {
 
         //See if this is a match for something that was requested
         if (requestedItemId != 0) {
-            QString transferName = files->getLibraryMixerItem(requestedItemId)->title();
-            QString message;
-            if (paths.count() > 1) message = "Automatically send these files on all future requests for " + transferName + "?";
-            else message = "Automatically send this file on all future requests for " + transferName + "?";
-            if (QMessageBox::question(this, transferName, message, QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
-                if (files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE, librarymixer_id)) {
-                    if (paths.count() == 1){
-                        addSysMsg("Reading file, will send as soon as ready");
+            LibraryMixerItem item;
+            if (files->getLibraryMixerItem(requestedItemId, item)) {
+                QString message;
+                if (paths.count() > 1) message = "Automatically send these files on all future requests for " + item.title + "?";
+                else message = "Automatically send this file on all future requests for " + item.title + "?";
+                if (QMessageBox::question(this, item.title, message, QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
+                    if (files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE, librarymixer_id)) {
+                        if (paths.count() == 1){
+                            addSysMsg("Reading file, will send as soon as ready");
+                        } else {
+                            addSysMsg("Reading files, will send as soon as ready");
+                        }
+                        clearRequest();
                     } else {
-                        addSysMsg("Reading files, will send as soon as ready");
+                        addSysMsg("Unable to match " + item.title + " you either already matched it or removed it.");
                     }
-                    clearRequest();
-                } else {
-                    addSysMsg("Unable to match " + transferName + " you either already matched it or removed it.");
+                    return;
                 }
-                return;
             }
         }
 
@@ -575,9 +572,9 @@ void PopupChatDialog::sendFiles(QStringList paths) {
         }
 
         //See if paths are in library database
-        LibraryMixerItem* item = files->getLibraryMixerItem(paths);
-        if (item != NULL) {
-            files->MixologySuggest(librarymixer_id, item->id());
+        LibraryMixerItem item;
+        if (files->getLibraryMixerItem(paths, item)) {
+            files->MixologySuggest(librarymixer_id, item.item_id);
             return;
         }
 

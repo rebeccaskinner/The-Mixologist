@@ -134,20 +134,16 @@ public:
      * LibraryMixer Item Control
      **********************************************************************************/
 
-    /* Returns a map of all LibraryMixerItems. The map is by LibraryMixer item IDs. */
-    virtual QMap<unsigned int, LibraryMixerItem*>* getLibrary() = 0;
+    /* Fills the hash with all of a user's LibraryMixerItems keyed by LibraryMixer item IDs. */
+    virtual void getLibrary(QMap<unsigned int, LibraryMixerItem> &library) const = 0;
 
     /* Finds the LibraryMixerItem that corresponds to the item id, and returns it.
-       Returns a blank LibraryMixerItem on failure. */
-    virtual LibraryMixerItem* getLibraryMixerItem(unsigned int item_id) = 0;
+       Returns false on failure. */
+    virtual bool getLibraryMixerItem(unsigned int item_id, LibraryMixerItem &itemToFill) const = 0;
 
     /* Finds the LibraryMixerItem that contains the same paths, and returns it.
-       Returns a blank LibraryMixerItem on failure. */
-    virtual LibraryMixerItem* getLibraryMixerItem(QStringList paths) = 0;
-
-    /* Finds the LibraryMixerItem that corresponds to the item id, and returns its status.  Returns -2 on error, -1 on not found.
-       Retry if true will update the item if the item is not immediately found and try again once. */
-    virtual int getLibraryMixerItemStatus(unsigned int item_id, bool retry=true) = 0;
+       Returns false on failure. */
+    virtual bool getLibraryMixerItem(QStringList paths, LibraryMixerItem &itemToFill) const = 0;
 
     /* Sets the given item to MATCHED_TO_CHAT. */
     virtual bool setMatchChat(unsigned int item_id) = 0;
@@ -172,11 +168,9 @@ signals:
     void responseLendOfferReceived(unsigned int friend_id, unsigned int item_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
 
     /* Signals for the LibraryMixer library. */
-    void libraryItemAboutToBeInserted(int row);
-    void libraryItemInserted();
-    void libraryItemAboutToBeRemoved(int row);
-    void libraryItemRemoved();
-    void libraryStateChanged(int row);
+    void libraryItemInserted(unsigned int item_id);
+    void libraryItemRemoved(unsigned int item_id);
+    void libraryStateChanged(unsigned int item_id);
 
     /**********************************************************************************
      * Friend LibraryMixer Item Control

@@ -44,9 +44,12 @@ LibraryMixerLibraryManager::LibraryMixerLibraryManager() {
     if (XmlUtil::openXml(LIBRARYFILE, xml, rootNode, "library", QIODevice::ReadWrite)) {
         QDomNode currentNode = rootNode.firstChildElement("item");
         while (!currentNode.isNull()) {
-            LibraryMixerItem* currentItem = new LibraryMixerItem(currentNode);
+            LibraryMixerLibraryItem* currentItem = new LibraryMixerLibraryItem(currentNode);
             connect(currentItem, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), this, SIGNAL(fileNoLongerAvailable(QString,qulonglong)));
-            insertIntoList(currentItem);
+
+            libraryList.insert(currentItem->id(), currentItem);
+            emit libraryItemInserted(currentItem->id());
+
             currentNode = currentNode.nextSiblingElement("item");
         }
     }
@@ -66,7 +69,7 @@ void LibraryMixerLibraryManager::mergeLibrary(const QDomElement &libraryElement)
             preexistingItems.removeOne(itemId);
             if (libraryList[itemId]->title() != currentItemElement.firstChildElement("title").text()) {
                 libraryList[itemId]->title(currentItemElement.firstChildElement("title").text());
-                emit libraryStateChanged(libraryList.keys().indexOf(itemId));
+                emit libraryStateChanged(itemId);
             }
         } else {
             QDomElement newItemElement = currentItemElement.cloneNode(true).toElement();
@@ -74,9 +77,11 @@ void LibraryMixerLibraryManager::mergeLibrary(const QDomElement &libraryElement)
             newItemElement.appendChild(XmlUtil::createElement(xml, "itemstate", QString::number(LibraryMixerItem::UNMATCHED)));
             newItemElement.appendChild(XmlUtil::createElement(xml, "autoresponse"));
 
-            LibraryMixerItem* newItem = new LibraryMixerItem(newItemElement);
+            LibraryMixerLibraryItem* newItem = new LibraryMixerLibraryItem(newItemElement);
             connect(newItem, SIGNAL(fileNoLongerAvailable(QString,qulonglong)), this, SIGNAL(fileNoLongerAvailable(QString,qulonglong)));
-            insertIntoList(newItem);
+
+            libraryList.insert(newItem->id(), newItem);
+            emit libraryItemInserted(newItem->id());
         }
         currentItemElement = currentItemElement.nextSiblingElement("item");
     }
@@ -85,14 +90,16 @@ void LibraryMixerLibraryManager::mergeLibrary(const QDomElement &libraryElement)
     while (!preexistingItems.isEmpty()) {
         unsigned int itemId = preexistingItems.first();
         preexistingItems.removeFirst();
-        removeFromList(itemId);
+        delete libraryList[itemId];
+        libraryList.remove(itemId);
+        emit libraryItemRemoved(itemId);
     }
 
     XmlUtil::writeXml(LIBRARYFILE, xml);
 
     /* Check if any items are missing their hashes, continue hashing if so.
        fileCount() returns 0 if there are no files because the item state has no associated files. */
-    foreach (LibraryMixerItem* currentItem, libraryList.values()) {
+    foreach (LibraryMixerLibraryItem* currentItem, libraryList.values()) {
         for (int i = 0; i < currentItem->fileCount(); i++) {
             if (currentItem->hashes()[i].isEmpty()) fileWatcher->addFile(currentItem->paths()[i]);
             else {
@@ -102,18 +109,21 @@ void LibraryMixerLibraryManager::mergeLibrary(const QDomElement &libraryElement)
     }
 }
 
-QMap<unsigned int, LibraryMixerItem*>* LibraryMixerLibraryManager::getLibrary() {
-    return &libraryList;
+void LibraryMixerLibraryManager::getLibrary(QMap<unsigned int, LibraryMixerItem> &library) const {
+    QMutexLocker stack(&libMutex);
+    foreach (LibraryMixerLibraryItem* currentItem, libraryList.values()) {
+        library[currentItem->id()] = internalConvertItem(currentItem);
+    }
 }
 
 bool LibraryMixerLibraryManager::setMatchChat(unsigned int item_id) {
     QMutexLocker stack(&libMutex);
 
-    LibraryMixerItem* item = libraryList.value(item_id);
+    LibraryMixerLibraryItem* item = libraryList.value(item_id);
     if (item == NULL) return false;
 
-    if (item->itemState(LibraryMixerItem::MATCHED_TO_CHAT)) {
-        emit libraryStateChanged(libraryList.keys().indexOf(item_id));
+    if (item->itemState(LibraryMixerItem::LibraryMixerItem::MATCHED_TO_CHAT)) {
+        emit libraryStateChanged(item_id);
         XmlUtil::writeXml(LIBRARYFILE, xml);
         return true;
     }
@@ -126,7 +136,7 @@ bool LibraryMixerLibraryManager::setMatchFile(unsigned int item_id, QStringList 
     if (itemstate != LibraryMixerItem::MATCHED_TO_FILE &&
         itemstate != LibraryMixerItem::MATCHED_TO_LEND) return false;
 
-    LibraryMixerItem* item = libraryList.value(item_id);
+    LibraryMixerLibraryItem* item = libraryList.value(item_id);
     if (item == NULL) return false;
 
     item->itemState(itemstate);
@@ -138,7 +148,7 @@ bool LibraryMixerLibraryManager::setMatchFile(unsigned int item_id, QStringList 
         }
     }
 
-    emit libraryStateChanged(libraryList.keys().indexOf(item_id));
+    emit libraryStateChanged(item_id);
 
     XmlUtil::writeXml(LIBRARYFILE, xml);
 
@@ -150,11 +160,11 @@ bool LibraryMixerLibraryManager::setMatchFile(unsigned int item_id, QStringList 
 bool LibraryMixerLibraryManager::setMatchMessage(unsigned int item_id, QString message) {
     QMutexLocker stack(&libMutex);
 
-    LibraryMixerItem* item = libraryList.value(item_id);
+    LibraryMixerLibraryItem* item = libraryList.value(item_id);
     if (item == NULL) return false;
 
     if (item->message(message)) {
-        emit libraryStateChanged(libraryList.keys().indexOf(item_id));
+        emit libraryStateChanged(item_id);
         XmlUtil::writeXml(LIBRARYFILE, xml);
         return true;
     }
@@ -166,12 +176,12 @@ bool LibraryMixerLibraryManager::setLent(unsigned int friend_id, const QString &
 
     QMutexLocker stack(&libMutex);
 
-    LibraryMixerItem* item = libraryList.value(numeric_item_id);
+    LibraryMixerLibraryItem* item = libraryList.value(numeric_item_id);
     if (item == NULL) return false;
 
     if (item->itemState() == LibraryMixerItem::MATCHED_TO_LEND) {
         if (item->lentTo(friend_id)) {
-            emit libraryStateChanged(libraryList.keys().indexOf(numeric_item_id));
+            emit libraryStateChanged(numeric_item_id);
             if (XmlUtil::writeXml(LIBRARYFILE, xml)) {
                 for (int i = 0; i < item->fileCount(); i++) {
                     fileWatcher->stopWatching(item->paths()[i]);
@@ -188,7 +198,7 @@ bool LibraryMixerLibraryManager::setLent(unsigned int friend_id, const QString &
 int LibraryMixerLibraryManager::returnBorrowedFiles(unsigned int friend_id, const QString &item_id, const QStringList &paths, const QStringList &hashes,
                                                     const QList<qlonglong> &filesizes, const QList<bool> &moveFile, QString &finalDestination) {
     /* Find and update the item in question. */
-    LibraryMixerItem* item;
+    LibraryMixerLibraryItem* item;
     {
         QMutexLocker stack(&libMutex);
         unsigned int numeric_item_id = item_id.toInt();
@@ -212,39 +222,34 @@ int LibraryMixerLibraryManager::returnBorrowedFiles(unsigned int friend_id, cons
     return result;
 }
 
-int LibraryMixerLibraryManager::getLibraryMixerItemStatus(unsigned int item_id, bool retry) {
-    {
-        QMutexLocker stack(&libMutex);
-        if (libraryList.contains(item_id)) return libraryList[item_id]->itemState();
-    }
-
-    /* If we get here, that means we couldn't find it, so we need to retry, if applicable.
-       This is outside of the mutex so we can call other mutex protected functions. */
-    if (retry) {
-        librarymixerconnect->downloadLibrary(true);
-        return getLibraryMixerItemStatus(item_id, false);
-    } else return -1;
-}
-
-LibraryMixerItem* LibraryMixerLibraryManager::getLibraryMixerItem(unsigned int id) {
+bool LibraryMixerLibraryManager::getLibraryMixerItem(unsigned int id, LibraryMixerItem &itemToFill) const {
     QMutexLocker stack(&libMutex);
 
-    return libraryList.value(id);
+    if (!libraryList.contains(id)) return false;
+
+    itemToFill = internalConvertItem(libraryList[id]);
+    return true;
 }
 
-LibraryMixerItem* LibraryMixerLibraryManager::getLibraryMixerItem(QStringList paths){
+bool LibraryMixerLibraryManager::getLibraryMixerItem(QStringList paths, LibraryMixerItem &itemToFill) const {
     QMutexLocker stack(&libMutex);
 
-    foreach(LibraryMixerItem* item, libraryList.values()){
-        if (DirUtil::allPathsMatch(item->paths(), paths)) return item;
+    foreach(LibraryMixerLibraryItem* item, libraryList.values()){
+        if (DirUtil::allPathsMatch(item->paths(), paths)) {
+            itemToFill = internalConvertItem(item);
+            return true;
+        }
     }
-    return NULL;
+    return false;
 }
 
-int LibraryMixerLibraryManager::getLibraryMixerItemWithCheck(unsigned int item_id, LibraryMixerItem* &item) {
-    item = getLibraryMixerItem(item_id);
-    if (item == NULL) return -1;
-    if (!item->fullyHashed()) return 0;
+int LibraryMixerLibraryManager::getLibraryMixerItemWithCheck(unsigned int item_id, LibraryMixerItem &item) {
+    QMutexLocker stack(&libMutex);
+
+    if (libraryList.contains(item_id)) return -1;
+    if (!libraryList[item_id]->fullyHashed()) return 0;
+
+    item = internalConvertItem(libraryList[item_id]);
     return 1;
 }
 
@@ -274,7 +279,7 @@ void LibraryMixerLibraryManager::MixologySuggest(unsigned int friend_id, int ite
 ftFileMethod::searchResult LibraryMixerLibraryManager::search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int /*librarymixer_id*/, QString &path) {
     if (hintflags | FILE_HINTS_ITEM) {
         QMutexLocker stack(&libMutex);
-        foreach(LibraryMixerItem* item, libraryList.values()){
+        foreach(LibraryMixerLibraryItem* item, libraryList.values()){
             if (item->itemState() == LibraryMixerItem::MATCHED_TO_FILE ||
                 item->itemState() == LibraryMixerItem::MATCHED_TO_LEND) {
                 for (int i = 0; i < item->fileCount(); i++) {
@@ -318,7 +323,7 @@ void LibraryMixerLibraryManager::newFileHash(QString path, qlonglong size, unsig
             if (libraryList[item_id]->fullyHashed()) {
                 if (libraryList[item_id]->itemState() == LibraryMixerItem::MATCH_NOT_FOUND) {
                     libraryList[item_id]->itemState(LibraryMixerItem::MATCHED_TO_FILE);
-                    emit libraryStateChanged(libraryList.keys().indexOf(item_id));
+                    emit libraryStateChanged(item_id);
                 }
 
                 foreach (unsigned int friend_id, libraryList[item_id]->sendToOnHashList) {
@@ -355,7 +360,7 @@ void LibraryMixerLibraryManager::fileRemoved(QString path) {
                        this works well enough for now and is a lot easier than otherwise individually tracking which files are missing. */
                     libraryList[item_id]->setFileInfo(path, -1, 0, "");
                     libraryList[item_id]->itemState(LibraryMixerItem::MATCH_NOT_FOUND);
-                    emit libraryStateChanged(libraryList.keys().indexOf(item_id));
+                    emit libraryStateChanged(item_id);
                     toSave = true;
                 }
             }
@@ -365,31 +370,26 @@ void LibraryMixerLibraryManager::fileRemoved(QString path) {
 }
 
 //private utility functions
-void LibraryMixerLibraryManager::insertIntoList(LibraryMixerItem* item) {
-    /* We need to find the row where our new item will be inserted so we can report it in our signals.
-       To do this, we step through the keys, which are guaranteed to be sorted in ascending order.
-       If we find an item id that is less than our new item's id, that's the item we will be inserting before.
-       Otherwise, it we reach the end, we stick with our default value of the final spot. */
-    QList<unsigned int> keys = libraryList.keys();
-    int row = keys.length();
-    for (QList<unsigned int>::const_iterator it = keys.begin(); it != keys.end(); it++ ) {
-        if (*it < item->id()) {
-            row = keys.indexOf(*it);
-            break;
-        }
-    }
-    emit libraryItemAboutToBeInserted(row);
-    libraryList.insert(item->id(), item);
-    emit libraryItemInserted();
-}
 
-void LibraryMixerLibraryManager::removeFromList(unsigned int item_id) {
-    int row = libraryList.keys().indexOf(item_id);
-    if (row == -1) return;
-    emit libraryItemAboutToBeRemoved(row);
-    delete libraryList[item_id];
-    libraryList.remove(item_id);
-    emit libraryItemRemoved();
+LibraryMixerItem LibraryMixerLibraryManager::internalConvertItem(LibraryMixerLibraryItem *inputItem) const {
+    LibraryMixerItem returnItem;
+    returnItem.title = inputItem->title();
+    returnItem.item_id = inputItem->id();
+    returnItem.itemState = inputItem->itemState();
+
+    if (LibraryMixerItem::MATCHED_TO_LENT == returnItem.itemState) {
+        returnItem.lentTo = inputItem->lentTo();
+    } else if (LibraryMixerItem::MATCHED_TO_MESSAGE == returnItem.itemState) {
+        returnItem.message = inputItem->message();
+    } else if (LibraryMixerItem::MATCHED_TO_FILE == returnItem.itemState ||
+               LibraryMixerItem::MATCH_NOT_FOUND == returnItem.itemState ||
+               LibraryMixerItem::MATCHED_TO_LEND == returnItem.itemState ||
+               LibraryMixerItem::MATCHED_TO_LENT == returnItem.itemState) {
+        returnItem.paths = inputItem->paths();
+        returnItem.filesizes = inputItem->filesizes();
+        returnItem.hashes = inputItem->hashes();
+    }
+    return returnItem;
 }
 
 bool LibraryMixerLibraryManager::equalNode(const QDomNode a, const QDomNode b) const {

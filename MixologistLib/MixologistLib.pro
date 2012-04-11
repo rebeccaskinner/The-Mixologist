@@ -106,6 +106,7 @@ HEADERS += ft/ftcontroller.h \
            interface/librarymixer-connect.h \
            server/server.h \
            server/librarymixer-library.h \
+           server/librarymixer-libraryitem.h \
            server/librarymixer-friendlibrary.h \
            server/p3msgs.h \
            server/p3peers.h \
@@ -144,6 +145,7 @@ HEADERS += ft/ftcontroller.h \
 SOURCES = \
 				server/librarymixer-connect.cc \
 	   			server/librarymixer-library.cc \
+	   			server/librarymixer-libraryitem.cc \
 	   			server/librarymixer-friendlibrary.cc \
 				server/init.cc \
 				server/server.cc \

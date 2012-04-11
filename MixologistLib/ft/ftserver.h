@@ -150,20 +150,16 @@ public:
      * LibraryMixer Item Control
      **********************************************************************************/
 
-    /* Returns a map of all LibraryMixerItems. The map is by LibraryMixer item IDs. */
-    QMap<unsigned int, LibraryMixerItem*>* getLibrary();
+    /* Fills the hash with all of a user's LibraryMixerItems keyed by LibraryMixer item IDs. */
+    void getLibrary(QMap<unsigned int, LibraryMixerItem> &library) const;
 
     /* Finds the LibraryMixerItem that corresponds to the item id, and returns it.
-       Returns a blank LibraryMixerItem on failure. */
-    LibraryMixerItem* getLibraryMixerItem(unsigned int item_id);
+       Returns false on failure. */
+    bool getLibraryMixerItem(unsigned int item_id, LibraryMixerItem &itemToFill) const;
 
     /* Finds the LibraryMixerItem that contains the same paths, and returns it.
-       Returns a blank LibraryMixerItem on failure. */
-    LibraryMixerItem* getLibraryMixerItem(QStringList paths);
-
-    /* Finds the LibraryMixerItem that corresponds to id and returns its status.
-       Returns -1 on not found. */
-    int getLibraryMixerItemStatus(unsigned int item_id, bool retry=true);
+       Returns false on failure. */
+    bool getLibraryMixerItem(QStringList paths, LibraryMixerItem &itemToFill) const;
 
     /* Sets the given item to MATCHED_TO_CHAT. */
     bool setMatchChat(unsigned int item_id);

@@ -26,6 +26,7 @@
 #include <ft/ftcontroller.h>
 #include <ft/ftserver.h>
 #include <ft/ftborrower.h>
+#include <interface/librarymixer-connect.h>
 #include <interface/peers.h>
 #include <interface/files.h>
 #include <interface/types.h>
@@ -71,12 +72,24 @@ int MixologyService::tick() {
         MixologyRequest *request = dynamic_cast<MixologyRequest *>(item);
         if (request != NULL) {
             log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Received a request from " + QString::number(friend_id));
+
+            bool haveLibraryItem = false;
+            LibraryMixerItem libraryItem;
+            haveLibraryItem = files->getLibraryMixerItem(request->item_id, libraryItem);
+
+            /* Blocking re-downloaded to library if we couldn't find the requested item. */
+            if (!haveLibraryItem) {
+                librarymixerconnect->downloadLibrary(true);
+                haveLibraryItem = files->getLibraryMixerItem(request->item_id, libraryItem);
+            }
+
+            int status = haveLibraryItem ? libraryItem.itemState : -1;
+
             MixologyResponse *response = new MixologyResponse();
-            LibraryMixerItem* libraryItem;
             response->LibraryMixerId(request->LibraryMixerId());
             response->item_id = request->item_id;
 
-            switch(files->getLibraryMixerItemStatus(response->item_id, true)){
+            switch(status){
                 case LibraryMixerItem::UNMATCHED:
                     response->itemStatus = MixologyResponse::ITEM_STATUS_UNMATCHED;
                     notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_UNMATCHED, friend_id, request->item_id);
@@ -94,19 +107,16 @@ int MixologyService::tick() {
                     break;
                 case LibraryMixerItem::MATCHED_TO_MESSAGE:
                     response->itemStatus = MixologyResponse::ITEM_STATUS_MATCHED_TO_MESSAGE;
-                    libraryItem = files->getLibraryMixerItem(request->item_id);
                     notifyBase->notifyRequestEvent(NOTIFY_TRANSFER_MESSAGE, friend_id, request->item_id);
-                    response->message(libraryItem->message());
+                    response->message(libraryItem.message);
                     sendItem(response);
                     break;
                 case LibraryMixerItem::MATCHED_TO_FILE:
-                    libraryItem = files->getLibraryMixerItem(request->item_id);
-                    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_FILE_REQUEST, libraryItem->title());
+                    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_FILE_REQUEST, libraryItem.title);
                     if (prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_FILE, response)) sendItem(response);
                     break;
                 case LibraryMixerItem::MATCHED_TO_LEND:
-                    libraryItem = files->getLibraryMixerItem(request->item_id);
-                    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_LEND_OFFERED, libraryItem->title());
+                    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_LEND_OFFERED, libraryItem.title);
                     if (prepFileResponse(request->item_id, MixologyResponse::ITEM_STATUS_MATCHED_TO_LEND, response)) sendItem(response);
                     break;
                 case LibraryMixerItem::MATCHED_TO_LENT:
@@ -349,17 +359,17 @@ void MixologyService::clearCompleted() {
 }
 
 bool MixologyService::prepFileResponse(unsigned int item_id, int status, MixologyResponse *response) {
-    LibraryMixerItem* item = NULL;
+    LibraryMixerItem item;
     int result = librarymixermanager->getLibraryMixerItemWithCheck(item_id, item);
     if (result == -1) response->itemStatus = MixologyResponse::ITEM_STATUS_INTERNAL_ERROR;
     else if (result == 0) return false; //Not ready at the moment, so try again next time friend asks for it and ignore for now.
     else if (result == 1){
-        if (item->itemState() == LibraryMixerItem::MATCH_NOT_FOUND) response->itemStatus = MixologyResponse::ITEM_STATUS_BROKEN_MATCH;
+        if (item.itemState == LibraryMixerItem::MATCH_NOT_FOUND) response->itemStatus = MixologyResponse::ITEM_STATUS_BROKEN_MATCH;
         else {
             response->itemStatus = status;
-            response->files(DirUtil::getRelativePaths(item->paths()));
-            response->hashes(item->hashes());
-            response->filesizes(item->filesizes());
+            response->files(DirUtil::getRelativePaths(item.paths));
+            response->hashes(item.hashes);
+            response->filesizes(item.filesizes);
             if (!response->checkWellFormed()) {
                 log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Error preparing a response for item");
                 response->itemStatus = MixologyResponse::ITEM_STATUS_INTERNAL_ERROR;

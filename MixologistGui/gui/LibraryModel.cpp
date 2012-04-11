@@ -45,11 +45,11 @@
 LibraryModel::LibraryModel(QTreeView* view, QWidget *parent)
     :QAbstractListModel(parent), ownItemView(view) {
 
-    connect(files, SIGNAL(libraryItemAboutToBeInserted(int)), this, SLOT(itemAboutToBeInserted(int)), Qt::DirectConnection);
-    connect(files, SIGNAL(libraryItemAboutToBeRemoved(int)), this, SLOT(itemAboutToBeRemoved(int)), Qt::DirectConnection);
-    connect(files, SIGNAL(libraryItemInserted()), this, SLOT(itemInserted()), Qt::QueuedConnection);
-    connect(files, SIGNAL(libraryItemRemoved()), this, SLOT(itemRemoved()), Qt::QueuedConnection);
-    connect(files, SIGNAL(libraryStateChanged(int)), this, SLOT(itemStateChanged(int)), Qt::QueuedConnection);
+    files->getLibrary(library);
+
+    connect(files, SIGNAL(libraryItemInserted(uint)), this, SLOT(itemInserted(uint)), Qt::QueuedConnection);
+    connect(files, SIGNAL(libraryItemRemoved(uint)), this, SLOT(itemRemoved(uint)), Qt::QueuedConnection);
+    connect(files, SIGNAL(libraryStateChanged(uint)), this, SLOT(itemStateChanged(uint)), Qt::QueuedConnection);
 
     connect(ownItemView, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(customContextMenu(QPoint)));
     /* This can't be done in the constructor because ownItemView isn't setup yet because LibraryDialog hasn't finished constructing yet.
@@ -66,19 +66,19 @@ QVariant LibraryModel::data(const QModelIndex &index, int role) const {
     if (!index.isValid()) return QVariant();
 
     if (role == Qt::DisplayRole) {
-        LibraryMixerItem* item = files->getLibrary()->values().at(index.row());
+        unsigned int item_id = library.keys()[index.row()];
 
         QString pathText;
-        QStringList paths = item->paths();
+        QStringList paths = library[item_id].paths;
         switch (index.column()){
         case LIBRARY_TITLE_COLUMN:
-            return item->title();
+            return library[item_id].title;
         case LIBRARY_STATUS_COLUMN:
-            switch (item->itemState()){
+            switch (library[item_id].itemState){
             case LibraryMixerItem::MATCHED_TO_CHAT:
                 return "Open a chat window when requested";
             case LibraryMixerItem::MATCHED_TO_MESSAGE:
-                return item->message();
+                return library[item_id].message;
             case LibraryMixerItem::MATCHED_TO_LEND:
                 pathText.append("Lend: ");
                 for(int i = 0; i < paths.count(); i++) {
@@ -87,7 +87,7 @@ QVariant LibraryModel::data(const QModelIndex &index, int role) const {
                 }
                 return pathText;
             case LibraryMixerItem::MATCHED_TO_LENT:
-                return "Lent to " + peers->getPeerName(item->lentTo());
+                return "Lent to " + peers->getPeerName(library[item_id].lentTo);
             case LibraryMixerItem::MATCHED_TO_FILE:
                 for(int i = 0; i < paths.count(); i++) {
                     pathText.append(paths[i]);
@@ -126,12 +126,11 @@ QVariant LibraryModel::headerData(int section, Qt::Orientation orientation, int 
 }
 
 int LibraryModel::rowCount(const QModelIndex &/*parent*/) const {
-    return files->getLibrary()->count();
+    return library.size();
 }
 
 bool LibraryModel::dropMimeData(const QMimeData *data, Qt::DropAction /*action*/, int row, int /*column*/, const QModelIndex &parent) {
     if (!parent.isValid() || parent.row() < 0) return false;
-    LibraryMixerItem* item = files->getLibrary()->values().at(parent.row());
 
     QStringList paths;
     foreach(QUrl url, data->urls()) {
@@ -139,7 +138,7 @@ bool LibraryModel::dropMimeData(const QMimeData *data, Qt::DropAction /*action*/
         paths << recursiveFileAdd(url.toLocalFile());
     }
 
-    files->setMatchFile(item->id(), paths, LibraryMixerItem::MATCHED_TO_FILE);
+    files->setMatchFile(library.keys()[row], paths, LibraryMixerItem::MATCHED_TO_FILE);
     return true;
 }
 
@@ -158,10 +157,10 @@ void LibraryModel::customContextMenu(QPoint point) {
     QModelIndex index = ownItemView->indexAt(point);
     if (!index.isValid()) return;
     if (index.row() > rowCount()) return;
-    const LibraryMixerItem* contextItem = files->getLibrary()->values().at(index.row());
-    contextItemId = contextItem->id();
 
-    int status = files->getLibraryMixerItemStatus(contextItemId, true);
+    contextItemId = library.keys()[index.row()];
+
+    int status = library[contextItemId].itemState;
     if (status == LibraryMixerItem::MATCHED_TO_LENT) {
         QAction *chatBorrowerAct = new QAction(QIcon(IMAGE_CHAT), tr("Chat"), &contextMenu);
         connect(chatBorrowerAct, SIGNAL(triggered()), this, SLOT(chatBorrower()));
@@ -222,12 +221,13 @@ void LibraryModel::setMatchToMessage() {
     bool ok;
     QString defaultText = "";
 
-    LibraryMixerItem* item = files->getLibraryMixerItem(contextItemId);
-    if (item->itemState() == LibraryMixerItem::MATCHED_TO_MESSAGE) defaultText = item->message();
+    if (library.contains(contextItemId)) {
+        if (library[contextItemId].itemState == LibraryMixerItem::MATCHED_TO_MESSAGE) defaultText = library[contextItemId].message;
 
-    QString text = QInputDialog::getText(ownItemView, tr("Auto Response"), tr("Enter your auto response message:"), QLineEdit::Normal, defaultText, &ok);
-    if (ok) {
-        files->setMatchMessage(contextItemId, text);
+        QString text = QInputDialog::getText(ownItemView, tr("Auto Response"), tr("Enter your auto response message:"), QLineEdit::Normal, defaultText, &ok);
+        if (ok) {
+            files->setMatchMessage(contextItemId, text);
+        }
     }
 }
 
@@ -273,8 +273,8 @@ void LibraryModel::showHelp() {
 }
 
 void LibraryModel::chatBorrower() {
-    LibraryMixerItem* item = files->getLibraryMixerItem(contextItemId);
-    mainwindow->peersDialog->getOrCreateChat(item->lentTo(), true);
+    if (library.contains(contextItemId))
+        mainwindow->peersDialog->getOrCreateChat(library[contextItemId].lentTo, true);
 }
 
 void LibraryModel::openOnline() {
@@ -293,24 +293,38 @@ void LibraryModel::resizeColumns() {
     ownItemView->resizeColumnToContents(LIBRARY_STATUS_COLUMN);
 }
 
-void LibraryModel::itemAboutToBeInserted(int row) {
-    beginInsertRows(QModelIndex(), row, row);
-}
+void LibraryModel::itemInserted(unsigned int item_id) {
+    LibraryMixerItem item;
+    if (!files->getLibraryMixerItem(item_id, item)) return;
 
-void LibraryModel::itemInserted() {
+    /* Find where the item will fall in the order. */
+    int currentIndex;
+    for (currentIndex = 0; currentIndex < library.keys().size(); currentIndex ++) {
+        if (library.keys()[currentIndex] < item_id) break;
+    }
+
+    beginInsertRows(QModelIndex(), currentIndex, currentIndex);
+    library.insert(item_id, item);
     endInsertRows();
     resizeColumns();
 }
 
-void LibraryModel::itemAboutToBeRemoved(int row) {
-    beginRemoveRows(QModelIndex(), row, row);
-}
+void LibraryModel::itemRemoved(unsigned int item_id) {
+    int index = library.keys().indexOf(item_id);
 
-void LibraryModel::itemRemoved() {
+    if (index == -1) return;
+
+    beginRemoveRows(QModelIndex(), index, index);
+    library.remove(item_id);
     endRemoveRows();
 }
 
-void LibraryModel::itemStateChanged(int row) {
+void LibraryModel::itemStateChanged(unsigned int item_id) {
+    LibraryMixerItem item;
+    if (!files->getLibraryMixerItem(item_id, item)) return;
+
+    library[item_id] = item;
+    int row = library.keys().indexOf(item_id);
     emit dataChanged(createIndex(row, LIBRARY_TITLE_COLUMN), createIndex(row, LIBRARY_STATUS_COLUMN));
     resizeColumns();
 }

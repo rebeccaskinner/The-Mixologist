@@ -29,9 +29,10 @@
 #include <QIODevice>
 #include <QDomElement>
 #include <QMutex>
-#include "ft/ftfilemethod.h"
-#include "interface/files.h"
-#include "interface/types.h"
+#include <server/librarymixer-libraryitem.h>
+#include <ft/ftfilemethod.h>
+#include <interface/files.h>
+#include <interface/types.h>
 
 class LibraryMixerLibraryManager;
 
@@ -80,15 +81,22 @@ public:
        If the files are not fully available, means the item is not currently ready and returns 0. Can be called repeatedly.
        Otherwise, return 1.
        If any files are missing, changes item state to MATCH_NOT_FOUND but other returns 1 as normal. If returning 1, populates item. */
-    int getLibraryMixerItemWithCheck(unsigned int item_id, LibraryMixerItem* &item);
+    int getLibraryMixerItemWithCheck(unsigned int item_id, LibraryMixerItem &item);
 
     /**********************************************************************************
      * Body of public-facing API functions called through ftServer
      **********************************************************************************/
 
-    /* Returns a map of all items that have been matched to someting by a user, other than those MATCH_NOT_FOUND.
-       The map is by LibraryMixer item IDs. */
-    QMap<unsigned int, LibraryMixerItem*>* getLibrary();
+    /* Fills the hash with all of a user's LibraryMixerItems keyed by LibraryMixer item IDs. */
+    void getLibrary(QMap<unsigned int, LibraryMixerItem> &library) const;
+
+    /* Finds the LibraryMixerItem that corresponds to the item id, and returns it.
+       Returns false on failure. */
+    bool getLibraryMixerItem(unsigned int item_id, LibraryMixerItem &itemToFill) const;
+
+    /* Finds the LibraryMixerItem that contains the same paths, and returns it.
+       Returns false on failure. */
+    bool getLibraryMixerItem(QStringList paths, LibraryMixerItem &itemToFill) const;
 
     /* Sets the given item to MATCHED_TO_CHAT. */
     bool setMatchChat(unsigned int item_id);
@@ -103,18 +111,6 @@ public:
     /* Sets the given item with the autorespond message and to MATCHED_TO_MESSAGE. */
     bool setMatchMessage(unsigned int item_id, QString message);
 
-    /* Finds the LibraryMixerItem that corresponds to the item id, and returns its status.  Returns -1 on not found.
-       Retry if true will update the library from LibraryMixer if the item is not immediately found and try again once. */
-    int getLibraryMixerItemStatus(unsigned int item_id, bool retry=true);
-
-    /* Finds the LibraryMixerItem that corresponds to the item id, and returns it.
-       Returns NULL on failure. */
-    LibraryMixerItem* getLibraryMixerItem(unsigned int item_id);
-
-    /* Finds the LibraryMixerItem that contains the same paths, and returns it.
-       Returns NULL on failure. */
-    LibraryMixerItem* getLibraryMixerItem(QStringList paths);
-
     /* Sends a download invitation to a friend for the given item.
        If the item is not yet ready, then adds them to the waiting list. */
     void MixologySuggest(unsigned int friend_id, int item_id);
@@ -128,11 +124,9 @@ public:
     virtual ftFileMethod::searchResult search(const QString &hash, qlonglong size, uint32_t hintflags, unsigned int librarymixer_id, QString &path);
 
 signals:
-    void libraryItemAboutToBeInserted(int row);
-    void libraryItemInserted();
-    void libraryItemAboutToBeRemoved(int row);
-    void libraryItemRemoved();
-    void libraryStateChanged(int row);
+    void libraryItemInserted(unsigned int item_id);
+    void libraryItemRemoved(unsigned int item_id);
+    void libraryStateChanged(unsigned int item_id);
 
 private slots:
     /* Connected to ftFileWatcher for when a file's old hash is no longer valid.
@@ -148,15 +142,12 @@ private slots:
     void fileRemoved(QString path);
 
 private:
-    /* Instead of directly altering the lists, changes should be made through these functions,
-       which emit signals to ensure the GUI is informed of pending changes.
-       These are not mutex protected, so only call from inside the mutex. */
-    void insertIntoList(LibraryMixerItem* item);
-    void removeFromList(unsigned int item_id);
+    /* Returns a LibraryMixer item with the information filled out from the inputItem. */
+    LibraryMixerItem internalConvertItem(LibraryMixerLibraryItem* inputItem) const;
 
     /* Called whenever we change our item state in a way that would invalidate all of our file share information.
        Can be called even if the old item state didn't have any files. */
-    void oldFilesNoLongerAvailable(const LibraryMixerItem& item);
+    void oldFilesNoLongerAvailable(const LibraryMixerLibraryItem& item);
     void oldFilesNoLongerAvailable(const QStringList &hashes, const QList<qlonglong> &filesizes);
 
     /* Returns true if both a and b have the same non-null item_id. */
@@ -164,9 +155,9 @@ private:
 
     mutable QMutex libMutex;
     QDomDocument xml; //The master XML for a user's library
-    /* These are how we store the LibraryMixerItems that wrap the xml.
+    /* These are how we store the LibraryMixerLibraryItems that wrap the xml.
        The key is the item's id on LibraryMixer. */
-    QMap<unsigned int, LibraryMixerItem*> libraryList;
+    QMap<unsigned int, LibraryMixerLibraryItem*> libraryList;
 
 };
 

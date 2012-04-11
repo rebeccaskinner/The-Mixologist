@@ -359,9 +359,10 @@ bool ftController::borrowFiles(unsigned int friend_id, const QString &title, con
 bool ftController::downloadBorrowedFiles(unsigned int friend_id, uint32_t source_type, QString source_id, const QStringList &paths, const QStringList &hashes, const QList<qlonglong> &filesizes) {
     QString title;
     if (source_type & FILE_HINTS_ITEM) {
-        LibraryMixerItem* originalItem = librarymixermanager->getLibraryMixerItem(source_id.toInt());
-        if (originalItem == NULL || originalItem->lentTo() != friend_id) return false;
-        title = originalItem->title();
+        LibraryMixerItem originalItem;
+        if (!librarymixermanager->getLibraryMixerItem(source_id.toInt(), originalItem)) return false;
+        if (originalItem.lentTo != friend_id) return false;
+        title = originalItem.title;
     } else if (source_type & FILE_HINTS_OFF_LM) {
         if (!offLMList) return false;
         OffLMShareItem* originalItem = offLMList->getOffLMShareItem(source_id);

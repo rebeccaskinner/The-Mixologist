@@ -54,11 +54,9 @@ public:
 
 public slots:
     /* The following slots are used by the files interface to inform of changes to the model. */
-    void itemAboutToBeInserted(int row);
-    void itemInserted();
-    void itemAboutToBeRemoved(int row);
-    void itemRemoved();
-    void itemStateChanged(int row);
+    void itemInserted(unsigned int item_id);
+    void itemRemoved(unsigned int item_id);
+    void itemStateChanged(unsigned int item_id);
 
 private slots:
     /* Create the context popup menu and it's submenus. */
@@ -87,6 +85,9 @@ private slots:
     void openOnline();
 
 private:
+    /* The data for the model .*/
+    QMap<unsigned int, LibraryMixerItem> library;
+
     /* Info for keeping track of context menu actions. */
     int contextItemId;
 
