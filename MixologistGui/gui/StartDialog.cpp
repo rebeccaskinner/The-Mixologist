@@ -47,8 +47,8 @@ QString *startupSettings;
 QString *mainSettings;
 QString *savedTransfers;
 
-StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
-    : QMainWindow(parent, flags) {
+StartDialog::StartDialog(bool* startMinimized, QWidget *parent, Qt::WFlags flags)
+    : QMainWindow(parent, flags), startMinimized(startMinimized) {
     loadedOk = false;
     /* Invoke Qt Designer generated QObject setup routine */
     ui.setupUi(this);
@@ -82,7 +82,7 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     ui.progressBar->setVisible(false);
     ui.loadButton->setEnabled(false);
 
-    setWindowTitle("Login");
+    setWindowTitle("Mixologist Login");
 
     QSettings settings(*startupSettings, QSettings::IniFormat, this);
     QString email(rot13(settings.value("DefaultEmail", "").toString()));
@@ -118,7 +118,8 @@ StartDialog::StartDialog(QWidget *parent, Qt::WFlags flags)
     ui.loadButton->setEnabled(false);
 
     //All UI elements now setup and ready for display
-    show();
+    if (*startMinimized && settings.contains("DefaultEmail") && settings.contains("DefaultPassword")) showMinimized();
+    else show();
 
     if (!getMixologyLinksAssociated()) {
         if (QMessageBox::question(this,
@@ -385,6 +386,7 @@ void StartDialog::closeEvent (QCloseEvent *event) {
     }//flush the QSettings object so it saves
 
     if (loadedOk) {
+        *startMinimized = !isMinimized();
         this->deleteLater();
         QWidget::closeEvent(event);
     } else {

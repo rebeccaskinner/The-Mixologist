@@ -80,7 +80,7 @@ void setRunOnBoot(bool run) {
         win32_registry_set_key_value(HKEY_CURRENT_USER, STARTUP_REG_KEY, MIXOLOGIST_STARTUP_REG_KEY,
                                      QString("\"" +
                                              QDir::convertSeparators(QCoreApplication::applicationFilePath())) +
-                                     "\"");
+                                     "\"" + " -startminimized");
     } else {
         win32_registry_remove_key(HKEY_CURRENT_USER, STARTUP_REG_KEY, MIXOLOGIST_STARTUP_REG_KEY);
     }

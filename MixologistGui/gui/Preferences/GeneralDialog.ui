@@ -509,20 +509,13 @@
        </widget>
       </item>
       <item row="1" column="0">
-       <widget class="QCheckBox" name="startMinimized">
-        <property name="text">
-         <string>Start minimized to tray</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="0">
        <widget class="QPushButton" name="clearLogin">
         <property name="text">
          <string>Clear auto login information</string>
         </property>
        </widget>
       </item>
-      <item row="3" column="0">
+      <item row="2" column="0">
        <widget class="QPushButton" name="associateLinks">
         <property name="text">
          <string>Associate with mixology: links</string>

@@ -80,7 +80,8 @@ int main(int argc, char *argv[]) {
     notifyBase = guiNotify;
 
     /* Login Dialog */
-    StartDialog *start = new StartDialog();
+    bool startMinimized = args.contains("-startminimized");
+    StartDialog *start = new StartDialog(&startMinimized);
 
     while (!start->loadedOk) {
         instance.processEvents();
@@ -101,10 +102,7 @@ int main(int argc, char *argv[]) {
     QObject::connect(&instance, SIGNAL(messageReceived(QString)),
                      mainwindow->transfersDialog, SLOT(download(QString)));
 
-    QSettings *settings = new QSettings(*mainSettings, QSettings::IniFormat);
-    if (!settings->value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool()) mainwindow->show();
-
-    settings->deleteLater();
+    if (startMinimized) mainwindow->show();
 
     if (!args.isEmpty() && args.last().startsWith("mixology:", Qt::CaseInsensitive)) {
         mainwindow->transfersDialog->download(args.last());

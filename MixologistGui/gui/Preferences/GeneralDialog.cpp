@@ -67,8 +67,6 @@ GeneralDialog::GeneralDialog(QWidget *parent)
     } else ui.runOnBoot->setVisible(false);
 
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
-    ui.startMinimized->setChecked(settings.value("Gui/StartMinimized", DEFAULT_START_MINIMIZED).toBool());
-
     if (settings.value("Gui/ShowAdvanced", DEFAULT_SHOW_ADVANCED).toBool()) {
         ui.showAdvanced->setChecked(true);
         ui.showAdvanced->setText("Advanced features enabled");
@@ -79,10 +77,6 @@ GeneralDialog::GeneralDialog(QWidget *parent)
 }
 
 bool GeneralDialog::save() {
-    QSettings settings(*mainSettings, QSettings::IniFormat, this);
-
-    settings.setValue("Gui/StartMinimized", ui.startMinimized->isChecked());
-
     if (canHandleRunOnBoot()) setRunOnBoot(ui.runOnBoot->isChecked());
     return true;
 }

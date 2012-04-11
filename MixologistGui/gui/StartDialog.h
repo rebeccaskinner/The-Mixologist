@@ -37,13 +37,9 @@ class StartDialog : public QMainWindow {
 	Q_OBJECT
 
 public:
-	/** Default constructor */
-        StartDialog(QWidget *parent = 0, Qt::WFlags flags = 0);
+        StartDialog(bool* startMinimized, QWidget *parent = 0, Qt::WFlags flags = 0);
 
 	bool loadedOk;
-
-public slots:
-	/** Overloaded QWidget.show */
 
 private slots:
         //Clears out saved password when auto logon box is unchecked
@@ -83,6 +79,9 @@ private:
         /* This variable is populated from the server, and indicates the latest version of the Mixologist we know about.
            If own version or skip_to_version is greater, will use that instead (can come up with test versions. */
         qulonglong latest_known_version;
+
+        /* Used so we can both know whether to start the startup window minimized, and can also pass back to the main window whether it should as well. */
+        bool *startMinimized;
     };
 
 #endif
