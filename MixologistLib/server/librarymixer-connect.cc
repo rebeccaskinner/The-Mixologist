@@ -549,7 +549,6 @@ void LibraryMixerConnect::handleErrorReceived(int error) {
 }
 
 void LibraryMixerConnect::sslErrorsSlot(const QList<QSslError> &errors) {
-    QMutexLocker stack(&lmMutex);
     /* Fix for the weird erroneous QSslErrors set to NoError that showed up after upgrading to OpenSSL 1.0.0a
        from the old custom Retroshare version */
     bool realError = false;
@@ -560,6 +559,7 @@ void LibraryMixerConnect::sslErrorsSlot(const QList<QSslError> &errors) {
         }
     }
     if (realError) {
+        QMutexLocker stack(&lmMutex);
         buffer->deleteLater();
         if (httpGetId == info_upload_id) uploadBuffer->deleteLater(); //it seems like there should be a better way
         emit(errorReceived(ssl_error));
@@ -569,7 +569,6 @@ void LibraryMixerConnect::sslErrorsSlot(const QList<QSslError> &errors) {
 }
 
 void LibraryMixerConnect::slotAuthenticationRequired() {
-    QMutexLocker stack(&lmMutex);
     http->abort();
     handleErrorReceived(bad_login_error);
 }
