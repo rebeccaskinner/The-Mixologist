@@ -132,13 +132,15 @@ int LibraryModel::rowCount(const QModelIndex &/*parent*/) const {
 bool LibraryModel::dropMimeData(const QMimeData *data, Qt::DropAction /*action*/, int row, int /*column*/, const QModelIndex &parent) {
     if (!parent.isValid() || parent.row() < 0) return false;
 
+    contextItemId = library.keys()[parent.row()];
+
     QStringList paths;
     foreach(QUrl url, data->urls()) {
         if (url.scheme() != "file") return false;
         paths << recursiveFileAdd(url.toLocalFile());
     }
 
-    files->setMatchFile(library.keys()[row], paths, LibraryMixerItem::MATCHED_TO_FILE);
+    files->setMatchFile(contextItemId, paths, LibraryMixerItem::MATCHED_TO_FILE);
     return true;
 }
 
