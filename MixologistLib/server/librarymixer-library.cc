@@ -246,7 +246,7 @@ bool LibraryMixerLibraryManager::getLibraryMixerItem(QStringList paths, LibraryM
 int LibraryMixerLibraryManager::getLibraryMixerItemWithCheck(unsigned int item_id, LibraryMixerItem &item) {
     QMutexLocker stack(&libMutex);
 
-    if (libraryList.contains(item_id)) return -1;
+    if (!libraryList.contains(item_id)) return -1;
     if (!libraryList[item_id]->fullyHashed()) return 0;
 
     item = internalConvertItem(libraryList[item_id]);
