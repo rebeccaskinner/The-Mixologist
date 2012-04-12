@@ -87,7 +87,7 @@ macx {
         -lcrypto \
         -lminiupnpc \
         -lz
-    QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.4
+    QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.5
     QMAKE_INFO_PLIST = platformspecific/Info.plist
     ICON = platformspecific/mac.icns
 
