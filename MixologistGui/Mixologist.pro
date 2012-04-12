@@ -90,10 +90,6 @@ macx {
     QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.5
     QMAKE_INFO_PLIST = platformspecific/Info.plist
     ICON = platformspecific/mac.icns
-
-#Remove if not static compile
-    QTPLUGIN += qgif
-    DEFINES += STATIC
 }
 
 # ############################# Common stuff ######################################
