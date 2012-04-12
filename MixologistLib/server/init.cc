@@ -243,6 +243,10 @@ Control *Init::createControl(QString ownName) {
     else partialsDir = "C:\\MixologistPartialDownloads";
 #endif
 
+    /* Clean things up just in case one of those native functions returns something with extra directory separators. */
+    saveDir = QDir::toNativeSeparators(QDir::cleanPath(saveDir));
+    partialsDir = QDir::toNativeSeparators(QDir::cleanPath(partialsDir));
+
     /**************************************************************************/
     /* setup classes / structures */
     /**************************************************************************/
