@@ -238,6 +238,18 @@ void ftServer::returnFiles(const QString &title, const QStringList &paths, unsig
 }
 
 /**********************************************************************************
+ * Saved SuggestionsControl
+ **********************************************************************************/
+
+void ftServer::getPendingSuggestions(QList<pendingSuggest> &suggestions) {
+    mixologyService->getPendingSuggestions(suggestions);
+}
+
+void ftServer::removeSavedSuggestion(unsigned int uniqueSuggestionId) {
+    mixologyService->removeSavedSuggestion(uniqueSuggestionId);
+}
+
+/**********************************************************************************
  * Off LibraryMixer Sharing Control
  **********************************************************************************/
 

@@ -41,10 +41,11 @@
 
 /** Default constructor */
 PopupChatDialog::PopupChatDialog(int _librarymixer_id, QWidget *parent, Qt::WFlags flags)
-    : QMainWindow(parent, flags), librarymixer_id(_librarymixer_id), requestedItemId(0), online_status(true)
+    : QMainWindow(parent, flags), librarymixer_id(_librarymixer_id), requestedItemId(0)
 
 {
     friendName = peers->getPeerName(librarymixer_id);
+    online_status = peers->isOnline(librarymixer_id);
 
     setAttribute(Qt::WA_DeleteOnClose);
 
@@ -176,7 +177,7 @@ void PopupChatDialog::insertRequestEvent(int event, unsigned int item_id) {
     switch(event) {
         case NOTIFY_TRANSFER_CHAT:
             message = friendName + " is interested in getting " +
-                      item.title + " from you.";
+                      item.title + " from you";
             break;
         case NOTIFY_TRANSFER_MESSAGE:
             message = "Auto response for '" + item.title + "': " + item.message;
@@ -185,24 +186,24 @@ void PopupChatDialog::insertRequestEvent(int event, unsigned int item_id) {
         case NOTIFY_TRANSFER_LENT:
             message = friendName + " is interested in getting " +
                       item.title + " but it's currently lent to " +
-                      peers->getPeerName(item.lentTo) + ".";
+                      peers->getPeerName(item.lentTo);
             break;
         case NOTIFY_TRANSFER_UNMATCHED:
             requestedItemId = item_id;
             ui.requestLabel->setText("'" + item.title + "'' requested");
             ui.requestButton->setVisible(true);
             message = friendName + " is interested in getting " +
-                      item.title + " from you.";
+                      item.title + " from you";
             break;
         case NOTIFY_TRANSFER_BROKEN_MATCH:
             requestedItemId = item_id;
             ui.requestLabel->setText("'" + item.title + "'' requested");
             ui.requestButton->setVisible(true);
             message = friendName + " is interested in getting " +
-                      item.title + " from you. You marked to automatically send a file, but the marked file has gone missing.";
+                      item.title + " from you. You marked to automatically send a file, but the marked file has gone missing";
             break;
         case NOTIFY_TRANSFER_NO_SUCH_ITEM:
-            message = friendName + " requested something from you that isn't in your library on LibraryMixer.";
+            message = friendName + " requested something from you that isn't in your library on LibraryMixer";
             break;
     }
     addSysMsg(message);
@@ -213,7 +214,7 @@ void PopupChatDialog::insertTransferEvent(int event, const QString &transfer_nam
     switch(event) {
         case NOTIFY_TRANSFER_CHAT:
             message = friendName + " has requested friends to ask personally for " +
-                      transfer_name + ".";
+                      transfer_name;
             break;
         case NOTIFY_TRANSFER_MESSAGE:
             message = "Auto response for '" + transfer_name +
@@ -222,11 +223,11 @@ void PopupChatDialog::insertTransferEvent(int event, const QString &transfer_nam
             break;
         case NOTIFY_TRANSFER_LENT:
             message = friendName + " has currently lent " +
-                      transfer_name + " out to somebody.";
+                      transfer_name + " out to somebody";
             break;
         case NOTIFY_TRANSFER_UNMATCHED:
             message = "Sent " + friendName + " a message that you're interested in' " +
-                      transfer_name + ", but you can type more here if you want.";
+                      transfer_name + ", but you can type more here if you want";
             break;
         case NOTIFY_TRANSFER_BROKEN_MATCH:
             message = friendName + " marked " +
@@ -248,39 +249,39 @@ void PopupChatDialog::insertUserOptional(int code, QString input) {
     switch(code) {
         case NotifyBase::NOTIFY_USER_REQUEST:
             message = "Requested '" + input +
-                      "' from " + friendName + ".";
+                      "' from " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_FILE_REQUEST:
             message = "Auto response sending: '" + input +
-                      "' to " + friendName + ".";
+                      "' to " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_FILE_RESPONSE:
             message = "Auto response receiving: '" + input +
-                      "' from " + friendName + ".";
+                      "' from " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_LEND_OFFERED:
             message = "Auto response offer to lend: '" + input +
-                      "' to " + friendName + ".";
+                      "' to " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_BORROW_DECLINED:
             message = "Decided not to borrow '" + input +
-                      "' from " + friendName + ".";
+                      "' from " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_BORROW_ACCEPTED:
             message = "Borrowing '" + input +
-                      "' from " + friendName + ".";
+                      "' from " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_SUGGEST_WAITING:
             message = "Reading file(s) to send to " + friendName +
-                      ". Will send a download invitation automatically as soon as finished reading.";
+                      ". Will send a download invitation automatically as soon as finished reading";
             break;
         case NotifyBase::NOTIFY_USER_SUGGEST_SENT:
             message = "Sent an invitation to get '" + input +
-                      "' to " + friendName + ".";
+                      "' to " + friendName;
             break;
         case NotifyBase::NOTIFY_USER_SUGGEST_RECEIVED:
             message = "Received an invitation to get '" + input +
-                      "' from " + friendName + ".";
+                      "' from " + friendName;
             break;
         default:
             return;
@@ -290,8 +291,8 @@ void PopupChatDialog::insertUserOptional(int code, QString input) {
 
 void PopupChatDialog::setOnlineStatus(bool status) {
     if (status != online_status) {
-        if (status) addSysMsg("Reconnected to " + friendName + ".");
-        else addSysMsg("Connection to " + friendName + " has been lost.");
+        if (status) addSysMsg("Reconnected to " + friendName);
+        else addSysMsg("Connection to " + friendName + " has been lost");
         online_status = status;
         ui.sendButton->setEnabled(status);
     }
@@ -338,7 +339,7 @@ void PopupChatDialog::sendChat() {
     QString message = ui.chattextEdit->toPlainText();
     if (message.isEmpty()) return;
     if (!peers->getPeerDetails(librarymixer_id, detail)) {
-        addSysMsg("Catastrophic fail! Unable to load friend's details to send the message.");
+        addSysMsg("Catastrophic fail! Unable to load friend's details to send the message");
         return;
     }
     if (detail.state == FCS_CONNECTED_TCP ||
@@ -448,12 +449,16 @@ void PopupChatDialog::setMatchToFiles() {
     if (requestedItemId != 0) {
         QStringList paths = QFileDialog::getOpenFileNames(this, "Select the files");
         if (!paths.empty()) {
-            if (QMessageBox::question(this, "The Mixologist", "Send to " + friendName + " now?", QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
+            QString message;
+            if (online_status) message = "Send to " + friendName + " now?";
+            else message = "Queue and send when " + friendName + " comes back online?";
+            if (QMessageBox::question(this, "The Mixologist", message, QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
                 if (files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE, librarymixer_id)) {
-                    if (paths.count() == 1){
-                        addSysMsg("Reading file, will send as soon as ready");
+                    QString file = (paths.count() == 1) ? "file" : "files";
+                    if (online_status) {
+                        addSysMsg("Reading " + file + ", will send as soon as ready");
                     } else {
-                        addSysMsg("Reading files, will send as soon as ready");
+                        addSysMsg("Reading " + file + ", will queue to send when " + friendName + " comes back online");
                     }
                     clearRequest();
                 } else {
@@ -503,18 +508,9 @@ void PopupChatDialog::selectFiles() {
 }
 
 void PopupChatDialog::sendFiles(QStringList paths) {
-    bool offline = true;
-    {
-        PeerDetails detail;
-        peers->getPeerDetails(librarymixer_id, detail);
-        if (detail.state == FCS_CONNECTED_TCP ||
-            detail.state == FCS_CONNECTED_UDP) {
-            offline = false;
-        }
-    }
-    if (offline) {
-        addSysMsg("Friend offline, could not send.");
-        return;
+    if (online_status) {
+        int choice = QMessageBox::question(this, "The Mixologist", friendName + " is currently offline, save and queue this for the next time the Mixologist sees " + friendName + " online? ", QMessageBox::Yes|QMessageBox::Cancel, QMessageBox::Yes);
+        if (choice == QMessageBox::Cancel) return;
     }
 
     if (!paths.empty()) {
@@ -540,14 +536,15 @@ void PopupChatDialog::sendFiles(QStringList paths) {
                 else message = "Automatically send this file on all future requests for " + item.title + "?";
                 if (QMessageBox::question(this, item.title, message, QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes) {
                     if (files->setMatchFile(requestedItemId, paths, LibraryMixerItem::MATCHED_TO_FILE, librarymixer_id)) {
-                        if (paths.count() == 1){
-                            addSysMsg("Reading file, will send as soon as ready");
+                        QString file = (paths.count() == 1) ? file = "file" : file = "files";
+                        if (online_status) {
+                            addSysMsg("Reading " + file + ", will send as soon as ready");
                         } else {
-                            addSysMsg("Reading files, will send as soon as ready");
+                            addSysMsg("Reading " + file + ", will queue to send when " + friendName + " comes back online");
                         }
                         clearRequest();
                     } else {
-                        addSysMsg("Unable to match " + item.title + " you either already matched it or removed it.");
+                        addSysMsg("Unable to match " + item.title + " you either already matched it or removed it");
                     }
                     return;
                 }
@@ -565,7 +562,7 @@ void PopupChatDialog::sendFiles(QStringList paths) {
             if (choice == QMessageBox::Cancel) return;
             else if (choice == QMessageBox::NoToAll) break;
             else if (choice == QMessageBox::Yes) {
-                addSysMsg("Returning '" + borrowedTitles[i] + "' to " + friendName + ".");
+                addSysMsg("Returning '" + borrowedTitles[i] + "' to " + friendName);
                 files->returnFiles(borrowedTitles[i], paths, librarymixer_id, borrowedItemKeys[i]);
                 return;
             }
@@ -585,6 +582,8 @@ void PopupChatDialog::sendFiles(QStringList paths) {
         if (title == "") return;
         files->sendTemporary(title, paths, librarymixer_id);
     }
+
+    if (online_status) addSysMsg("Queued to send when " + friendName + " comes back online");
 }
 
 void PopupChatDialog::addChatMsg(const QString &message, bool self){

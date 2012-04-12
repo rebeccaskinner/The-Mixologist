@@ -194,6 +194,15 @@ public:
     void returnFiles(const QString &title, const QStringList &paths, unsigned int friend_id, const QString &itemKey);
 
     /**********************************************************************************
+     * Saved Suggestions Control
+     **********************************************************************************/
+    /* Sets a list of all pendingSuggests into suggestions. */
+    void getPendingSuggestions(QList<pendingSuggest> &suggestions);
+
+    /* Removes a saved pendingSuggest. */
+    void removeSavedSuggestion(unsigned int uniqueSuggestionId);
+
+    /**********************************************************************************
      * Off LibraryMixer Sharing Control
      **********************************************************************************/
     /* Adds a new share to the list of base root paths shared off-LibraryMixer.

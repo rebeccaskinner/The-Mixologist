@@ -53,9 +53,16 @@
 #define UPLOAD_FILE_COLUMN         0
 #define UPLOAD_FRIEND_COLUMN       1
 #define UPLOAD_SPEED_COLUMN        2
-#define UPLOAD_TRANSFERRED_COLUMN   3
+#define UPLOAD_TRANSFERRED_COLUMN  3
 #define UPLOAD_STATUS_COLUMN       4
 #define UPLOAD_LIBRARYMIXER_ID     5
+#define UPLOAD_ITEM_TYPE           6
+#define UPLOAD_ITEM_ID             7
+
+/* The possible results for the UPLOAD_ITEM_TYPE column. */
+#define UPLOAD_FILE_TYPE         "File"
+#define UPLOAD_PENDING_TYPE      "SuggestPending"
+#define UPLOAD_PENDING_FILE_TYPE "PendingFile"
 
 /* Download column names */
 #define DOWNLOAD_NAME_COLUMN       0
@@ -65,13 +72,13 @@
 #define DOWNLOAD_TOTAL_SIZE_COLUMN 4
 #define DOWNLOAD_PERCENT_COLUMN    5
 #define DOWNLOAD_STATUS_COLUMN     6
-//Hidden information columns
+/* Hidden information columns. */
 #define DOWNLOAD_FRIEND_ID         7
 #define DOWNLOAD_ITEM_TYPE         8
 #define DOWNLOAD_ITEM_ID           9
 #define DOWNLOAD_FINAL_LOCATION    10
 
-/* DOWNLOAD_ITEM_TYPEs */
+/* The possible results for the DOWNLOAD_ITEM_TYPE column */
 #define DOWNLOAD_GROUP_TYPE        "Group"
 #define DOWNLOAD_FILE_TYPE         "File"
 #define DOWNLOAD_PENDING_TYPE      "Pending"
@@ -100,6 +107,8 @@ TransfersDialog::TransfersDialog(QWidget *parent)
 
     header = ui.uploadsList->header() ;
     header->hideSection(UPLOAD_LIBRARYMIXER_ID);
+    header->hideSection(UPLOAD_ITEM_ID);
+    header->hideSection(UPLOAD_ITEM_TYPE);
 
     //Without this preliminary resizing, empty columns will visibly resize after view already displayed
     ui.downloadsList->resizeColumnToContents(DOWNLOAD_NAME_COLUMN);
@@ -431,7 +440,7 @@ float TransfersDialog::insertUploads() {
     ui.uploadsList->clear();
     float upTotalRate = 0;
 
-    //Put uploads into uploadsList box
+    /* Put uploads into uploadsList box. */
     QList<uploadFileInfo> uploads;
     files->FileUploads(uploads);
 
@@ -449,11 +458,35 @@ float TransfersDialog::insertUploads() {
                 upTotalRate += currentFriendInfo.transferRate;
             }
             uploadedFile->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(currentFriendInfo.librarymixer_id));
+            uploadedFile->setText(UPLOAD_ITEM_TYPE, UPLOAD_FILE_TYPE);
             transfers.append(uploadedFile);
         }
     }
 
+    /* Put pending suggestions into uploadsList box. */
+    QList<pendingSuggest> pendingSuggestions;
+    files->getPendingSuggestions(pendingSuggestions);
+
+    foreach (pendingSuggest currentSuggest, pendingSuggestions) {
+        QTreeWidgetItem *currentSuggestItem = new QTreeWidgetItem();
+        currentSuggestItem->setText(UPLOAD_FILE_COLUMN, currentSuggest.title);
+        currentSuggestItem->setText(UPLOAD_FRIEND_COLUMN, peers->getPeerName(currentSuggest.friend_id));
+        currentSuggestItem->setText(UPLOAD_STATUS_COLUMN, "Queued for when friend comes online");
+        currentSuggestItem->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(currentSuggest.friend_id));
+        currentSuggestItem->setText(UPLOAD_ITEM_TYPE, UPLOAD_PENDING_TYPE);
+        currentSuggestItem->setText(UPLOAD_ITEM_ID, QString::number(currentSuggest.uniqueSuggestionId));
+        foreach (QString file, currentSuggest.files) {
+            QTreeWidgetItem *currentFileItem = new QTreeWidgetItem(currentSuggestItem);
+            currentFileItem->setText(UPLOAD_FILE_COLUMN, file);
+            currentFileItem->setText(UPLOAD_LIBRARYMIXER_ID, QString::number(currentSuggest.friend_id));
+            currentFileItem->setText(UPLOAD_ITEM_TYPE, UPLOAD_PENDING_FILE_TYPE);
+            currentFileItem->setText(UPLOAD_ITEM_ID, QString::number(currentSuggest.uniqueSuggestionId));
+        }
+        transfers.append(currentSuggestItem);
+    }
+
     ui.uploadsList->insertTopLevelItems(0, transfers);
+    ui.uploadsList->expandAll();
     ui.uploadsList->update();
     ui.uploadsList->resizeColumnToContents(UPLOAD_FILE_COLUMN);
     ui.uploadsList->resizeColumnToContents(UPLOAD_FRIEND_COLUMN);
@@ -550,23 +583,44 @@ void TransfersDialog::uploadsListContextMenu(QPoint point) {
 
     QTreeWidgetItem *contextItem = ui.uploadsList->itemAt(point);
     if (contextItem != NULL) {
-        if (!contextItem->text(UPLOAD_LIBRARYMIXER_ID).isEmpty()) {
-            context_friend_id = contextItem->text(UPLOAD_LIBRARYMIXER_ID).toInt();
-            QAction *chatAct = new QAction(QIcon(IMAGE_CHAT), "Chat", &contextMenu);
-            connect(chatAct, SIGNAL(triggered()), this, SLOT(chat()));
-            contextMenu.addAction(chatAct);
+        context_item_location = contextItem->text(UPLOAD_FILE_COLUMN);
+        context_item_type = contextItem->text(UPLOAD_ITEM_TYPE);
+
+        if (context_item_type == UPLOAD_FILE_TYPE) {
+            if (!contextItem->text(UPLOAD_LIBRARYMIXER_ID).isEmpty()) {
+                context_friend_id = contextItem->text(UPLOAD_LIBRARYMIXER_ID).toInt();
+                QAction *chatAct = new QAction(QIcon(IMAGE_CHAT), "Chat", &contextMenu);
+                connect(chatAct, SIGNAL(triggered()), this, SLOT(chat()));
+                contextMenu.addAction(chatAct);
+                if (!peers->isOnline(context_friend_id)){
+                    chatAct->setEnabled(false);
+                    chatAct->setText(tr("Chat (friend offline)"));
+                }
+
+                contextMenu.addSeparator();
+            }
+
+            QAction *openAct = new QAction(QIcon(IMAGE_OPEN), tr("Open"), &contextMenu);
+            connect(openAct, SIGNAL(triggered()), this, SLOT(openFile()));
+            contextMenu.addAction(openAct);
+
+            contextMenu.addSeparator();
         }
 
-        contextMenu.addSeparator();
-        context_item_location = contextItem->text(UPLOAD_FILE_COLUMN);
-        QAction *openAct = new QAction(QIcon(IMAGE_OPEN), tr("Open"), &contextMenu);
-        connect(openAct, SIGNAL(triggered()), this, SLOT(openFile()));
-        contextMenu.addAction(openAct);
+        if (context_item_type == UPLOAD_PENDING_TYPE ||
+            context_item_type == UPLOAD_PENDING_FILE_TYPE) {
+            context_item_id = contextItem->text(UPLOAD_ITEM_ID);
+            context_name = (contextItem->parent() == NULL) ? contextItem->text(UPLOAD_FILE_COLUMN) : contextItem->parent()->text(UPLOAD_FILE_COLUMN);
 
-        contextMenu.addSeparator();
+            QAction *cancelAct = new QAction(QIcon(IMAGE_CANCEL), tr("Cancel"), &contextMenu);
+            connect(cancelAct, SIGNAL(triggered()), this, SLOT(cancel()));
+            contextMenu.addAction(cancelAct);
+
+            contextMenu.addSeparator();
+        }
     }
 
-    QAction *clearAct = new QAction(QIcon(IMAGE_CLEARCOMPLETED), tr("Clear All"), &contextMenu);
+    QAction *clearAct = new QAction(QIcon(IMAGE_CLEARCOMPLETED), tr("Clear Uploads"), &contextMenu);
     connect(clearAct , SIGNAL(triggered()), this, SLOT(clearUploads()));
     contextMenu.addAction(clearAct);
 
@@ -596,6 +650,14 @@ void TransfersDialog::cancel() {
                                    "?\nRemoving something from the borrowed list can't be undone.",
                                    QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)) == QMessageBox::Yes) {
             files->deleteBorrowed(context_item_id);
+        }
+    } else if (context_item_type == UPLOAD_PENDING_TYPE ||
+               context_item_type == UPLOAD_PENDING_FILE_TYPE) {
+        if ((QMessageBox::question(this, tr("Cancel Send"),
+                                   "Are you sure you want to cancel the queued sending of " + context_name +
+                                   " to " + peers->getPeerName(context_friend_id) + "?",
+                                   QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)) == QMessageBox::Yes) {
+            files->removeSavedSuggestion(context_item_id.toUInt());
         }
     }
 }

@@ -26,6 +26,7 @@
 #include <ft/ftcontroller.h>
 #include <ft/ftserver.h>
 #include <ft/ftborrower.h>
+#include <pqi/friendsConnectivityManager.h>
 #include <interface/librarymixer-connect.h>
 #include <interface/peers.h>
 #include <interface/files.h>
@@ -50,9 +51,40 @@
 MixologyService::MixologyService()
     :p3Service(SERVICE_TYPE_MIX) {
     addSerialType(new MixologySerialiser());
+
     QSettings saved(*savedTransfers, QSettings::IniFormat);
     saved.beginGroup("Pending");
     mStartup = saved.childGroups();
+    saved.endGroup();
+
+    saved.beginGroup("PendingSuggests");
+    foreach (QString key, saved.childGroups()) {
+        pendingSuggest newPendingSuggest;
+        saved.beginGroup(key);
+
+        newPendingSuggest.uniqueSuggestionId = key.toUInt();
+        newPendingSuggest.title = saved.value("title").toString();
+        newPendingSuggest.friend_id = saved.value("friend_id").toUInt();
+
+        saved.beginGroup("Files");
+
+        foreach (QString hash, saved.childGroups()) {
+            saved.beginGroup(hash);
+
+            newPendingSuggest.hashes.append(hash);
+            newPendingSuggest.files.append(saved.value("path").toString());
+            newPendingSuggest.filesizes.append(saved.value("filesize").toLongLong());
+
+            saved.endGroup(); //hash
+        }
+
+        saved.endGroup(); //Files
+
+        saved.endGroup(); //key
+        pendingSuggestions[newPendingSuggest.uniqueSuggestionId] = newPendingSuggest;
+    }
+
+    connect(friendsConnectivityManager, SIGNAL(friendConnected(uint)), this, SLOT(sendSavedSuggestions(uint)));
 }
 
 int MixologyService::tick() {
@@ -239,7 +271,7 @@ int MixologyService::tick() {
     return 0;
 }
 
-bool  MixologyService::LibraryMixerRequest(unsigned int friend_id, unsigned int item_id, const QString &name) {
+bool MixologyService::LibraryMixerRequest(unsigned int friend_id, unsigned int item_id, const QString &name) {
     notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_REQUEST, name);
     QMutexLocker stack(&mMixologyServiceMutex);
 
@@ -286,15 +318,81 @@ bool  MixologyService::LibraryMixerRequestCancel(unsigned int item_id) {
 }
 
 void MixologyService::sendSuggestion(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes) {
-    MixologySuggestion *suggest = new MixologySuggestion();
-    suggest->title = title;
-    suggest->LibraryMixerId(friend_id);
-    suggest->files(files);
-    suggest->hashes(hashes);
-    suggest->filesizes(filesizes);
-    notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_SENT, title);
-    log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(friend_id));
-    sendItem(suggest);
+    if (friendsConnectivityManager->isOnline(friend_id)) {
+        MixologySuggestion *suggest = new MixologySuggestion();
+        suggest->title = title;
+        suggest->LibraryMixerId(friend_id);
+        suggest->files(files);
+        suggest->hashes(hashes);
+        suggest->filesizes(filesizes);
+        notifyBase->notifyUserOptional(friend_id, NotifyBase::NOTIFY_USER_SUGGEST_SENT, title);
+        log(LOG_WARNING, MIXOLOGYSERVICEZONE, "Sending suggestion to " + QString::number(friend_id));
+        sendItem(suggest);
+    } else {
+        saveSuggestion(friend_id, title, files, hashes, filesizes);
+    }
+}
+
+void MixologyService::saveSuggestion(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes) {
+    QMutexLocker stack(&mMixologyServiceMutex);
+
+    /* Set the uniqueSuggestionId to be one greater than the largest existing one.*/
+    int uniqueSuggestionId;
+    if (pendingSuggestions.isEmpty()) uniqueSuggestionId = 0;
+    else uniqueSuggestionId = pendingSuggestions.keys().last() + 1;
+
+    pendingSuggest newPendingSuggest(friend_id, title, files, hashes, filesizes, uniqueSuggestionId);
+
+    pendingSuggestions[uniqueSuggestionId] = newPendingSuggest;
+
+    QSettings saved(*savedTransfers, QSettings::IniFormat);
+    saved.beginGroup("PendingSuggests");
+    saved.beginGroup(QString::number(newPendingSuggest.uniqueSuggestionId));
+    saved.setValue("title", newPendingSuggest.title);
+    saved.setValue("friend_id", newPendingSuggest.friend_id);
+
+    saved.beginGroup("Files");
+    for (int i = 0; i < newPendingSuggest.files.count(); i++) {
+        saved.beginGroup(newPendingSuggest.hashes[i]);
+        saved.setValue("path", newPendingSuggest.files[i]);
+        saved.setValue("filesize", QString::number(newPendingSuggest.filesizes[i]));
+        saved.endGroup(); //hashes[i]
+    }
+    saved.endGroup(); //PendingSuggests
+}
+
+void MixologyService::removeSavedSuggestion(unsigned int uniqueSuggestionId) {
+    QMutexLocker stack(&mMixologyServiceMutex);
+
+    if (pendingSuggestions.contains(uniqueSuggestionId))
+        internalRemoveSavedSuggest(uniqueSuggestionId);
+}
+
+void MixologyService::getPendingSuggestions(QList<pendingSuggest> &suggestions) {
+    QMutexLocker stack(&mMixologyServiceMutex);
+
+    foreach (pendingSuggest currentSuggest, pendingSuggestions) {
+        suggestions.push_back(currentSuggest);
+    }
+}
+
+void MixologyService::sendSavedSuggestions(unsigned int friend_id) {
+    QMutexLocker stack(&mMixologyServiceMutex);
+
+    foreach (pendingSuggest currentSuggest, pendingSuggestions) {
+        if (currentSuggest.friend_id == friend_id) {
+            sendSuggestion(currentSuggest.friend_id, currentSuggest.title, currentSuggest.files, currentSuggest.hashes, currentSuggest.filesizes);
+            internalRemoveSavedSuggest(currentSuggest.uniqueSuggestionId);
+        }
+    }
+}
+
+void MixologyService::internalRemoveSavedSuggest(unsigned int uniqueSuggestionId) {
+    pendingSuggestions.remove(uniqueSuggestionId);
+    QSettings saved(*savedTransfers, QSettings::IniFormat);
+    saved.beginGroup("PendingSuggests");
+    saved.remove(QString::number(uniqueSuggestionId));
+    saved.endGroup(); //pendingSuggests
 }
 
 void MixologyService::sendReturn(unsigned int friend_id, int source_type, const QString &source_id,

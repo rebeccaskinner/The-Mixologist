@@ -246,9 +246,21 @@ public:
     virtual void returnFiles(const QString &title, const QStringList &paths, unsigned int friend_id, const QString &itemKey) = 0;
 
     /**********************************************************************************
+     * Saved Suggestions Control
+     **********************************************************************************/
+public:
+    /* Sets a list of all pendingSuggests into suggestions. */
+    virtual void getPendingSuggestions(QList<pendingSuggest> &suggestions) = 0;
+
+    /* Removes a saved pendingSuggest. */
+    virtual void removeSavedSuggestion(unsigned int uniqueSuggestionId) = 0;
+
+
+    /**********************************************************************************
      * Borrowing Management
      **********************************************************************************/
 
+public:
     /* Gets all items borrowed, and populates them into parallel lists for titles, itemKeys that identify them, and the friends they are borrowed from. */
     virtual void getBorrowings(QStringList &titles, QStringList &itemKeys, QList<unsigned int> &friendIds) = 0;
 

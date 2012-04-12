@@ -113,6 +113,29 @@ struct pendingRequest {
 };
 
 /**********************************************************************************
+ * A suggestion to download files that is saved due to friend being offline.
+ **********************************************************************************/
+struct pendingSuggest {
+    pendingSuggest(){};
+    pendingSuggest(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, QList<qlonglong> filesizes, unsigned int uniqueSuggestionId)
+        :friend_id(friend_id), title(title), files(files), hashes(hashes), filesizes(filesizes), uniqueSuggestionId(uniqueSuggestionId) {}
+
+    /* Friend to send this to. */
+    unsigned int friend_id;
+
+    /* What this suggestion will be displayed as. */
+    QString title;
+
+    /* Information about the files to be suggested. */
+    QStringList files;
+    QStringList hashes;
+    QList<qlonglong> filesizes;
+
+    /* Used internally to identify suggestions uniquely. */
+    unsigned int uniqueSuggestionId;
+};
+
+/**********************************************************************************
  * LibraryMixerItem: Collectively, the LibraryMixerItems are a wrapper to an underlying XML document that is the master database.
  * The management of the underlying XML is handled by the LibraryMixerLibraryManager.
  * Each LibraryMixerItem represents a single item in a user's LibraryMixer library,

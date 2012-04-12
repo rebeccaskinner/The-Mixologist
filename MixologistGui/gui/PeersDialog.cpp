@@ -94,8 +94,7 @@ void PeersDialog::friendsListContextMenu(QPoint point) {
     if (!peers->isOnline(id)){
         chatAct->setEnabled(false);
         chatAct->setText(tr("Chat (friend offline)"));
-        sendAct->setEnabled(false);
-        sendAct->setText(tr("Send File (friend offline)"));
+        sendAct->setText(tr("Queue to Send File (friend offline)"));
     }
 
     contextMenu.exec(ui.friendsList->mapToGlobal(point));

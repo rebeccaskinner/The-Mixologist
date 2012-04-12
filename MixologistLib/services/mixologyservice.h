@@ -30,6 +30,7 @@
 #include <services/p3service.h>
 #include <QString>
 #include <QStringList>
+#include <QMap>
 #include <serialiser/mixologyitems.h>
 
 class MixologyService;
@@ -50,8 +51,14 @@ public:
     /* Removes a request from mPending*/
     bool LibraryMixerRequestCancel(unsigned int item_id);
 
-    /* Used for recommending files to friends. */
+    /* Used for recommending files to friend, and will queue for later sending if they are currently offline. */
     void sendSuggestion(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes);
+
+    /* Sets a list of all pendingSuggests into suggestions. */
+    void getPendingSuggestions(QList<pendingSuggest> &suggestions);
+
+    /* Removes a saved pendingSuggest. */
+    void removeSavedSuggestion(unsigned int uniqueSuggestionId);
 
     /* Used for returning borrowed files to friends. */
     void sendReturn(unsigned int friend_id, int source_type, const QString &source_id,
@@ -73,6 +80,9 @@ signals:
     /* When a response is received from a request, and it is an offer to lend a set of files. */
     void responseLendOfferReceived(unsigned int friend_id, unsigned int item_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
 
+private slots:
+    void sendSavedSuggestions(unsigned int friend_id);
+
 private:
     /* For a given item_id, rechecks the files and sets the relevant file information into response.
        If all goes smoothly, response->itemStatus is set to status, otherwise it is set to error.
@@ -83,11 +93,20 @@ private:
     /* Sends a LibraryMixerRequestItem. Not mutex protected, must be called from within the mutex. */
     void sendRequest(unsigned int librarymixer_id, uint32_t item_id, pendingRequest *pending);
 
-    /* List of LibraryMixer requests to be sent, as well as those that have been receieved and errored. */
-    std::list<pendingRequest> mPending;
+    /* If we send a suggestion to a friend that is offline, save it. */
+    void saveSuggestion(unsigned int friend_id, const QString &title, const QStringList &files, const QStringList &hashes, const QList<qlonglong> &filesizes);
+
+    /* Removes a saved suggestion from pendingSuggestions and also updates the saved transfers file. */
+    void internalRemoveSavedSuggest(unsigned int uniqueSuggestionId);
 
     /* Removes an item from mPending and also updates saved transfers file. */
     void remove_from_mPending(std::list<pendingRequest>::iterator request, bool erase = true);
+
+    /* List of suggestions to be sent, by their uniqueSuggestionId. */
+    QMap<unsigned int, pendingSuggest> pendingSuggestions;
+
+    /* List of LibraryMixer requests to be sent, as well as those that have been receieved and errored. */
+    std::list<pendingRequest> mPending;
 
     /* List populated on startup by saved requests.  Cannot immediately request because
       system is not yet ready, so stored here until tick can take care of them. */

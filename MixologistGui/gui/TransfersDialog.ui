@@ -752,6 +752,16 @@
            <string>LibraryMixer ID</string>
           </property>
          </column>
+         <column>
+          <property name="text">
+           <string>Item Type</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Item ID</string>
+          </property>
+         </column>
         </widget>
        </item>
       </layout>
