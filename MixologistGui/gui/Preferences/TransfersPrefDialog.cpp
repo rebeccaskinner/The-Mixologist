@@ -48,6 +48,7 @@ TransfersPrefDialog::TransfersPrefDialog(QWidget *parent)
     QSettings settings(*mainSettings, QSettings::IniFormat, this);
 
     ui.incomingAsk->setChecked(settings.value("Transfers/IncomingAsk", DEFAULT_INCOMING_ASK).toBool());
+    ui.linksAsk->setChecked(settings.value("Transfers/MixologyLinkAsk", DEFAULT_MIXOLOGY_LINK_ASK).toBool());
 
     ui.totalDownloadRate->setValue(settings.value("Transfers/MaxTotalDownloadRate", DEFAULT_MAX_TOTAL_DOWNLOAD).toInt());
     ui.totalUploadRate->setValue(settings.value("Transfers/MaxTotalUploadRate", DEFAULT_MAX_TOTAL_UPLOAD).toInt());
@@ -73,6 +74,7 @@ bool TransfersPrefDialog::save() {
     files->setPartialsDirectory(ui.partialsDir->text());
 
     settings.setValue("Transfers/IncomingAsk", ui.incomingAsk->isChecked());
+    settings.setValue("Transfers/MixologyLinkAsk", ui.linksAsk->isChecked());
     settings.setValue("Transfers/MaxTotalDownloadRate", ui.totalDownloadRate->value());
     settings.setValue("Transfers/MaxTotalUploadRate", ui.totalUploadRate->value());
     settings.setValue("Transfers/MaxIndividualDownloadRate", ui.indivDownloadRate->value());

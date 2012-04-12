@@ -136,103 +136,132 @@ TransfersDialog::TransfersDialog(QWidget *parent)
     timer->start(1000);
 }
 
-void TransfersDialog::download(const QString &link) {
-    bool ok;
-    QString error;
-    //Default value of 0 to suppress spurious compiler warnings that might be used uninitialized.
-    unsigned int librarymixer_id = 0;
-    unsigned int item_id = 0;
-    QString rawname;
+void TransfersDialog::download() {
+    unsigned int friend_id;
+    unsigned int item_id;
     QString name;
-    QStringList argList;
 
     mainwindow->show();
     mainwindow->raise();
     mainwindow->activateWindow();
 
-    //Pop up a dialog box to allow the user to enter a link. If a link was provided in arguments, starts from there.
-    //Some browsers percent encode urls, so undo this before processing the link from the argument.
-    QString text = QInputDialog::getText(this, tr("Enter link"), tr("Enter a mixology link:"), QLineEdit::Normal, QUrl::fromPercentEncoding(link.toUtf8()), &ok);
-    //ok will be false when the user hits cancel
-    if (!ok) return;
+    bool ok;
+    QString text = QInputDialog::getText(this, tr("Enter link"), tr("Enter a mixology link:"), QLineEdit::Normal, "", &ok);
 
-    //In case the user pasted in a percent encoded url, undo it again.
-    text = QUrl::fromPercentEncoding(text.toUtf8());
+    /* ok will be false when the user hits cancel. */
+    if (!ok || text.isEmpty()) return;
 
-    if (!text.startsWith("mixology:", Qt::CaseInsensitive)) {
-        error = "Links should begin with mixology:";
-        goto parseError;
+    if (!parseMixologyLink(text, &friend_id, &name, &item_id)) {
+        QMessageBox::warning (this, "Unable to read link", "The link you pasted in there seemed a little messed up", QMessageBox::Ok);
+        return;
     }
-    //Remove the first 'mixology:' bit
+
+    handleMixologyLink(friend_id, name, item_id, true);
+
+    return;
+}
+
+void TransfersDialog::download(const QString &link) {
+    unsigned int friend_id;
+    unsigned int item_id;
+    QString name;
+
+    mainwindow->show();
+    mainwindow->raise();
+    mainwindow->activateWindow();
+
+    if (!parseMixologyLink(link, &friend_id, &name, &item_id)) {
+        QMessageBox::warning (this, "Unable to read link", "The Mixologist was passed a malformed link by your browser or another program", QMessageBox::Ok);
+    }
+
+    QSettings settings(*mainSettings, QSettings::IniFormat, this);
+    if (settings.value("Transfers/MixologyLinkAsk", DEFAULT_MIXOLOGY_LINK_ASK).toBool()) {
+        QMessageBox confirmBox(this);
+        confirmBox.setIconPixmap(QPixmap(IMAGE_DOWNLOAD));
+        confirmBox.setWindowTitle("Mixology Link");
+        confirmBox.setText(QString("The Mixologist has received a mixology link!\n") +
+                           "Request: " + name + "\n" +
+                           "Friend: " + peers->getPeerName(friend_id) + "\n" +
+                           "Continue?");
+        confirmBox.addButton(QMessageBox::Yes);
+        confirmBox.addButton(QMessageBox::No);
+        confirmBox.setDefaultButton(QMessageBox::Yes);
+        int result = confirmBox.exec();
+        if (result == QMessageBox::No) return;
+    }
+
+    handleMixologyLink(friend_id, name, item_id, false);
+}
+
+bool TransfersDialog::parseMixologyLink(const QString &inputText, unsigned int *friend_id, QString *name, unsigned int *item_id) {
+    /* mixology links are case insensitive and will take the form of:
+       mixology:userid==INTEGER¦name==STRING¦itemid==INTEGER¦ */
+
+    /* In case the user pasted in a percent encoded url, undo it again. */
+    QString text = QUrl::fromPercentEncoding(inputText.toUtf8());
+
+    if (!text.startsWith("mixology:", Qt::CaseInsensitive)) return false;
+
+    /* Remove the first 'mixology:' bit. */
     text = text.remove(0, 9);
 
-    //mixology links are case insensitive and will take the form of:
-    //mixology:userid==INTEGER¦name==STRING¦itemid==INTEGER¦
-    //If the user pastes in something with a carriage return, don't let it miss up parsing.
+    /* If the user pastes in something with a carriage return, don't let it miss up parsing. */
     text = text.remove("\n");
 
-    //Some web browsers seem to like to stick an extraneous "/" on the end of all links.
+    /* Some web browsers seem to like to stick an extraneous "/" on the end of all links. */
     if (text.endsWith("/")) text.chop(1);
 
-    //On the server side, spaces are encoded into underscores, so convert them back.
+    /* On the server side, spaces are encoded into underscores, so convert them back. */
     text = text.replace("_", " ");
 
-    argList = text.split("¦", QString::SkipEmptyParts);
+    QStringList argList = text.split("¦", QString::SkipEmptyParts);
 
+    bool ok;
     for(int i = 0; i < argList.count(); i++) {
         QStringList keyValue = argList[i].split("==");
-        if (keyValue.count() != 2) {
-            error = "Encountered a part of the link that is missing its value";
-            goto parseError;
-        }
+        if (keyValue.count() != 2) return false;
         if (QString::compare(keyValue[0], "userid", Qt::CaseInsensitive) == 0) {
-            librarymixer_id = keyValue[1].toInt(&ok);
-            if (!ok) {
-                error = "Unable to read value of userid.";
-                goto parseError;
-            }
+            *friend_id = keyValue[1].toInt(&ok);
+            if (!ok) return false;
         } else if (QString::compare(keyValue[0], "itemid", Qt::CaseInsensitive) == 0) {
-            item_id = keyValue[1].toInt(&ok);
-            if (!ok) {
-                error = "Unable to read value of itemid.";
-                goto parseError;
-            }
+            *item_id = keyValue[1].toInt(&ok);
+            if (!ok) return false;
         } else if (QString::compare(keyValue[0], "name", Qt::CaseInsensitive) == 0) {
-            rawname =  keyValue[1];
-            name = rawname;
+            *name =  keyValue[1];
         }
     }
-    if (librarymixer_id == 0) {
-        error = "That link seemed a little bit messed up.";
-        goto parseError;
-    }
-    if (librarymixer_id == peers->getOwnLibraryMixerId()) {
+
+    if (*friend_id == 0) return false;
+
+    return true;
+}
+
+void TransfersDialog::handleMixologyLink(unsigned int friend_id, const QString &name, unsigned int item_id, bool popupMessages) {
+    if (friend_id == peers->getOwnLibraryMixerId()) {
         QMessageBox::warning (this, "The Mixologist", "FYI, you just tried to connect to yourself", QMessageBox::Ok);
         return;
-    } else if (!peers->isFriend(librarymixer_id)) {
-        //If not in friends list, download friends list and try again
+    } else if (!peers->isFriend(friend_id)) {
+        /* If not in friends list, download friends list and try again. */
         librarymixerconnect->downloadFriends(true);
-        if (!peers->isFriend(librarymixer_id)) {
+        if (!peers->isFriend(friend_id)) {
             QMessageBox::warning (this,  "The Mixologist", "You can't connect to someone that's not your friend on LibraryMixer", QMessageBox::Ok);
             return;
         }
     }
-    if (item_id != 0 && !name.isEmpty()) {
-        files->LibraryMixerRequest(librarymixer_id, item_id, name);
-        //We must construct our own QMessageBox rather than use a static function in order to avoid making a system sound on window popup
-        QMessageBox confirmBox(this);
-        confirmBox.setIconPixmap(QPixmap(IMAGE_DOWNLOAD));
-        confirmBox.setWindowTitle(name);
-        confirmBox.setText("A request will be sent to " + peers->getPeerName(librarymixer_id));
-        confirmBox.addButton("OK", QMessageBox::RejectRole);
-        confirmBox.exec();
-    }
-    else mainwindow->peersDialog->getOrCreateChat(librarymixer_id, true);
-    return;
 
-parseError:
-    QMessageBox::warning (this, "Unable to read link", error, QMessageBox::Ok);
-    return;
+    if (item_id != 0 && !name.isEmpty()) {
+        files->LibraryMixerRequest(friend_id, item_id, name);
+        if (popupMessages) {
+            //We must construct our own QMessageBox rather than use a static function in order to avoid making a system sound on window popup
+            QMessageBox confirmBox(this);
+            confirmBox.setIconPixmap(QPixmap(IMAGE_DOWNLOAD));
+            confirmBox.setWindowTitle(name);
+            confirmBox.setText("A request will be sent to " + peers->getPeerName(friend_id));
+            confirmBox.addButton("OK", QMessageBox::RejectRole);
+            confirmBox.exec();
+        }
+    }
+    else mainwindow->peersDialog->getOrCreateChat(friend_id, true);
 }
 
 void TransfersDialog::suggestionReceived(unsigned int librarymixer_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes) {

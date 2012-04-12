@@ -34,14 +34,14 @@ class TransfersDialog : public QWidget {
 	Q_OBJECT
 
 public:
-	/** Default Constructor */
 	TransfersDialog(QWidget *parent = 0);
-	/** Default Destructor */
         ~TransfersDialog(){}
 
 public slots:
         //Pops up an input box for the user to enter a Mixology link.
-        void download(const QString & link = "");
+        void download();
+        //Pops up a box for the user to open a Mixology link that has been sent to the Mixologist
+        void download(const QString &link);
         //Connected to notifyqt through main, triggered when a file download suggestion is received.
         void suggestionReceived(unsigned int librarymixer_id, QString title, QStringList paths, QStringList hashes, QList<qlonglong> filesizes);
         //Connected to notifyqt throughg main, populates the view.
@@ -75,6 +75,11 @@ private:
         float insertDownloads();
         float insertUploads();
 
+        /* Reads in a link, and populates the pointers, returning true on success. */
+        bool parseMixologyLink(const QString &link, unsigned int *friend_id, QString *name, unsigned int *item_id);
+
+        void handleMixologyLink(unsigned int friend_id, const QString &name, unsigned int item_id, bool popupMessages);
+
         /* Info for keeping track of context menu actions. */
         QString context_name; //display name of the item
         QString context_parent; //item id of the parent, only used for subitems
@@ -84,9 +89,7 @@ private:
         int context_friend_id; //librarymixer_id of the relevant friend
         QString context_friend_name; //name of the relevant friend
 
-        /** Qt Designer generated object */
 	Ui::TransfersDialog ui;
-
 };
 
 #endif
