@@ -20,7 +20,7 @@
 
 #include <QString>
 
-#define VERSION Q_UINT64_C(2012040800)
+#define VERSION Q_UINT64_C(2012041100)
 
 namespace VersionUtil {
     QString inline convert_to_display_version(qlonglong inputVersion) {
