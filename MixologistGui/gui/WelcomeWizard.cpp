@@ -80,12 +80,11 @@ IntroPage::IntroPage(QWidget *parent) :QWizardPage(parent) {
 ConclusionPage::ConclusionPage(QWidget *parent) :QWizardPage(parent) {
     setTitle(tr("Advanced Features"));
 
-    QLabel *label = new QLabel("<p>Besides the features on the previous page, the Mixologist also has a number of advanced features.</p>"
-                               "<p>The biggest among these is the ability to list files and browse friends' files not on LibraryMixer. "
-                               "You can drag and drop whole folders that your friends can copy or borrow, without ever listing them on LibraryMixer's website.</p>"
-                               "<p>Additionally, more information will be available to you on both the inner-workings of the Mixologist and of your connections with friends.</p>"
-                               "<p>If this seems really confusing to you, you can leave the advanced features disabled to keep things simple.</p>"
-                               "<p>With the advanced features disabled, you can basically just leave the Mixologist main window minimized all the time, and interact with the Mixologist entirely through the LibraryMixer website.</p>"
+    QLabel *label = new QLabel("<p>The Mixologist has a number of advanced features, which when enabled, generally display more detailed information.</p>"
+                               "<p>The biggest change, though, is the ability to list files and browse friends' files not on LibraryMixer. "
+                               "You can drag and drop whole folders that your friends can copy or borrow, without listing them on LibraryMixer's website.</p>"
+                               "<p>If this seems confusing to you, you can leave this disabled to keep things simple.</p>"
+                               "<p>With this disabled, you can just leave the Mixologist minimized all the time, and interact with the Mixologist entirely through the LibraryMixer website.</p>"
                                "<p><b>Do you want to enable the advanced features now?</b></p>");
     label->setWordWrap(true);
 
