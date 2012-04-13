@@ -252,36 +252,30 @@ void StartDialog::downloadedInfo(QString name, unsigned int librarymixer_id,
     if ((checkout_link1 != MIXOLOGY_CHECKOUT_LINK || contact_link1 != MIXOLOGY_CONTACT_LINK) &&
         (checkout_link2 != MIXOLOGY_CHECKOUT_LINK || contact_link2 != MIXOLOGY_CONTACT_LINK) &&
         (checkout_link3 != MIXOLOGY_CHECKOUT_LINK || contact_link3 != MIXOLOGY_CONTACT_LINK)) {
-        if (QMessageBox::question(this,
-                                  "Setup your account",
-                                  "Your LibraryMixer account has not yet been setup for sharing with the Mixologist. Your friends will not be able to check out your stuff using the Mixologist until it is set up.\nSet it up now? (highly recommended)",
-                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
-                == QMessageBox::Yes) {
-            if (checkout_link1 == "") link_to_set = 1;
-            else if (checkout_link2 == "") link_to_set = 2;
-            else if (checkout_link3 == "") link_to_set = 3;
-            else {
-                QMessageBox msgBox;
-                msgBox.setWindowTitle("Choose a slot");
-                msgBox.setIcon(QMessageBox::Question);
-                if (link_title1 == STANDARD_LINK_TITLE) link_title1 = "Message";
-                if (link_title2 == STANDARD_LINK_TITLE) link_title2 = "Message";
-                if (link_title3 == STANDARD_LINK_TITLE) link_title3 = "Message";
-                msgBox.setText("All 3 of your sharing methods are already in use on your LibraryMixer account. Choose one to replace:\n" +
-                               link_title1 +
-                               "\n" +
-                               link_title2 +
-                               "\n" +
-                               link_title3);
-                QAbstractButton *button1 = msgBox.addButton(link_title1, QMessageBox::AcceptRole);
-                QAbstractButton *button2 = msgBox.addButton(link_title2, QMessageBox::AcceptRole);
-                QAbstractButton *button3 = msgBox.addButton(link_title3, QMessageBox::AcceptRole);
-                msgBox.addButton(QMessageBox::Cancel);
-                msgBox.exec();
-                if (msgBox.clickedButton() == button1) link_to_set = 1;
-                else if (msgBox.clickedButton() == button2) link_to_set = 2;
-                else if (msgBox.clickedButton() == button3) link_to_set = 3;
-            }
+        if (checkout_link1 == "") link_to_set = 1;
+        else if (checkout_link2 == "") link_to_set = 2;
+        else if (checkout_link3 == "") link_to_set = 3;
+        else {
+            QMessageBox msgBox;
+            msgBox.setWindowTitle("Account Setup");
+            msgBox.setIcon(QMessageBox::Question);
+            if (link_title1 == STANDARD_LINK_TITLE) link_title1 = "Message";
+            if (link_title2 == STANDARD_LINK_TITLE) link_title2 = "Message";
+            if (link_title3 == STANDARD_LINK_TITLE) link_title3 = "Message";
+            msgBox.setText("All 3 of your communications methods are already in use on your LibraryMixer account. Choose one to replace:\n" +
+                           link_title1 +
+                           "\n" +
+                           link_title2 +
+                           "\n" +
+                           link_title3);
+            QAbstractButton *button1 = msgBox.addButton(link_title1, QMessageBox::AcceptRole);
+            QAbstractButton *button2 = msgBox.addButton(link_title2, QMessageBox::AcceptRole);
+            QAbstractButton *button3 = msgBox.addButton(link_title3, QMessageBox::AcceptRole);
+            msgBox.addButton(QMessageBox::Cancel);
+            msgBox.exec();
+            if (msgBox.clickedButton() == button1) link_to_set = 1;
+            else if (msgBox.clickedButton() == button2) link_to_set = 2;
+            else if (msgBox.clickedButton() == button3) link_to_set = 3;
         }
     }
 
