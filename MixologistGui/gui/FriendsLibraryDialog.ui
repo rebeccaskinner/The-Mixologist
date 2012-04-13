@@ -564,7 +564,7 @@
      <property name="childrenCollapsible">
       <bool>false</bool>
      </property>
-     <widget class="QWidget" name="">
+     <widget class="QWidget" name="layoutWidget">
       <layout class="QVBoxLayout" name="verticalLayout">
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_3">
@@ -578,7 +578,7 @@
          <item>
           <widget class="QLabel" name="libraryListLabel">
            <property name="text">
-            <string>This section shows the stuff your friends have listed on LibraryMixer.com</string>
+            <string>This section shows the stuff your friends have listed on LibraryMixer</string>
            </property>
           </widget>
          </item>
@@ -636,7 +636,7 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="">
+     <widget class="QWidget" name="layoutWidget">
       <layout class="QVBoxLayout" name="offLMLayout">
        <item>
         <layout class="QHBoxLayout" name="offLMHeaderLayout">
@@ -650,7 +650,7 @@
          <item>
           <widget class="QLabel" name="offLMListLabel">
            <property name="text">
-            <string>This section shows the vast seas of files that your friends have shared (without listing on LibraryMixer.com)</string>
+            <string>This section shows the vast seas of files that your friends have shared (without listing on LibraryMixer)</string>
            </property>
           </widget>
          </item>

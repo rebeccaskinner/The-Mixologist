@@ -601,7 +601,7 @@
        <item>
         <widget class="QLabel" name="libraryListLabel">
          <property name="text">
-          <string>This section shows the stuff you've listed on LibraryMixer.com to highlight to your friends</string>
+          <string>This section shows the stuff you've listed on LibraryMixer to highlight to your friends</string>
          </property>
         </widget>
        </item>
@@ -664,7 +664,7 @@
        <item>
         <widget class="QLabel" name="offLMListLabel">
          <property name="text">
-          <string>This section shows the other stuff you're also sharing with your friends (not listed on LibraryMixer.com)</string>
+          <string>This section shows the other stuff you're also sharing with your friends (not listed on LibraryMixer)</string>
          </property>
         </widget>
        </item>
