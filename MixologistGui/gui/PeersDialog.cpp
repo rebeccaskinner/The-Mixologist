@@ -191,6 +191,17 @@ void  PeersDialog::insertPeers() {
         }
     }
 
+    /* If there are no friends at all, show the user a reassuring message. */
+    if (items.isEmpty()) {
+        QTreeWidgetItem *fillerItem = new QTreeWidgetItem(ui.friendsList, 0);
+        fillerItem->setText(FRIEND_NAME_COLUMN,
+                            QString("\n\n\nYou don't have any friends to display here yet.\n") +
+                            "Click the Add/Remove Friends button in the upper left to go to LibraryMixer to find and add your friends.");
+        fillerItem->setTextColor(FRIEND_NAME_COLUMN, Qt::lightGray);
+        fillerItem->setTextAlignment(FRIEND_NAME_COLUMN, Qt::AlignHCenter);
+        items.append(fillerItem);
+    }
+
     /* add the items in */
     ui.friendsList->insertTopLevelItems(0, items);
 
