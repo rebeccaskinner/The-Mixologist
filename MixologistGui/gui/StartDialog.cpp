@@ -199,14 +199,14 @@ void StartDialog::downloadedVersion(qulonglong _version, QString description, QS
         msgBox.setDetailedText(details.append(description));
         msgBox.exec();
         if (msgBox.clickedButton() == Yes) {
-#if defined(Q_OS_DARWIN)
-            QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/mac")));
+#if defined(Q_OS_MAC)
+            QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/download/mixologist/mac")));
 #elif defined(Q_WS_WIN)
-            QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/windows")));
+            QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/download/mixologist/windows")));
 #elif defined(Q_WS_X11)
-            QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/linux")));
+            QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/download/mixologist/linux")));
 #else
-            QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/")));
+            QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/info/mixologist/")));
 #endif
             exit(1);
         } else if (msgBox.clickedButton() == No && importance == "Essential"){

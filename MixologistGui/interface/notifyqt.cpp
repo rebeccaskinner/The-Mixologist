@@ -112,7 +112,15 @@ void NotifyQt::displayPopupMessage(int type, QString name, QString msg) {
                                       "). Quit now and download the update?",
                                       QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
                     == QMessageBox::Yes) {
-                QDesktopServices::openUrl(QUrl(QString("http://librarymixer.com/download/mixologist/")));
+#if defined (Q_WS_WIN)
+                QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/download/mixologist/windows")));
+#elif defined (Q_WS_MAC)
+                QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/download/mixologist/mac")));
+#elif defined (Q_WS_X11)
+                QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/download/mixologist/linux")));
+#else
+                QDesktopServices::openUrl(QUrl(QString("http://www.librarymixer.com/info/mixologist/")));
+#endif
                 exit(1);
             }
             break;
